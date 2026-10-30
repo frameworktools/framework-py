@@ -283,14 +283,17 @@ def _unignored_sensitive_dirs(root: Path) -> list[str]:
         for folder in found
         for ancestor in [folder, *(p.as_posix() for p in Path(folder).parents if str(p) != ".")]
     }
+    # -z separates paths with NUL, since text pipes on Windows turn "\n" into "\r\n".
     result = subprocess.run(
-        ["git", "-C", str(root), "check-ignore", "--no-index", "--stdin"],
-        input="\n".join(sorted(candidates)),
+        ["git", "-C", str(root), "check-ignore", "--no-index", "--stdin", "-z"],
+        input="\0".join(sorted(candidates)),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
-    ignored = set(result.stdout.splitlines())
+    ignored = {path for path in result.stdout.split("\0") if path}
     return [
         folder
         for folder in found

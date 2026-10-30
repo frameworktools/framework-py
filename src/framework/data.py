@@ -368,7 +368,8 @@ def data_save(
         inform(f"Created directory: {folder}")
 
     if file_type == "csv":
-        data.to_csv(target, sep=_separator(delimiter), index=False)
+        # "\n" on every platform, as readr writes, so hashes match R's.
+        data.to_csv(target, sep=_separator(delimiter), index=False, lineterminator="\n")
     else:
         data.to_parquet(target, index=False)
     inform(f"Data saved to: {target}")

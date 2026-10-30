@@ -434,7 +434,7 @@ def publish_data(
         if isinstance(data, pd.DataFrame):
             source = Path(temp) / f"data.{format}"
             if format == "csv":
-                data.to_csv(source, index=False)
+                data.to_csv(source, index=False, lineterminator="\n")
             elif format == "parquet":
                 data.to_parquet(source, index=False)
             else:

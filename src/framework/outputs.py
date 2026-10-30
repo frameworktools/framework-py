@@ -96,7 +96,7 @@ def save_table(
     path = _folder("tables", public) / f"{name}{_TABLE_FORMATS[format]}"
     _check_overwrite(path, overwrite)
     if format == "csv":
-        data.to_csv(path, index=False, **kwargs)
+        data.to_csv(path, index=False, **{"lineterminator": "\n", **kwargs})
     elif format == "parquet":
         data.to_parquet(path, index=False, **kwargs)
     else:

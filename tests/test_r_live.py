@@ -39,11 +39,11 @@ csv <- suppressMessages(data_read("inputs/raw/py_raw.csv"))
 results <- result_list()
 cat(jsonlite::toJSON(list(
   parquet_rows = nrow(parquet),
-  parquet_columns = names(parquet),
+  parquet_columns = I(names(parquet)),
   csv_rows = nrow(csv),
   csv_missing = sum(is.na(csv$score)),
   catalog = settings_read()$data$inputs$intermediate$py_clean,
-  results = results$name
+  results = I(results$name)
 ), auto_unbox = TRUE))
 """
 

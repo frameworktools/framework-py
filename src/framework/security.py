@@ -165,9 +165,12 @@ class _IgnoreRules:
             return set()
         if not self.use_git:
             return {path for path in paths if _matches_gitignore(path, self.lines)}
-        # --no-index checks the rules even for tracked files.
-        result = _git(self.root, "check-ignore", "--no-index", "--stdin", input="\n".join(paths))
-        return set(result.stdout.splitlines())
+        # --no-index checks the rules even for tracked files. -z separates paths
+        # with NUL, since text pipes on Windows turn "\n" into "\r\n".
+        result = _git(
+            self.root, "check-ignore", "--no-index", "--stdin", "-z", input="\0".join(paths)
+        )
+        return {path for path in result.stdout.split("\0") if path}
 
     def folder_ignored(self, folder: str) -> bool:
         """A folder counts as ignored when it, or anything inside it, would be."""

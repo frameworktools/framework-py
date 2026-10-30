@@ -87,7 +87,7 @@ def scratch_capture(
         frame = cast(pd.DataFrame, x)
         if n is not None:
             frame = frame.head(n)
-        frame.to_csv(path, sep="," if to == "csv" else "\t", index=False)
+        frame.to_csv(path, sep="," if to == "csv" else "\t", index=False, lineterminator="\n")
     elif to == "text":
         path.write_text(_text(x), encoding="utf-8")
     else:
