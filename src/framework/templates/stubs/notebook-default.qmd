@@ -1,0 +1,43 @@
+---
+title: "{{ title }}"
+author: "{{ author }}"
+date: "{{ date }}"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    code-fold: false
+execute:
+  echo: true
+  warning: true
+jupyter: python3
+---
+
+```{python}
+#| label: setup
+#| include: false
+
+import framework as fw
+
+fw.scaffold()
+```
+
+## Introduction
+
+Brief description of this notebook's purpose.
+
+```{python}
+# Your code here
+```
+
+## Analysis
+
+```{python}
+# Analysis code
+```
+
+## Results
+
+```{python}
+# Results code
+```

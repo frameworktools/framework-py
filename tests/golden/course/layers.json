@@ -1,0 +1,14 @@
+{
+  "spec_version": 1,
+  "name": "Golden Course",
+  "layers": [
+    {
+      "kind": "base",
+      "key": "course",
+      "layer": {
+        "language": "python",
+        "type": "course"
+      }
+    }
+  ]
+}

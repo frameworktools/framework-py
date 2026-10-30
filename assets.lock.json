@@ -1,0 +1,75 @@
+{
+  "commit": "23a679d5820fb2f200059724572f8ebbbd21d031",
+  "files": {
+    "src/framework/_assets/hooks/pre-commit": {
+      "sha256": "bf1e647db268dac0149ef11c65d9bfc25970f7fb0d5f8a39c65cd8268f3e8db0",
+      "source": "inst/hooks/pre-commit"
+    },
+    "src/framework/_assets/init.sql": {
+      "sha256": "f9a222b887029819e218aabe087751b54895f5efc22d7a2ac71774e6c9e680e1",
+      "source": "inst/templates/init.sql"
+    },
+    "src/framework/_assets/schema/layer.v1.json": {
+      "sha256": "99f1f1d673304103a2b0afd0b62ca7b7f66b995fb4b802b393e36f561ff84b39",
+      "source": "inst/schema/layer.v1.json"
+    },
+    "src/framework/_assets/schema/layers.v1.json": {
+      "sha256": "dc74cac172b3edbfb09bc0731f2db9e09fe2a29c542c6094ef1e29e1970487f6",
+      "source": "inst/schema/layers.v1.json"
+    },
+    "src/framework/_assets/schema/spec.v1.json": {
+      "sha256": "d6e35829aa628ae6ed86234cfa1e727000286e2775f1db4874ed5c9589971387",
+      "source": "inst/schema/spec.v1.json"
+    },
+    "tests/integration/compose.yml": {
+      "sha256": "b37fae50c03bbf6adcb04d3f4df7e32be0a3a450a48ccdc0673734de2fa3e7d8",
+      "source": "tests/integration/compose.yml"
+    },
+    "tests/integration/mariadb/init.sql": {
+      "sha256": "72af2d4a83b47fd24b6d2be18bc172cb70ddb584518b72ace857c385f0200d71",
+      "source": "tests/integration/mariadb/init.sql"
+    },
+    "tests/integration/mysql/init.sql": {
+      "sha256": "52d3371a15c3accd4d32dbb5151e1f1627d99c8f48646b2b3d425f8fc6549a32",
+      "source": "tests/integration/mysql/init.sql"
+    },
+    "tests/integration/postgres/init.sql": {
+      "sha256": "6edc367d1f7480209af29c4f621d542f1fb9f73442885a0ce9370a76bee09865",
+      "source": "tests/integration/postgres/init.sql"
+    },
+    "tests/integration/sqlserver/init.sql": {
+      "sha256": "0424256c1ce5035372cdbc69a11fc97c4d38d0b63348baffa9207f2e61f444a0",
+      "source": "tests/integration/sqlserver/init.sql"
+    },
+    "tests/shared/NAMESPACE": {
+      "sha256": "cd399420435fdfcdd3d6c08694fbfae9302b9b4bc5adf799c3016f2601df0864",
+      "source": "NAMESPACE"
+    },
+    "tests/shared/conformance/README.md": {
+      "sha256": "ed26d6c7182b4d8f6bd36d0cd059078c4d595e92e4c7634777b55c6a27bfae78",
+      "source": "inst/conformance/README.md"
+    },
+    "tests/shared/conformance/merge/atomic-entries.json": {
+      "sha256": "8a4733538243cf56aa8b3d9bb93aff5d08865d24551432482c6cc28b70b9c7c8",
+      "source": "inst/conformance/merge/atomic-entries.json"
+    },
+    "tests/shared/conformance/merge/conflicts-and-labels.json": {
+      "sha256": "255e5b8a5bdea9767332eebaf8403eafbb1f67b021b85b13216f5165898321a4",
+      "source": "inst/conformance/merge/conflicts-and-labels.json"
+    },
+    "tests/shared/conformance/merge/empty-sections.json": {
+      "sha256": "c86a7003717fa7a843ce19348f9a43a53ab135b347b5afd3ce403de385c1ef3c",
+      "source": "inst/conformance/merge/empty-sections.json"
+    },
+    "tests/shared/conformance/merge/gitignore-and-assistants.json": {
+      "sha256": "02186b5df04a7957848b2739ffc5496acbd79f70f6a24fc5de18c5632682e7ec",
+      "source": "inst/conformance/merge/gitignore-and-assistants.json"
+    },
+    "tests/shared/conformance/merge/maps-and-null-removal.json": {
+      "sha256": "98ecad70cba4a1537fe7612d2c2191ebce0c4b7892da628474d94924f5812334",
+      "source": "inst/conformance/merge/maps-and-null-removal.json"
+    }
+  },
+  "ref": "23a679d",
+  "source": "framework (R package)"
+}

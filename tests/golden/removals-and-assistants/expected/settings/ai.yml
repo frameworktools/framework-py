@@ -1,0 +1,6 @@
+ai:
+  enabled: true
+  canonical_file: AGENTS.md
+  assistants:
+  - codex
+  - copilot

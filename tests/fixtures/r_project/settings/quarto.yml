@@ -1,0 +1,22 @@
+quarto:
+  html:
+    format: html
+    embed_resources: yes
+    theme: default
+    toc: yes
+    toc_depth: 3
+    code_fold: no
+    code_tools: no
+    highlight_style: github
+  revealjs:
+    format: revealjs
+    theme: default
+    incremental: no
+    slide_number: yes
+    transition: slide
+    background_transition: fade
+    controls: yes
+    progress: yes
+    center: yes
+    highlight_style: github
+  render_dir: outputs/notebooks

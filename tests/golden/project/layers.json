@@ -1,0 +1,14 @@
+{
+  "spec_version": 1,
+  "name": "Golden Project",
+  "layers": [
+    {
+      "kind": "base",
+      "key": "project",
+      "layer": {
+        "language": "python",
+        "type": "project"
+      }
+    }
+  ]
+}

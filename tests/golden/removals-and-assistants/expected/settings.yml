@@ -1,0 +1,30 @@
+default:
+  project_name: Golden Removals And Assistants
+  project_type: project
+  language: python
+  directories:
+    notebooks: notebooks
+    scripts: scripts
+    functions: functions
+    inputs_raw: inputs/raw
+    inputs_intermediate: inputs/intermediate
+    inputs_final: inputs/final
+    docs: docs
+    outputs_notebooks: outputs/notebooks
+    outputs_tables: outputs/tables
+    outputs_figures: outputs/figures
+    outputs_models: outputs/models
+    outputs_reports: outputs/reports
+    cache: outputs/cache
+  render_dirs:
+    notebooks: outputs/notebooks
+    docs: outputs/docs
+  author: settings/author.yml
+  git: settings/git.yml
+  ai: settings/ai.yml
+  scaffold: settings/scaffold.yml
+  quarto: settings/quarto.yml
+  connections: settings/connections.yml
+  data: settings/data.yml
+  security:
+    sensitive: false

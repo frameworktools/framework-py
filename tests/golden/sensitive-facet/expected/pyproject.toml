@@ -1,0 +1,11 @@
+[project]
+name = "golden-sensitive-facet"
+version = "0.1.0"
+description = "Golden Sensitive Facet"
+requires-python = ">=3.11"
+dependencies = [
+    "framework-py",
+]
+
+[tool.uv]
+package = false

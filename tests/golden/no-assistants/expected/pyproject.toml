@@ -1,0 +1,11 @@
+[project]
+name = "golden-no-assistants"
+version = "0.1.0"
+description = "Golden No Assistants"
+requires-python = ">=3.11"
+dependencies = [
+    "framework-py",
+]
+
+[tool.uv]
+package = false

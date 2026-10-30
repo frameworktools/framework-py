@@ -1,0 +1,23 @@
+{
+  "spec_version": 1,
+  "name": "Golden No Assistants",
+  "layers": [
+    {
+      "kind": "base",
+      "key": "python",
+      "layer": {
+        "language": "python"
+      }
+    },
+    {
+      "kind": "project",
+      "layer": {
+        "ai": {
+          "assistants": {
+            "claude": null
+          }
+        }
+      }
+    }
+  ]
+}

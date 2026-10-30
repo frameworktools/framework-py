@@ -1,0 +1,29 @@
+{
+  "spec_version": 1,
+  "name": "Golden Removals And Assistants",
+  "layers": [
+    {
+      "kind": "base",
+      "key": "python",
+      "layer": {
+        "language": "python"
+      }
+    },
+    {
+      "kind": "project",
+      "layer": {
+        "directories": {
+          "scratch": null,
+          "logs": null
+        },
+        "ai": {
+          "assistants": {
+            "claude": false,
+            "codex": true,
+            "copilot": true
+          }
+        }
+      }
+    }
+  ]
+}

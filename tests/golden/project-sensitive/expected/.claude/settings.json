@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(/inputs/private/**)",
+      "Edit(/inputs/private/**)",
+      "Read(/outputs/private/**)",
+      "Edit(/outputs/private/**)",
+      "Read(/.env)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "filesystem": {
+      "denyRead": [
+        "./inputs/private",
+        "./outputs/private",
+        "./.env"
+      ]
+    }
+  }
+}

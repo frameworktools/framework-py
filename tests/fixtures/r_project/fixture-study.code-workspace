@@ -1,0 +1,16 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "r.rterm.option": ["--no-save", "--no-restore"],
+    "r.sessionWatcher": true,
+    "r.alwaysUseActiveTerminal": true,
+    "files.associations": {
+      "*.qmd": "quarto",
+      "*.Rmd": "rmarkdown"
+    }
+  }
+}

@@ -1,0 +1,111 @@
+# Framework Research Project
+# ================================================================================
+# Pattern-based gitignore - works regardless of directory structure customization.
+# This is the standard template for non-sensitive projects.
+# ================================================================================
+
+# ============================================================================
+# PRIVATE DATA - NEVER COMMIT
+# ============================================================================
+
+# Private directories (anywhere in project tree)
+**/private/**
+**/*_private/**
+
+# ============================================================================
+# SECRETS AND CREDENTIALS - NEVER COMMIT
+# ============================================================================
+
+.env
+.env.local
+.env.*.local
+.Renviron
+.httr-oauth
+**/credentials/**
+**/secrets/**
+*.key
+*.pem
+
+# ============================================================================
+# UTILITY & CACHE - SAFE TO IGNORE
+# ============================================================================
+
+# Temporary processing directories
+**/cache/**
+**/scratch/**
+**/tmp/**
+**/temp/**
+
+# Logs (run logs, cluster job output)
+**/logs/**
+slurm-*.out
+
+# ============================================================================
+# FRAMEWORK INTERNALS
+# ============================================================================
+
+framework.db
+framework.db-wal
+framework.db-shm
+.initiated
+.framework_scaffolded
+
+# ============================================================================
+# QUARTO ARTIFACTS
+# ============================================================================
+
+.quarto/
+_freeze/
+*_cache/
+*_files/
+
+# ============================================================================
+# PYTHON ENVIRONMENT
+# ============================================================================
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# ============================================================================
+# IDE & SYSTEM FILES
+# ============================================================================
+
+# IDE - personal settings only (commit workspace settings if desired)
+.idea/
+.vscode/.history/
+.positron/.history/
+.history/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Linux
+*~
+
+# ============================================================================
+# TEMPORARY FILES
+# ============================================================================
+
+*.tmp
+*.log
+*.bak
+*.swp
+*~
+
+# --- from blueprint r01 v3 ---
+extracts/

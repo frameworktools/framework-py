@@ -1,0 +1,144 @@
+# Package defaults for Python projects: layer 0 of spec_resolve().
+# Directory layouts and render folders match the R package, so a project's
+# data and output folders are the same whichever language created it.
+
+author: {name: "", email: "", affiliation: ""}
+
+packages:
+  use_renv: false
+  default_packages: {}
+
+git:
+  use_git: true
+  hooks: {data_security: false}
+
+ai:
+  enabled: true
+  assistants: {claude: true}
+  agents_md: stub
+
+scaffold:
+  seed_on_scaffold: false
+  seed: "123"
+  source_all_functions: true
+  notebook_format: quarto
+  ide: vscode
+
+quarto:
+  html:
+    format: html
+    embed_resources: true
+    theme: default
+    toc: true
+    toc_depth: 3
+    code_fold: false
+    code_tools: false
+    highlight_style: github
+  revealjs:
+    format: revealjs
+    theme: default
+    incremental: false
+    slide_number: true
+    transition: slide
+    background_transition: fade
+    controls: true
+    progress: true
+    center: true
+    highlight_style: github
+
+connections:
+  default_database: framework
+  default_storage_bucket: null
+  databases:
+    framework: {driver: sqlite, database: framework.db}
+  storage_buckets: {}
+
+env:
+  POSTGRES_HOST: ""
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ""
+  POSTGRES_SCHEMA: public
+  POSTGRES_USER: ""
+  POSTGRES_PASSWORD: ""
+  S3_BUCKET: ""
+  S3_ACCESS_KEY: ""
+  S3_SECRET_KEY: ""
+  S3_REGION: ""
+  S3_ENDPOINT: ""
+  S3_SESSION_TOKEN: ""
+
+skills: [framework-workflow, framework-data, framework-packages, framework-outputs]
+sensitive_skills: [framework-sensitive-data]
+
+types:
+  project:
+    directories:
+      notebooks: notebooks
+      scripts: scripts
+      functions: functions
+      inputs_raw: inputs/raw
+      inputs_intermediate: inputs/intermediate
+      inputs_final: inputs/final
+      docs: docs
+      outputs_notebooks: outputs/notebooks
+      outputs_tables: outputs/tables
+      outputs_figures: outputs/figures
+      outputs_models: outputs/models
+      outputs_reports: outputs/reports
+      cache: outputs/cache
+      scratch: scratch
+      logs: logs
+    render_dirs: {notebooks: outputs/notebooks, docs: outputs/docs}
+    render_dir: outputs/notebooks
+  project_sensitive:
+    directories:
+      functions: functions
+      notebooks: notebooks
+      scripts: scripts
+      inputs_private_raw: inputs/private/raw
+      inputs_public_raw: inputs/public/raw
+      inputs_private_intermediate: inputs/private/intermediate
+      inputs_public_intermediate: inputs/public/intermediate
+      inputs_private_final: inputs/private/final
+      inputs_public_final: inputs/public/final
+      outputs_private_notebooks: outputs/private/notebooks
+      outputs_public_notebooks: outputs/public/notebooks
+      outputs_private_tables: outputs/private/tables
+      outputs_public_tables: outputs/public/tables
+      outputs_private_figures: outputs/private/figures
+      outputs_public_figures: outputs/public/figures
+      outputs_private_models: outputs/private/models
+      outputs_public_models: outputs/public/models
+      outputs_private_reports: outputs/private/reports
+      outputs_public_reports: outputs/public/reports
+      cache: outputs/private/cache
+      scratch: scratch
+      logs: logs
+    render_dirs: {notebooks: outputs/private/notebooks, docs: outputs/private/docs}
+    render_dir: outputs/public/docs
+  course:
+    directories:
+      data: data
+      slides: slides
+      assignments: assignments
+      course_docs: course_docs
+      readings: readings
+      notebooks: modules
+      cache: cache
+    render_dirs:
+      slides: rendered/slides
+      assignments: rendered/assignments
+      course_docs: rendered/course_docs
+      modules: rendered/modules
+    render_dir: rendered/slides
+  presentation:
+    directories:
+      presentation_source: presentation.qmd
+      rendered_slides: "."
+      data: data
+      cache: cache
+    render_dirs: {}
+    render_dir: "."
+  bare:
+    directories: {}
+    render_dirs: {}

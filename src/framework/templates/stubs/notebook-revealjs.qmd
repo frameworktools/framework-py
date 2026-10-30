@@ -1,0 +1,34 @@
+---
+title: "{{ title }}"
+author: "{{ author }}"
+date: "{{ date }}"
+format:
+  revealjs:
+    theme: default
+    transition: slide
+    slide-number: true
+execute:
+  echo: true
+jupyter: python3
+---
+
+```{python}
+#| label: setup
+#| include: false
+
+import framework as fw
+
+fw.scaffold()
+```
+
+## Introduction
+
+- Point 1
+- Point 2
+- Point 3
+
+## Analysis
+
+```{python}
+# data = fw.data_read("inputs.final.analysis")
+```

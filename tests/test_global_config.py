@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+import framework as fw
+
+
+def test_configure_global_merges_and_replaces() -> None:
+    assert fw.configure_global() == {}
+    fw.configure_global(
+        {
+            "author": {"name": "Ada", "email": "ada@example.com"},
+            "defaults": {"env": {"DB_HOST": "db", "DB_PORT": "5432"}},
+            "project_types": {"project": {"directories": {"notebooks": "nb", "scripts": "s"}}},
+        }
+    )
+    updated = fw.configure_global(
+        {
+            "author": {"name": "Ada Lovelace"},
+            "defaults": {"env": {"DB_HOST": "other"}},
+            "project_types": {"project": {"directories": {"notebooks": "work", "scripts": ""}}},
+            "global": {"projects_root": str(Path.home() / "code")},
+        }
+    )
+    assert updated["author"] == {"name": "Ada Lovelace", "email": "ada@example.com"}
+    assert updated["defaults"]["env"] == {"DB_HOST": "other"}
+    assert updated["project_types"]["project"]["directories"] == {"notebooks": "work"}
+    assert updated["global"]["projects_root"] == "~/code"
+    assert fw.global_settings() == updated
+
+
+def test_configure_global_refuses_secrets_and_bad_values() -> None:
+    with pytest.raises(fw.SettingsError, match="secrets must not be stored"):
+        fw.configure_global({"defaults": {"env": {"DB_PASSWORD": "hunter2"}}})
+    assert fw.global_settings() == {}
+    fw.configure_global({"defaults": {"env": {"DB_PASSWORD": ""}}})
+    with pytest.raises(fw.SettingsError, match=r"\(API_TOKEN, DB_PASSWORD\)"):
+        fw.configure_global(
+            {"defaults": {"env": {"raw": "export API_TOKEN='abc'\nDB_PASSWORD=x # y\n"}}}
+        )
+    with pytest.raises(fw.SettingsError, match=r"\(SECRET_KEY\)"):
+        fw.configure_global({"defaults": {"env": {"variables": {"SECRET_KEY": "k"}}}})
+    fw.configure_global({"defaults": {"env": "DB_PASSWORD= # fill in\nAPI_TOKEN=''\nHOST=db\n"}})
+    with pytest.raises(fw.SettingsError, match="Unknown project types"):
+        fw.configure_global({"project_types": {"thesis": {}}})
+    with pytest.raises(fw.SettingsError, match=r"author\.name must be text"):
+        fw.configure_global({"author": {"name": 3}})
+
+
+def test_load_settings_catalog() -> None:
+    catalog = fw.load_settings_catalog()
+    assert catalog["defaults"]["scaffold"]["notebook_format"] == "quarto"
+    assert "/inputs/private/" in catalog["project_types"]["project_sensitive"]["gitignore"]
+    (fw.config_dir()).mkdir(parents=True, exist_ok=True)
+    (fw.config_dir() / "settings-catalog.yml").write_text(
+        "defaults:\n  scaffold: {notebook_format: jupyter}\n", encoding="utf-8"
+    )
+    assert fw.load_settings_catalog()["defaults"]["scaffold"]["notebook_format"] == "jupyter"
+    assert (
+        fw.load_settings_catalog(include_user=False)["defaults"]["scaffold"]["notebook_format"]
+        == "quarto"
+    )
+
+
+def test_ai_skills_update(tmp_path: Path) -> None:
+    root = fw.new("Skills", tmp_path / "skills", "project_sensitive")
+    skill = root / ".claude/skills/framework-data/SKILL.md"
+    original = skill.read_text(encoding="utf-8")
+    skill.write_text("stale\n", encoding="utf-8")
+    (root / ".claude/skills/mine").mkdir()
+    (root / ".claude/skills/mine/SKILL.md").write_text("custom\n", encoding="utf-8")
+    updated = fw.ai_skills_update(root)
+    assert ".claude/skills/framework-sensitive-data" in updated
+    assert skill.read_text(encoding="utf-8") == original
+    assert (root / ".claude/skills/mine/SKILL.md").read_text(encoding="utf-8") == "custom\n"
+
+
+def test_ai_skills_update_without_spec(project: Path) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n  project_type: project\n  ai: {assistants: [codex]}\n", encoding="utf-8"
+    )
+    updated = fw.ai_skills_update(project)
+    assert ".agents/skills/framework-workflow" in updated
+    assert (project / ".agents/skills/framework-workflow/SKILL.md").is_file()

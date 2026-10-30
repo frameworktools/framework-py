@@ -1,0 +1,552 @@
+# Parity manifest: every function the R package exports, and its Python equivalent.
+#
+# status:
+#   ported      same name and behavior
+#   renamed     same behavior under a Python name
+#   folded      covered by another Python function or idiom
+#   r-only      no meaning outside R
+#   deprecated  deprecated in R 2.0, so Python never adds it
+#   omitted     could be ported, left out by decision
+#
+# python names a function in framework.__all__ for ported, renamed, and folded entries.
+# scripts/check_parity.py checks this file against tests/shared/NAMESPACE.
+
+[functions.".has_column"]
+status = "omitted"
+note = "R exports it only so S3 methods dispatch"
+
+[functions.".list_columns"]
+status = "omitted"
+note = "R exports it only so S3 methods dispatch"
+
+[functions.".list_tables"]
+status = "omitted"
+note = "R exports it only so S3 methods dispatch"
+
+[functions.add_project_to_config]
+python = "project_register"
+status = "renamed"
+
+[functions.ai_generate_context]
+status = "deprecated"
+note = "Replaced by the AGENTS.md stub in 2.0"
+
+[functions.ai_regenerate_context]
+status = "deprecated"
+note = "Deprecated in R 2.0"
+
+[functions.ai_skills_update]
+python = "ai_skills_update"
+status = "ported"
+note = "Reads `.framework/spec.json` as the 2.0 plan describes"
+
+[functions.ai_sync_context]
+status = "deprecated"
+note = "Deprecated in R 2.0"
+
+[functions.bootstrap]
+python = "bootstrap"
+status = "ported"
+note = "Same contract as R. Packages come from uv.lock instead of renv.lock"
+
+[functions.bootstrap_project_init]
+status = "r-only"
+note = "Writes the legacy `init.R`"
+
+[functions.cache]
+python = "cache"
+status = "ported"
+
+[functions.cache_flush]
+python = "cache_flush"
+status = "ported"
+
+[functions.cache_forget]
+python = "cache_forget"
+status = "ported"
+
+[functions.cache_get]
+python = "cache_get"
+status = "ported"
+
+[functions.cache_list]
+python = "cache_list"
+status = "ported"
+
+[functions.cache_remember]
+python = "cache_remember"
+status = "ported"
+note = "Takes a callable, and works as a decorator"
+
+[functions.capture_output]
+python = "capture_output"
+status = "ported"
+note = "A context manager"
+
+[functions.cloud_login]
+python = "cloud_login"
+status = "ported"
+
+[functions.cloud_logout]
+python = "cloud_logout"
+status = "ported"
+
+[functions.cloud_settings]
+python = "cloud_settings"
+status = "ported"
+
+[functions.cloud_status]
+python = "cloud_status"
+status = "ported"
+
+[functions.cloud_sync]
+python = "cloud_sync"
+status = "ported"
+
+[functions.config_sync]
+python = "config_sync"
+status = "ported"
+note = "Pulls from R's folder into Python's"
+
+[functions.configure_global]
+python = "configure_global"
+status = "ported"
+
+[functions.connections_list]
+python = "connections_list"
+status = "ported"
+
+[functions.data_add]
+python = "data_add"
+status = "ported"
+
+[functions.data_info]
+python = "data_info"
+status = "ported"
+
+[functions.data_list]
+python = "data_list"
+status = "ported"
+
+[functions.data_read]
+python = "data_read"
+status = "ported"
+note = "`.rds` raises `UnsupportedFormatError`"
+
+[functions.data_save]
+python = "data_save"
+status = "ported"
+note = "CSV and Parquet"
+
+[functions.data_verify]
+python = "data_verify"
+status = "ported"
+
+[functions.db_connect]
+python = "db_connect"
+status = "ported"
+note = "Returns a DB-API connection that is also a context manager"
+
+[functions.db_drivers_install]
+status = "r-only"
+note = "Installs R packages. Python drivers come from extras"
+
+[functions.db_drivers_status]
+python = "db_drivers_status"
+status = "ported"
+note = "Reports which optional extras are installed"
+
+[functions.db_execute]
+python = "db_execute"
+status = "ported"
+
+[functions.db_list]
+python = "db_list"
+status = "ported"
+
+[functions.db_query]
+python = "db_query"
+status = "ported"
+note = "Returns a DataFrame. Parameters are passed separately, never formatted into SQL"
+
+[functions.db_transaction]
+python = "db_transaction"
+status = "ported"
+note = "A context manager"
+
+[functions.db_with]
+python = "db_connect"
+status = "folded"
+usage = "with db_connect(name) as conn:"
+
+[functions.docs_export]
+status = "r-only"
+note = "Exports Rd help pages for the R docs site"
+
+[functions.env_clear]
+status = "r-only"
+note = "Summarizes the R global environment, which has no Python counterpart"
+
+[functions.env_summary]
+status = "r-only"
+note = "Summarizes the R global environment, which has no Python counterpart"
+
+[functions.fw_config_dir]
+python = "config_dir"
+status = "renamed"
+note = "The module name already says framework"
+
+[functions.git_add]
+status = "omitted"
+note = "R wraps the git command for RStudio console users. Python users run git directly"
+
+[functions.git_commit]
+status = "omitted"
+note = "R wraps the git command for RStudio console users. Python users run git directly"
+
+[functions.git_diff]
+status = "omitted"
+note = "R wraps the git command for RStudio console users. Python users run git directly"
+
+[functions.git_hooks_disable]
+python = "git_hooks_disable"
+status = "ported"
+
+[functions.git_hooks_enable]
+python = "git_hooks_enable"
+status = "ported"
+
+[functions.git_hooks_install]
+python = "git_hooks_install"
+status = "ported"
+note = "Installs the pre-commit script shared with R and fw, which runs `python -m framework hook pre-commit`"
+
+[functions.git_hooks_list]
+python = "git_hooks_list"
+status = "ported"
+
+[functions.git_hooks_uninstall]
+python = "git_hooks_uninstall"
+status = "ported"
+
+[functions.git_log]
+status = "omitted"
+note = "R wraps the git command for RStudio console users. Python users run git directly"
+
+[functions.git_pull]
+status = "omitted"
+note = "R wraps the git command for RStudio console users. Python users run git directly"
+
+[functions.git_push]
+status = "omitted"
+note = "R wraps the git command for RStudio console users. Python users run git directly"
+
+[functions.git_security_audit]
+python = "git_security_audit"
+status = "ported"
+note = "Also flags tracked data files in any folder named private, confidential, or sensitive"
+
+[functions.git_status]
+status = "omitted"
+note = "R wraps the git command for RStudio console users. Python users run git directly"
+
+[functions.gui]
+status = "r-only"
+note = "Removed in R 2.0"
+
+[functions.ledger_list]
+python = "ledger_list"
+status = "ported"
+
+[functions.ledger_push]
+python = "ledger_push"
+status = "ported"
+
+[functions.load_settings_catalog]
+python = "load_settings_catalog"
+status = "ported"
+note = "Python's package defaults and per-type .gitignore text, with the user catalog merged over them"
+
+[functions.make_notebook]
+python = "make_notebook"
+status = "ported"
+note = "Quarto (`.qmd`) with Python chunks by default, `.ipynb` on request"
+
+[functions.make_presentation]
+python = "make_presentation"
+status = "ported"
+
+[functions.make_qmd]
+python = "make_qmd"
+status = "ported"
+
+[functions.make_revealjs]
+python = "make_revealjs"
+status = "ported"
+
+[functions.make_rmd]
+status = "r-only"
+note = "R Markdown"
+
+[functions.make_script]
+python = "make_script"
+status = "ported"
+note = "Writes a `.py` script"
+
+[functions.new]
+python = "new"
+status = "ported"
+usage = "new(name=None, location=None, type=\"project\", *, key=None)"
+note = "`key` fetches cloud layers, as planned for R 2.0"
+
+[functions.new_course]
+python = "new"
+status = "folded"
+usage = "new(type=\"course\")"
+
+[functions.new_presentation]
+python = "new"
+status = "folded"
+usage = "new(type=\"presentation\")"
+
+[functions.new_project]
+python = "new"
+status = "folded"
+usage = "new(type=\"project\")"
+
+[functions.new_project_sensitive]
+python = "new"
+status = "folded"
+usage = "new(type=\"project_sensitive\")"
+
+[functions.now]
+python = "now"
+status = "ported"
+note = "Same string format as R"
+
+[functions.package_add]
+python = "package_add"
+status = "ported"
+note = "Adds to `pyproject.toml` and installs with uv when present, otherwise pip"
+
+[functions.packages_install]
+python = "packages_install"
+status = "ported"
+note = "`uv sync`, or pip"
+
+[functions.packages_list]
+python = "packages_list"
+status = "ported"
+note = "Reads `pyproject.toml`"
+
+[functions.packages_restore]
+python = "packages_restore"
+status = "ported"
+note = "`uv sync --frozen`"
+
+[functions.packages_snapshot]
+python = "packages_snapshot"
+status = "ported"
+note = "`uv lock`"
+
+[functions.packages_status]
+python = "packages_status"
+status = "ported"
+
+[functions.packages_update]
+python = "packages_update"
+status = "ported"
+
+[functions.project_add_directory]
+python = "project_add_directory"
+status = "ported"
+
+[functions.project_create]
+python = "project_create"
+status = "ported"
+usage = "project_create(spec, location)"
+note = "Takes a resolved spec only; the R argument list maps to spec fields"
+
+[functions.project_create_from_layers]
+python = "project_create_from_layers"
+status = "ported"
+note = "Also `python -m framework create --from-layers`"
+
+[functions.project_info]
+python = "project_info"
+status = "ported"
+
+[functions.project_list]
+python = "project_list"
+status = "ported"
+note = "Reads the shared `projects.yml`"
+
+[functions.publish]
+python = "publish"
+status = "ported"
+note = "S3 needs the `s3` extra. Framework Cloud uses httpx"
+
+[functions.publish_data]
+python = "publish_data"
+status = "ported"
+
+[functions.publish_dir]
+python = "publish_dir"
+status = "ported"
+
+[functions.publish_list]
+python = "publish_list"
+status = "ported"
+
+[functions.publish_notebook]
+python = "publish_notebook"
+status = "ported"
+
+[functions.quarto_generate_all]
+python = "quarto_generate_all"
+status = "ported"
+
+[functions.quarto_regenerate]
+python = "quarto_regenerate"
+status = "ported"
+
+[functions.read_framework_template]
+python = "read_framework_template"
+status = "ported"
+note = "Templates are notebook, script, and presentation. .gitignore rules come from layers"
+
+[functions.read_frameworkrc]
+python = "global_settings"
+status = "renamed"
+note = "The R name refers to the retired `.frameworkrc`"
+
+[functions.remove_project_from_config]
+python = "project_unregister"
+status = "renamed"
+
+[functions.renv_disable]
+status = "r-only"
+note = "renv. The Python equivalent is the uv lock file"
+
+[functions.renv_enable]
+status = "r-only"
+note = "renv. The Python equivalent is the uv lock file"
+
+[functions.renv_enabled]
+status = "r-only"
+note = "renv. The Python equivalent is the uv lock file"
+
+[functions.reset_framework_template]
+python = "reset_framework_template"
+status = "ported"
+note = "Removes your version, so the shipped one is used"
+
+[functions.result_list]
+python = "result_list"
+status = "ported"
+
+[functions.save_figure]
+python = "save_figure"
+status = "ported"
+note = "Any object with `savefig()` (matplotlib, seaborn) or `save()` (plotnine). No plotting dependency"
+
+[functions.save_model]
+python = "save_model"
+status = "ported"
+note = "Pickle. The R `.rds` models are R-only"
+
+[functions.save_notebook]
+python = "save_notebook"
+status = "ported"
+note = "Renders with the `quarto` command when the file needs rendering"
+
+[functions.save_report]
+python = "save_report"
+status = "ported"
+
+[functions.save_table]
+python = "save_table"
+status = "ported"
+note = "CSV, Parquet, and xlsx (extra)"
+
+[functions.scaffold]
+python = "scaffold"
+status = "ported"
+note = "Finds the root, loads settings and `.env`, seeds `random` and NumPy, adds the functions folder to `sys.path`. Package attaching and ggplot themes are R-only parts"
+
+[functions.scratch_capture]
+python = "scratch_capture"
+status = "ported"
+
+[functions.scratch_clean]
+python = "scratch_clean"
+status = "ported"
+
+[functions.settings]
+python = "settings"
+status = "ported"
+
+[functions.settings_read]
+python = "settings_read"
+status = "ported"
+
+[functions.settings_write]
+python = "settings_write"
+status = "ported"
+
+[functions.setup]
+python = "new"
+status = "folded"
+usage = "new(key=...)"
+note = "The token path becomes `new(key)` as in the R 2.0 plan. The GUI part is R-only"
+
+[functions.spec_check]
+python = "spec_check"
+status = "ported"
+
+[functions.spec_resolve]
+python = "spec_resolve"
+status = "ported"
+note = "Returns a `ResolvedSpec` with `.spec` and `.conflicts`"
+
+[functions.standardize_wd]
+python = "project_root"
+status = "folded"
+note = "Python resolves paths from the root and does not change the working directory"
+
+[functions.status]
+python = "status"
+status = "ported"
+
+[functions.storage_test]
+python = "storage_test"
+status = "ported"
+
+[functions.stubs_list]
+python = "stubs_list"
+status = "ported"
+note = "Python stubs"
+
+[functions.stubs_path]
+python = "stubs_path"
+status = "ported"
+
+[functions.stubs_publish]
+python = "stubs_publish"
+status = "ported"
+
+[functions.view]
+status = "omitted"
+note = "R opens an HTML data viewer. Jupyter, VS Code, and Positron already show DataFrames"
+
+[functions.write_framework_template]
+python = "write_framework_template"
+status = "ported"
+
+[functions.write_frameworkrc]
+python = "configure_global"
+status = "folded"
+
+# Python functions with no R counterpart.
+[python_only]
+names = ["framework_template_path", "project_add_python"]

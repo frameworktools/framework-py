@@ -1,0 +1,7 @@
+scaffold:
+  seed_on_scaffold: no
+  seed: '123'
+  set_theme_on_scaffold: yes
+  ggplot_theme: theme_minimal
+  notebook_format: quarto
+  positron: no

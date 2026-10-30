@@ -1,0 +1,14 @@
+{
+  "spec_version": 1,
+  "name": "Golden Bare",
+  "layers": [
+    {
+      "kind": "base",
+      "key": "bare",
+      "layer": {
+        "language": "python",
+        "type": "bare"
+      }
+    }
+  ]
+}

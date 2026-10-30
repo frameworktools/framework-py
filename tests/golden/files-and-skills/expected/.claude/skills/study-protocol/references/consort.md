@@ -1,0 +1,1 @@
+CONSORT checklist

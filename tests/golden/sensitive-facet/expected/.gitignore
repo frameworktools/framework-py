@@ -1,0 +1,143 @@
+# Framework (Privacy-First Mode)
+# ================================================================================
+# This project uses Framework's privacy-first structure.
+# All */private/ directories are gitignored by default.
+# Only */public/ directories can be committed after explicit review.
+#
+# WORKFLOW:
+#   1. Sensitive/raw data goes in */private/ directories (NEVER committed)
+#   2. De-identified/aggregated data goes in */public/ directories (safe to commit)
+#   3. Analysis scripts are committed, but outputs are carefully controlled
+#
+# CRITICAL: Private directories are NEVER committed to version control.
+# ================================================================================
+
+# ============================================================================
+# SENSITIVE DATA - NEVER COMMIT
+# ============================================================================
+
+# Private directories - explicit paths for this project type
+/inputs/private/
+/reference/private/
+/outputs/private/
+
+# Generic private directory patterns (defense-in-depth)
+**/private/**
+**/*_private/**
+**/sensitive/**
+
+# Allow structure documentation (README and .gitkeep files in private dirs)
+!/inputs/**/README.md
+!/inputs/**/.gitkeep
+!/reference/**/README.md
+!/reference/**/.gitkeep
+!/outputs/**/README.md
+!/outputs/**/.gitkeep
+
+# ============================================================================
+# SECRETS AND CREDENTIALS - NEVER COMMIT
+# ============================================================================
+
+.env
+.env.local
+.env.*.local
+.Renviron
+.httr-oauth
+**/credentials/**
+**/secrets/**
+*.key
+*.pem
+*.p12
+*.pfx
+
+# ============================================================================
+# UTILITY & CACHE - SAFE TO IGNORE
+# ============================================================================
+
+# Temporary processing directories
+**/cache/**
+**/scratch/**
+**/tmp/**
+**/temp/**
+
+# Logs (run logs, cluster job output)
+**/logs/**
+slurm-*.out
+
+# ============================================================================
+# FRAMEWORK INTERNALS
+# ============================================================================
+
+framework.db
+framework.db-wal
+framework.db-shm
+.initiated
+.framework_scaffolded
+
+# ============================================================================
+# QUARTO ARTIFACTS
+# ============================================================================
+
+.quarto/
+_freeze/
+*_cache/
+*_files/
+
+# ============================================================================
+# PYTHON ENVIRONMENT
+# ============================================================================
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# ============================================================================
+# IDE & SYSTEM FILES
+# ============================================================================
+
+# IDE - personal settings only (commit workspace settings if desired)
+.idea/
+.vscode/.history/
+.positron/.history/
+.history/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Linux
+*~
+
+# ============================================================================
+# CLOUD/AWS CONFIG
+# ============================================================================
+
+.aws/
+.config/
+
+# ============================================================================
+# TEMPORARY FILES
+# ============================================================================
+
+*.tmp
+*.log
+*.bak
+*.swp
+*~
+
+# --- from facet restricted-data v2 ---
+# study extract
+extracts/

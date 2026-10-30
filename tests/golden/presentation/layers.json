@@ -1,0 +1,14 @@
+{
+  "spec_version": 1,
+  "name": "Golden Presentation",
+  "layers": [
+    {
+      "kind": "base",
+      "key": "presentation",
+      "layer": {
+        "language": "python",
+        "type": "presentation"
+      }
+    }
+  ]
+}

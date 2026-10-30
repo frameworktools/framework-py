@@ -1,0 +1,59 @@
+default:
+  project_name: Fixture Study
+  project_type: project
+  directories:
+    notebooks: notebooks
+    scripts: scripts
+    functions: functions
+    inputs_raw: inputs/raw
+    inputs_intermediate: inputs/intermediate
+    inputs_final: inputs/final
+    docs: docs
+    outputs_notebooks: outputs/notebooks
+    outputs_tables: outputs/tables
+    outputs_figures: outputs/figures
+    outputs_models: outputs/models
+    outputs_reports: outputs/reports
+    cache: outputs/cache
+    scratch: scratch
+    logs: logs
+  extra_directories: ~
+  render_dirs:
+    notebooks: outputs/notebooks
+    docs: outputs/docs
+  author: settings/author.yml
+  packages: settings/packages.yml
+  git: settings/git.yml
+  ai: settings/ai.yml
+  scaffold: settings/scaffold.yml
+  connections: settings/connections.yml
+  quarto: settings/quarto.yml
+  data: settings/data.yml
+  security:
+    sensitive: no
+  data_hooks: ~
+  options:
+    fixture_dir: from_options
+  fixture:
+    env_value: env("FW_FIXTURE_VAR")
+    env_default: env("FW_FIXTURE_UNSET", "fallback")
+    expr_value: !expr Sys.getenv("FW_FIXTURE_VAR")
+    expr_default: !expr Sys.getenv("FW_FIXTURE_UNSET", "expr-fallback")
+    dotenv_value: env("FW_FIXTURE_DOTENV")
+    flags: {yes_word: yes, no_word: no, on_word: on, true_word: true, y_word: y}
+    numbers: {int: 42, float: 1.5, sci: 1e3, octal_like: 012, quoted: "7"}
+    empty_map: {}
+    empty_list: []
+    nothing: ~
+    tags: [alpha, beta]
+    records: [{id: 1}, {id: 2}]
+    mixed: [1, x]
+    nested: {keep: base, replace: base, drop: base}
+production:
+  directories:
+    notebooks: prod_notebooks
+  fixture:
+    tags: [gamma]
+    records: [{id: 3}]
+    mixed: [2.5, y, z]
+    nested: {replace: production, drop: ~, added: production}

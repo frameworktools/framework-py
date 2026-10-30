@@ -1,0 +1,7 @@
+git:
+  enabled: no
+  user_name: ''
+  user_email: ''
+  hooks:
+    ai_sync: no
+    data_security: no

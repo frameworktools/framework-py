@@ -1,0 +1,633 @@
+{
+  "r_version": "1.9.0.9000",
+  "r_commit": "19f9d286d35c074c532a1e5b13ad6223c50af0aa",
+  "environment": {
+    "FW_FIXTURE_VAR": "from environment"
+  },
+  "settings_default": {
+    "project_name": "Fixture Study",
+    "project_type": "project",
+    "directories": {
+      "notebooks": "notebooks",
+      "scripts": "scripts",
+      "functions": "functions",
+      "inputs_raw": "inputs/raw",
+      "inputs_intermediate": "inputs/intermediate",
+      "inputs_final": "inputs/final",
+      "docs": "docs",
+      "outputs_notebooks": "outputs/notebooks",
+      "outputs_tables": "outputs/tables",
+      "outputs_figures": "outputs/figures",
+      "outputs_models": "outputs/models",
+      "outputs_reports": "outputs/reports",
+      "cache": "outputs/cache",
+      "scratch": "scratch",
+      "logs": "logs"
+    },
+    "extra_directories": null,
+    "render_dirs": {
+      "notebooks": "outputs/notebooks",
+      "docs": "outputs/docs"
+    },
+    "author": {
+      "name": "",
+      "email": "",
+      "affiliation": ""
+    },
+    "packages": {
+      "use_renv": false,
+      "default_packages": [
+        {
+          "name": "dplyr",
+          "source": "cran",
+          "auto_attach": true
+        },
+        {
+          "name": "ggplot2",
+          "source": "cran",
+          "auto_attach": true
+        },
+        {
+          "name": "tidyr",
+          "source": "cran",
+          "auto_attach": true
+        },
+        {
+          "name": "stringr",
+          "source": "cran",
+          "auto_attach": true
+        },
+        {
+          "name": "readr",
+          "source": "cran",
+          "auto_attach": true
+        },
+        {
+          "name": "lubridate",
+          "source": "cran",
+          "auto_attach": false
+        },
+        {
+          "name": "glue",
+          "source": "cran",
+          "auto_attach": false
+        },
+        {
+          "name": "here",
+          "source": "cran",
+          "auto_attach": false
+        }
+      ]
+    },
+    "git": {
+      "enabled": false,
+      "user_name": "",
+      "user_email": "",
+      "hooks": {
+        "ai_sync": false,
+        "data_security": false
+      }
+    },
+    "ai": {
+      "enabled": true,
+      "canonical_file": "AGENTS.md",
+      "assistants": "claude"
+    },
+    "scaffold": {
+      "seed_on_scaffold": false,
+      "seed": "123",
+      "set_theme_on_scaffold": true,
+      "ggplot_theme": "theme_minimal",
+      "notebook_format": "quarto",
+      "positron": false
+    },
+    "connections": {
+      "default_database": "framework",
+      "databases": {
+        "framework": {
+          "driver": "sqlite",
+          "database": "framework.db"
+        }
+      },
+      "storage_buckets": {}
+    },
+    "quarto": {
+      "html": {
+        "format": "html",
+        "embed_resources": true,
+        "theme": "default",
+        "toc": true,
+        "toc_depth": 3,
+        "code_fold": false,
+        "code_tools": false,
+        "highlight_style": "github"
+      },
+      "revealjs": {
+        "format": "revealjs",
+        "theme": "default",
+        "incremental": false,
+        "slide_number": true,
+        "transition": "slide",
+        "background_transition": "fade",
+        "controls": true,
+        "progress": true,
+        "center": true,
+        "highlight_style": "github"
+      },
+      "render_dir": "outputs/notebooks"
+    },
+    "data": {
+      "inputs": {
+        "raw": {
+          "survey": {
+            "path": "inputs/raw/survey.csv",
+            "type": "csv",
+            "locked": true,
+            "description": "Survey responses",
+            "source_url": "https://example.org/survey"
+          },
+          "visits": "inputs/raw/visits.tsv",
+          "wide": {
+            "path": "inputs/raw/wide.parquet"
+          }
+        },
+        "private": {
+          "ids": {
+            "path": "inputs/private/ids.csv",
+            "delimiter": "semicolon"
+          }
+        }
+      },
+      "reference": {
+        "codes": {
+          "path": "inputs/reference/codes.dta"
+        },
+        "legacy": {
+          "path": "inputs/reference/legacy.rds",
+          "locked": false
+        }
+      }
+    },
+    "security": {
+      "sensitive": false
+    },
+    "data_hooks": null,
+    "options": {
+      "fixture_dir": "from_options"
+    },
+    "fixture": {
+      "env_value": "from environment",
+      "env_default": "fallback",
+      "expr_value": "from environment",
+      "expr_default": "expr-fallback",
+      "dotenv_value": "from dotenv",
+      "flags": {
+        "yes_word": true,
+        "no_word": false,
+        "on_word": true,
+        "true_word": true,
+        "y_word": true
+      },
+      "numbers": {
+        "int": 42,
+        "float": 1.5,
+        "sci": "1e3",
+        "octal_like": 10,
+        "quoted": "7"
+      },
+      "empty_map": {},
+      "empty_list": [],
+      "nothing": null,
+      "tags": ["alpha", "beta"],
+      "records": [
+        {
+          "id": 1
+        },
+        {
+          "id": 2
+        }
+      ],
+      "mixed": [
+        1,
+        "x"
+      ],
+      "nested": {
+        "keep": "base",
+        "replace": "base",
+        "drop": "base"
+      }
+    }
+  },
+  "settings_production": {
+    "project_name": "Fixture Study",
+    "project_type": "project",
+    "directories": {
+      "notebooks": "prod_notebooks",
+      "scripts": "scripts",
+      "functions": "functions",
+      "inputs_raw": "inputs/raw",
+      "inputs_intermediate": "inputs/intermediate",
+      "inputs_final": "inputs/final",
+      "docs": "docs",
+      "outputs_notebooks": "outputs/notebooks",
+      "outputs_tables": "outputs/tables",
+      "outputs_figures": "outputs/figures",
+      "outputs_models": "outputs/models",
+      "outputs_reports": "outputs/reports",
+      "cache": "outputs/cache",
+      "scratch": "scratch",
+      "logs": "logs"
+    },
+    "extra_directories": null,
+    "render_dirs": {
+      "notebooks": "outputs/notebooks",
+      "docs": "outputs/docs"
+    },
+    "author": {
+      "name": "",
+      "email": "",
+      "affiliation": ""
+    },
+    "packages": {
+      "use_renv": false,
+      "default_packages": [
+        {
+          "name": "dplyr",
+          "source": "cran",
+          "auto_attach": true
+        },
+        {
+          "name": "ggplot2",
+          "source": "cran",
+          "auto_attach": true
+        },
+        {
+          "name": "tidyr",
+          "source": "cran",
+          "auto_attach": true
+        },
+        {
+          "name": "stringr",
+          "source": "cran",
+          "auto_attach": true
+        },
+        {
+          "name": "readr",
+          "source": "cran",
+          "auto_attach": true
+        },
+        {
+          "name": "lubridate",
+          "source": "cran",
+          "auto_attach": false
+        },
+        {
+          "name": "glue",
+          "source": "cran",
+          "auto_attach": false
+        },
+        {
+          "name": "here",
+          "source": "cran",
+          "auto_attach": false
+        }
+      ]
+    },
+    "git": {
+      "enabled": false,
+      "user_name": "",
+      "user_email": "",
+      "hooks": {
+        "ai_sync": false,
+        "data_security": false
+      }
+    },
+    "ai": {
+      "enabled": true,
+      "canonical_file": "AGENTS.md",
+      "assistants": "claude"
+    },
+    "scaffold": {
+      "seed_on_scaffold": false,
+      "seed": "123",
+      "set_theme_on_scaffold": true,
+      "ggplot_theme": "theme_minimal",
+      "notebook_format": "quarto",
+      "positron": false
+    },
+    "connections": {
+      "default_database": "framework",
+      "databases": {
+        "framework": {
+          "driver": "sqlite",
+          "database": "framework.db"
+        }
+      },
+      "storage_buckets": {}
+    },
+    "quarto": {
+      "html": {
+        "format": "html",
+        "embed_resources": true,
+        "theme": "default",
+        "toc": true,
+        "toc_depth": 3,
+        "code_fold": false,
+        "code_tools": false,
+        "highlight_style": "github"
+      },
+      "revealjs": {
+        "format": "revealjs",
+        "theme": "default",
+        "incremental": false,
+        "slide_number": true,
+        "transition": "slide",
+        "background_transition": "fade",
+        "controls": true,
+        "progress": true,
+        "center": true,
+        "highlight_style": "github"
+      },
+      "render_dir": "outputs/notebooks"
+    },
+    "data": {
+      "inputs": {
+        "raw": {
+          "survey": {
+            "path": "inputs/raw/survey.csv",
+            "type": "csv",
+            "locked": true,
+            "description": "Survey responses",
+            "source_url": "https://example.org/survey"
+          },
+          "visits": "inputs/raw/visits.tsv",
+          "wide": {
+            "path": "inputs/raw/wide.parquet"
+          }
+        },
+        "private": {
+          "ids": {
+            "path": "inputs/private/ids.csv",
+            "delimiter": "semicolon"
+          }
+        }
+      },
+      "reference": {
+        "codes": {
+          "path": "inputs/reference/codes.dta"
+        },
+        "legacy": {
+          "path": "inputs/reference/legacy.rds",
+          "locked": false
+        }
+      }
+    },
+    "security": {
+      "sensitive": false
+    },
+    "data_hooks": null,
+    "options": {
+      "fixture_dir": "from_options"
+    },
+    "fixture": {
+      "env_value": "from environment",
+      "env_default": "fallback",
+      "expr_value": "from environment",
+      "expr_default": "expr-fallback",
+      "dotenv_value": "from dotenv",
+      "flags": {
+        "yes_word": true,
+        "no_word": false,
+        "on_word": true,
+        "true_word": true,
+        "y_word": true
+      },
+      "numbers": {
+        "int": 42,
+        "float": 1.5,
+        "sci": "1e3",
+        "octal_like": 10,
+        "quoted": "7"
+      },
+      "empty_map": {},
+      "empty_list": [],
+      "nothing": null,
+      "tags": "gamma",
+      "records": [
+        {
+          "id": 3
+        }
+      ],
+      "mixed": [
+        2.5,
+        true,
+        "z"
+      ],
+      "nested": {
+        "keep": "base",
+        "replace": "production",
+        "added": "production"
+      }
+    }
+  },
+  "data_info": {
+    "inputs.raw.survey": {
+      "path": "inputs/raw/survey.csv",
+      "type": "csv",
+      "delimiter": "comma",
+      "locked": true,
+      "private": false,
+      "description": "Survey responses",
+      "source_url": "https://example.org/survey"
+    },
+    "inputs.raw.visits": {
+      "path": "inputs/raw/visits.tsv",
+      "type": "csv",
+      "delimiter": "tab",
+      "locked": false,
+      "private": false
+    },
+    "inputs.raw.wide": {
+      "path": "inputs/raw/wide.parquet",
+      "type": "parquet",
+      "delimiter": null,
+      "locked": false,
+      "private": false
+    },
+    "inputs.private.ids": {
+      "path": "inputs/private/ids.csv",
+      "type": "csv",
+      "delimiter": "semicolon",
+      "locked": false,
+      "private": true
+    },
+    "reference.codes": {
+      "path": "inputs/reference/codes.dta",
+      "type": "stata",
+      "delimiter": null,
+      "locked": false,
+      "private": false
+    },
+    "reference.legacy": {
+      "path": "inputs/reference/legacy.rds",
+      "type": "rds",
+      "delimiter": null,
+      "locked": false,
+      "private": false
+    }
+  },
+  "hashes": {
+    "inputs/raw/survey.csv": "a6e866feac4674489d57c6ed15be604efd7f440105d511b1b35e7c520ec87dc7",
+    "inputs/raw/visits.tsv": "85376ad89378bb20209501588697e57025bbcd02ff68f77ecd01ed11f3d40c85",
+    "inputs/private/ids.csv": "d8c110a45be1defdf2ee5bc7e554ac68acb712ec7c08bd9226b9aa76d814d215"
+  },
+  "tables": {
+    "cache": "CREATE TABLE cache (\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      name TEXT UNIQUE,\n      file_path TEXT,\n      hash TEXT,\n      expire_at DATETIME,\n      last_read_at DATETIME,\n      created_at DATETIME,\n      updated_at DATETIME,\n      deleted_at DATETIME\n    )",
+    "connections": "CREATE TABLE connections (\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      name TEXT UNIQUE,\n      driver TEXT,\n      host TEXT,\n      port INTEGER,\n      database TEXT,\n      schema TEXT,\n      user TEXT,\n      password TEXT,\n      last_used_at DATETIME,\n      created_at DATETIME,\n      updated_at DATETIME,\n      deleted_at DATETIME\n    )",
+    "data": "CREATE TABLE data (\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      name TEXT UNIQUE,\n      path TEXT,\n      type TEXT,\n      delimiter TEXT,\n      locked BOOLEAN,\n      encrypted BOOLEAN,\n      hash TEXT,\n      last_read_at DATETIME,\n      created_at DATETIME,\n      updated_at DATETIME,\n      deleted_at DATETIME\n    )",
+    "meta": "CREATE TABLE meta (\n      key TEXT PRIMARY KEY,\n      value TEXT,\n      created_at DATETIME,\n      updated_at DATETIME\n    )",
+    "results": "CREATE TABLE results (\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      name TEXT UNIQUE,\n      type TEXT,\n      public BOOLEAN,\n      blind BOOLEAN,\n      comment TEXT,\n      hash TEXT,\n      last_read_at DATETIME,\n      created_at DATETIME,\n      updated_at DATETIME,\n      deleted_at DATETIME\n    )"
+  },
+  "data_row": {
+    "name": "inputs.raw.survey",
+    "path": "inputs/raw/survey.csv",
+    "type": "csv",
+    "delimiter": "comma",
+    "locked": 1,
+    "hash": "a6e866feac4674489d57c6ed15be604efd7f440105d511b1b35e7c520ec87dc7",
+    "created_at_type": "real",
+    "locked_type": "integer"
+  },
+  "saved_row": {
+    "name": "inputs/intermediate/r_clean.csv",
+    "path": "inputs/intermediate/r_clean.csv",
+    "type": "csv",
+    "delimiter": "comma",
+    "locked": 1,
+    "hash": "0b785661eea36b05cf7018d3a246cf64fa52b1a6f36632e3836766ece1f8ce46"
+  },
+  "cache_row": {
+    "name": "r_value",
+    "file_path": "outputs/cache/r_value.rds",
+    "hash": "d50cc26e7238b1ed5d1e72f4f3cc58f261f0e1acf86b77d73b0c413433108e10",
+    "created_at_type": "real"
+  },
+  "result_row": {
+    "name": "r_summary.csv",
+    "type": "table",
+    "public": 0,
+    "blind": 0,
+    "comment": null,
+    "hash": "0b785661eea36b05cf7018d3a246cf64fa52b1a6f36632e3836766ece1f8ce46",
+    "created_at_type": "real"
+  },
+  "result_list": [
+    {
+      "name": "r_summary.csv",
+      "type": "table",
+      "public": false,
+      "comment": null,
+      "hash": "0b785661eea36b05cf7018d3a246cf64fa52b1a6f36632e3836766ece1f8ce46",
+      "created_at": "2026-10-30 13:31:07",
+      "updated_at": "2026-10-30 13:31:07"
+    }
+  ],
+  "formats": {
+    "test.dta": [
+      {
+        "id": 1,
+        "name": "Alice",
+        "score": 85.5,
+        "pass": 1
+      },
+      {
+        "id": 2,
+        "name": "Bob",
+        "score": 92,
+        "pass": 1
+      },
+      {
+        "id": 3,
+        "name": "Charlie",
+        "score": 78.5,
+        "pass": 1
+      },
+      {
+        "id": 4,
+        "name": "Diana",
+        "score": 95,
+        "pass": 1
+      },
+      {
+        "id": 5,
+        "name": "Eve",
+        "score": 88,
+        "pass": 1
+      }
+    ],
+    "test.sav": [
+      {
+        "id": 1,
+        "name": "Alice",
+        "score": 85.5,
+        "pass": 1
+      },
+      {
+        "id": 2,
+        "name": "Bob",
+        "score": 92,
+        "pass": 1
+      },
+      {
+        "id": 3,
+        "name": "Charlie",
+        "score": 78.5,
+        "pass": 1
+      },
+      {
+        "id": 4,
+        "name": "Diana",
+        "score": 95,
+        "pass": 1
+      },
+      {
+        "id": 5,
+        "name": "Eve",
+        "score": 88,
+        "pass": 1
+      }
+    ],
+    "test.xpt": [
+      {
+        "id": 1,
+        "name": "Alice",
+        "score": 85.5,
+        "pass": 1
+      },
+      {
+        "id": 2,
+        "name": "Bob",
+        "score": 92,
+        "pass": 1
+      },
+      {
+        "id": 3,
+        "name": "Charlie",
+        "score": 78.5,
+        "pass": 1
+      },
+      {
+        "id": 4,
+        "name": "Diana",
+        "score": 95,
+        "pass": 1
+      },
+      {
+        "id": 5,
+        "name": "Eve",
+        "score": 88,
+        "pass": 1
+      }
+    ]
+  }
+}

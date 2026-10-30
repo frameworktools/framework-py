@@ -1,0 +1,39 @@
+default:
+  project_name: Golden Project Sensitive
+  project_type: project_sensitive
+  language: python
+  directories:
+    functions: functions
+    notebooks: notebooks
+    scripts: scripts
+    inputs_private_raw: inputs/private/raw
+    inputs_public_raw: inputs/public/raw
+    inputs_private_intermediate: inputs/private/intermediate
+    inputs_public_intermediate: inputs/public/intermediate
+    inputs_private_final: inputs/private/final
+    inputs_public_final: inputs/public/final
+    outputs_private_notebooks: outputs/private/notebooks
+    outputs_public_notebooks: outputs/public/notebooks
+    outputs_private_tables: outputs/private/tables
+    outputs_public_tables: outputs/public/tables
+    outputs_private_figures: outputs/private/figures
+    outputs_public_figures: outputs/public/figures
+    outputs_private_models: outputs/private/models
+    outputs_public_models: outputs/public/models
+    outputs_private_reports: outputs/private/reports
+    outputs_public_reports: outputs/public/reports
+    cache: outputs/private/cache
+    scratch: scratch
+    logs: logs
+  render_dirs:
+    notebooks: outputs/private/notebooks
+    docs: outputs/private/docs
+  author: settings/author.yml
+  git: settings/git.yml
+  ai: settings/ai.yml
+  scaffold: settings/scaffold.yml
+  quarto: settings/quarto.yml
+  connections: settings/connections.yml
+  data: settings/data.yml
+  security:
+    sensitive: true

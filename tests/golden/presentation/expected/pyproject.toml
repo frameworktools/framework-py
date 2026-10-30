@@ -1,0 +1,11 @@
+[project]
+name = "golden-presentation"
+version = "0.1.0"
+description = "Golden Presentation"
+requires-python = ">=3.11"
+dependencies = [
+    "framework-py",
+]
+
+[tool.uv]
+package = false

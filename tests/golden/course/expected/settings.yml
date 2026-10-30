@@ -1,0 +1,69 @@
+default:
+  project_name: Golden Course
+  project_type: course
+  language: python
+  directories:
+    data: data
+    slides: slides
+    assignments: assignments
+    course_docs: course_docs
+    readings: readings
+    notebooks: modules
+    cache: cache
+  render_dirs:
+    slides: rendered/slides
+    assignments: rendered/assignments
+    course_docs: rendered/course_docs
+    modules: rendered/modules
+  author:
+    name: ''
+    email: ''
+    affiliation: ''
+  quarto:
+    html:
+      format: html
+      embed_resources: true
+      theme: default
+      toc: true
+      toc_depth: 3
+      code_fold: false
+      code_tools: false
+      highlight_style: github
+    revealjs:
+      format: revealjs
+      theme: default
+      incremental: false
+      slide_number: true
+      transition: slide
+      background_transition: fade
+      controls: true
+      progress: true
+      center: true
+      highlight_style: github
+    render_dir: rendered/slides
+  git:
+    enabled: true
+    user_name: ''
+    user_email: ''
+    hooks:
+      data_security: false
+  ai:
+    enabled: true
+    canonical_file: AGENTS.md
+    assistants:
+    - claude
+  scaffold:
+    seed_on_scaffold: false
+    seed: '123'
+    source_all_functions: true
+    notebook_format: quarto
+  data: {}
+  connections:
+    default_database: framework
+    databases:
+      framework:
+        driver: sqlite
+        database: framework.db
+    storage_buckets: {}
+  security:
+    sensitive: false

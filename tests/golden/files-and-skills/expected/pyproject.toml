@@ -1,0 +1,13 @@
+[project]
+name = "golden-files-and-skills"
+version = "0.1.0"
+description = "Golden Files And Skills"
+requires-python = ">=3.11"
+dependencies = [
+    "framework-py",
+    "statsmodels>=0.14",
+    "tidyframe @ git+https://github.com/example/tidyframe@v1",
+]
+
+[tool.uv]
+package = false

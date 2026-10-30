@@ -1,0 +1,80 @@
+{
+  "spec_version": 1,
+  "name": "Golden Files And Skills",
+  "layers": [
+    {
+      "kind": "base",
+      "key": "python",
+      "layer": {
+        "language": "python"
+      }
+    },
+    {
+      "kind": "blueprint",
+      "key": "r01",
+      "version": 3,
+      "layer": {
+        "author": {
+          "name": "Ada Lovelace",
+          "email": "ada@example.org",
+          "affiliation": "Analytical Engines"
+        },
+        "extra_directories": {
+          "interviews": {
+            "label": "Interview transcripts",
+            "path": "inputs/private/interviews"
+          }
+        },
+        "packages": {
+          "default_packages": {
+            "statsmodels": {
+              "source": "pypi",
+              "version": ">=0.14",
+              "auto_attach": false
+            },
+            "tidyframe": {
+              "source": "github",
+              "repo": "example/tidyframe",
+              "ref": "v1",
+              "auto_attach": false
+            }
+          }
+        },
+        "env": {
+          "API_TOKEN": "",
+          "REGION": "us-east-1"
+        },
+        "files": {
+          "README.md": {
+            "content": "# {{ project_name }}\n\nBy {{author}} ({{ author_email }}), {{ affiliation }}.\n\n{{< include notes.md >}}\n",
+            "template": true
+          },
+          "notes.md": {
+            "content": "Plain {{ project_name }} text, not a template.\n"
+          }
+        },
+        "skills": {
+          "study-protocol": {
+            "content": "---\nname: study-protocol\ndescription: Use when working on the study protocol.\n---\n\n# Study protocol\n",
+            "files": {
+              "references/consort.md": "CONSORT checklist\n"
+            }
+          }
+        },
+        "git": {
+          "gitignore_content": "extracts/"
+        }
+      }
+    }
+  ],
+  "author": {
+    "orcid": "0000-0002-1825-0097"
+  },
+  "source": {
+    "origin": "cloud",
+    "blueprint": {
+      "key": "r01",
+      "version": 3
+    }
+  }
+}

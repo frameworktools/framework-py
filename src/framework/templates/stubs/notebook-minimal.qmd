@@ -1,0 +1,15 @@
+---
+title: "{{ title }}"
+author: "{{ author }}"
+date: "{{ date }}"
+jupyter: python3
+---
+
+```{python}
+#| label: setup
+#| include: false
+
+import framework as fw
+
+fw.scaffold()
+```

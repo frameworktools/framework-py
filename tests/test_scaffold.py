@@ -1,0 +1,135 @@
+from __future__ import annotations
+
+import json
+import os
+import random
+import sys
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+import framework as fw
+from framework import db
+
+
+def test_scaffold_from_a_subfolder(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (project / "functions").mkdir()
+    (project / "functions" / "fw_test_helpers.py").write_text("VALUE = 7\n", encoding="utf-8")
+    (project / "scaffold.py").write_text(
+        "import os\nos.environ['FW_SCAFFOLD_RAN'] = 'yes'\n", encoding="utf-8"
+    )
+    (project / "notebooks").mkdir()
+    monkeypatch.chdir(project / "notebooks")
+    monkeypatch.setattr(sys, "path", list(sys.path))
+
+    assert fw.scaffold() == project.resolve()
+    assert Path.cwd() == (project / "notebooks").resolve()
+    assert os.environ["FW_SCAFFOLD_RAN"] == "yes"
+    assert str((project / "functions").resolve()) in sys.path
+    assert (project / "framework.db").is_file()
+
+    history = json.loads(db.get_meta("scaffold_history") or "{}")
+    assert history["first"] == history["last"]
+    assert history["first"].endswith("Z")
+
+
+def test_scaffold_keeps_the_first_time(project: Path) -> None:
+    db.set_meta("scaffold_history", '{"first":"2020-01-01T00:00:00Z","last":"x"}')
+    fw.scaffold()
+    history = json.loads(db.get_meta("scaffold_history") or "{}")
+    assert history["first"] == "2020-01-01T00:00:00Z"
+
+
+def test_seed_from_scaffold_settings(project: Path) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n  scaffold: {seed_on_scaffold: yes, seed: '42'}\n", encoding="utf-8"
+    )
+    fw.scaffold()
+    first = random.random()
+    random.seed(42)
+    assert first == random.random()
+
+
+@pytest.mark.parametrize(
+    ("scaffold", "env", "expected"),
+    [
+        ("", "7", 7),  # no project setting: FW_SEED turns seeding on
+        ("{seed_on_scaffold: no}", "7", None),  # the project says no
+        ("{seed_on_scaffold: yes, seed: '5'}", "7", 5),  # the project's seed wins
+        ("{seed_on_scaffold: yes}", "", 123),  # fallback
+        ("{seed: '5'}", "", None),  # a seed alone does not turn seeding on
+    ],
+)
+def test_seed_rules(project: Path, scaffold: str, env: str, expected: int | None) -> None:
+    from framework.scaffold import _set_seed
+    from framework.settings import settings_read
+
+    if scaffold:
+        (project / "settings.yml").write_text(
+            f"default:\n  scaffold: {scaffold}\n", encoding="utf-8"
+        )
+    os.environ["FW_SEED"] = env
+    assert _set_seed(settings_read()) == expected
+
+
+def test_missing_dotenv_location(project: Path) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n  dotenv_location: secrets\n", encoding="utf-8"
+    )
+    with pytest.raises(fw.SettingsError, match="Dotenv file not found"):
+        fw.scaffold()
+
+
+def test_scaffold_outside_a_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(fw.ProjectNotFoundError):
+        fw.scaffold()
+
+
+def test_status(r_project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    fw.status()
+    output = capsys.readouterr().out
+    assert "Type: project" in output
+    assert "AGENTS.md, CLAUDE.md" in output
+    assert "ok inputs_raw -> inputs/raw" in output
+
+
+def test_project_info(r_project: Path) -> None:
+    info = fw.project_info()
+    assert info.attrs == {"name": "Fixture Study", "type": "project"}
+    row = info[info["key"] == "inputs_raw"].iloc[0]
+    assert (row["path"], bool(row["exists"])) == ("inputs/raw", True)
+
+
+def test_scratch(project: Path) -> None:
+    frame = pd.DataFrame({"a": [1, 2, 3]})
+    assert fw.scratch_capture(frame, "rows", n=2) is frame
+    folder = project / "outputs/private/scratch"
+    assert (folder / "rows.tsv").read_text(encoding="utf-8") == "a\n1\n2\n"
+    fw.scratch_capture([1, 2], "values")
+    assert (folder / "values.txt").read_text(encoding="utf-8") == "1\n2\n"
+    fw.scratch_capture({"k": 1}, "mapping.txt")
+    assert "k: 1" in (folder / "mapping.txt").read_text(encoding="utf-8")
+    fw.scratch_capture(frame, "frame.csv")
+    assert (folder / "frame.csv").is_file()
+    fw.scratch_capture(object(), "obj.pkl")
+    assert (folder / "obj.pkl").is_file()
+    with pytest.raises(fw.FrameworkError):
+        fw.scratch_capture(frame, "bad", to="text")
+
+    (folder / "keep").mkdir()
+    fw.scratch_clean()
+    assert [p.name for p in folder.iterdir()] == ["keep"]
+
+
+def test_capture_output() -> None:
+    with fw.capture_output() as captured:
+        print("hello")
+        print("problem", file=sys.stderr)
+    assert captured.lines == ["hello", "problem"]
+
+    with pytest.raises(ValueError), fw.capture_output() as failed:
+        print("before")
+        raise ValueError("boom")
+    assert failed.output == "before\n"

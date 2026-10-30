@@ -1,0 +1,7 @@
+# Shared files and fixtures are compared by hash, so git must never change
+# their line endings (Windows checkouts convert text files by default).
+src/framework/_assets/** -text
+tests/shared/** -text
+tests/fixtures/** -text
+tests/integration/compose.yml -text
+tests/integration/*/init.sql -text
