@@ -28,6 +28,13 @@ Optional extras add database drivers, S3 storage, and more file formats:
 uv add "framework-py[postgres,s3]"
 ```
 
+Releases are published from GitHub Actions with signed build provenance. To
+check that a downloaded wheel or sdist was built from this repository:
+
+```sh
+gh attestation verify framework_py-<version>-py3-none-any.whl --repo frameworktools/framework-py
+```
+
 ## Use
 
 ```python
