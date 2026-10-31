@@ -303,10 +303,23 @@ def _client() -> httpx.Client:
 
 def _error(response: httpx.Response, what: str) -> CloudError:
     try:
-        message = response.json().get("message")
+        body = response.json()
     except Exception:
-        message = None
-    return CloudError(message or f"{what} failed (HTTP {response.status_code})")
+        body = None
+    body = body if isinstance(body, dict) else {}
+    message = body.get("message") or f"{what} failed (HTTP {response.status_code})"
+    # A 422 lists each problem by field
+    errors = body.get("errors")
+    if isinstance(errors, dict):
+        details = [
+            f"  - {field}: {text}"
+            for field, texts in errors.items()
+            for text in (texts if isinstance(texts, list) else [texts])
+            if str(text) not in str(message)
+        ]
+        if details:
+            message = "\n".join([str(message), *details])
+    return CloudError(str(message))
 
 
 def api(

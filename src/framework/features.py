@@ -113,7 +113,9 @@ def resolve_tools(tools: Iterable[str], off: Iterable[str] = ()) -> list[str]:
 def _pick(ids: Iterable[str], kind: str, label: str) -> list[dict[str, Any]]:
     sets = _sets(kind)
     entries = []
-    for set_id in ids:
+    for handle in ids:
+        # Framework's handles work offline too
+        set_id = handle.removeprefix("framework/")
         definition = sets.get(set_id)
         if definition is None:
             available = ", ".join(i for i, d in sets.items() if _for_python(d))
@@ -135,21 +137,18 @@ def definition_layers(
     """Layer envelopes for tools and sets, in framework.pub's order.
 
     Tools come first, then package sets, then skill sets. ``tools`` is a list of tool ids or
-    a map of tool id to true or false. A tool set to false is turned off with a layer of its
-    own, which overrides the project's defaults.
+    a map of tool id to true or false. Tools set to false are turned off by one last layer,
+    ``framework/tools-off``, which overrides the project's defaults.
     """
     choices = dict(tools) if isinstance(tools, Mapping) else dict.fromkeys(tools, True)
     for tool, on in choices.items():
         if not isinstance(on, bool):
             raise FrameworkError(f"tools.{tool} must be true or false")
     off = [t for t, on in choices.items() if on is False]
+    unknown = [t for t in off if t not in _tools()]
+    if unknown:
+        raise FrameworkError(f"Unknown tool(s): {', '.join(unknown)}")
     entries: list[dict[str, Any]] = []
-    if off:
-        unknown = [t for t in off if t not in _tools()]
-        if unknown:
-            raise FrameworkError(f"Unknown tool(s): {', '.join(unknown)}")
-        layer = {"tools": dict.fromkeys(off, False)}
-        entries.append({"kind": "facet", "key": "framework/tools-off", "layer": layer})
     for tool in resolve_tools([t for t, on in choices.items() if on], off):
         definition = _tools()[tool]
         key = f"framework/tool-{tool}"
@@ -161,4 +160,8 @@ def definition_layers(
             )
     entries += _pick(package_sets, "packages", "package set")
     entries += _pick(skill_sets, "skills", "skill set")
+    if off:
+        # After the tools and sets, as in R, so the project's defaults are overridden
+        layer = {"tools": dict.fromkeys(off, False)}
+        entries.append({"kind": "facet", "key": "framework/tools-off", "layer": layer})
     return entries

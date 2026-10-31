@@ -130,3 +130,18 @@ def test_cli_tools_and_sets(tmp_path: Path) -> None:
     assert settings(tmp_path / "cli")["tools"] == {"quarto": False, "uv": True, "jupyter": True}
     with pytest.raises(SystemExit):
         main(["create", "--from-layers", "x.json", "--path", "y", "--tool", "jupyter"])
+
+
+def test_skill_sets_replace_the_default_skills() -> None:
+    from framework.create import _replace_default_skills
+
+    spec = fw.spec_resolve([{"type": "project_sensitive", "language": "python"}], name="S").spec
+    assert "framework-workflow" in spec["skills"]
+    chosen = [{"key": "framework/skills-x", "layer": {"skills": {"framework-data": {}}}}]
+    _replace_default_skills(spec, "project_sensitive", chosen)
+    assert sorted(spec["skills"]) == ["framework-data", "framework-sensitive-data"]
+
+
+def test_off_switches_come_last() -> None:
+    keys = [e["key"] for e in definition_layers({"quarto": False, "jupyter": True})]
+    assert keys[-1] == "framework/tools-off"

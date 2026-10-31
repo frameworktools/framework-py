@@ -467,3 +467,86 @@ def test_new_registration_failure_is_quiet(tmp_path: Path, server: FakeCloud) ->
     )
     root = fw.new("Taken", tmp_path / "taken", "project", interactive=False)
     assert "FW_PROJECT_TOKEN" not in dotenv.read(root / ".env")
+
+
+def choices_envelope() -> dict[str, Any]:
+    return {
+        "spec_version": 1,
+        "name": "Lab",
+        "layers": [
+            {"kind": "base", "key": "framework/course", "layer": {"type": "course"}},
+            {"kind": "facet", "key": "framework/quarto", "layer": {"tools": {"quarto": True}}},
+            {
+                "kind": "facet",
+                "key": "framework/quarto_slides",
+                "layer": {"tools": {"quarto_slides": True}},
+            },
+            {"kind": "project", "key": "lab", "layer": {"language": "python"}},
+        ],
+        "source": {"origin": "cloud"},
+    }
+
+
+def test_new_from_cloud_choices(tmp_path: Path, server: FakeCloud) -> None:
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    sent: dict[str, Any] = {}
+
+    def resolve(request: httpx.Request) -> httpx.Response:
+        sent["resolve"] = json.loads(request.content)
+        return httpx.Response(200, json=choices_envelope())
+
+    def create(request: httpx.Request) -> httpx.Response:
+        sent["create"] = json.loads(request.content)
+        return httpx.Response(201, json={"slug": "lab", "token": "fwp_lab0123456"})
+
+    server.route("POST", "/api/v2/resolve", resolve)
+    server.route("POST", "/api/v2/projects", create)
+    root = fw.new(
+        "Lab",
+        tmp_path / "lab",
+        structure="framework/course",
+        tools=["quarto_slides"],
+        skill_sets=["ada/teaching"],
+        sensitive=False,
+        interactive=False,
+    )
+    assert sent["resolve"] == {
+        "name": "Lab",
+        "language": "python",
+        "structure": "framework/course",
+        # The client adds what a tool requires
+        "tools": {"quarto_slides": True, "quarto": True},
+        "skill_sets": ["ada/teaching"],
+        "settings": {"sensitive": False},
+    }
+    assert sent["create"] == sent["resolve"]
+    config = _yaml.read(root / "settings.yml")["default"]
+    assert config["project_type"] == "course"
+    assert config["tools"]["quarto_slides"] is True
+    assert dotenv.read(root / ".env")["FW_PROJECT_TOKEN"] == "fwp_lab0123456"
+
+
+def test_new_from_cloud_choices_needs_a_login_and_reports_422(
+    tmp_path: Path, server: FakeCloud
+) -> None:
+    with pytest.raises(fw.CloudError, match="No cloud token"):
+        fw.new("Lab", tmp_path / "lab", blueprint="ada/lab", interactive=False)
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    server.route(
+        "POST",
+        "/api/v2/resolve",
+        lambda r: httpx.Response(
+            422,
+            json={"message": "The given data was invalid.", "errors": {"blueprint": ["Unknown."]}},
+        ),
+    )
+    with pytest.raises(fw.CloudError, match=r"blueprint: Unknown\."):
+        fw.new("Lab", tmp_path / "lab", blueprint="ada/nope", interactive=False)
+    assert not (tmp_path / "lab").exists()
+
+
+def test_cloud_only_choices_need_a_blueprint(tmp_path: Path) -> None:
+    with pytest.raises(fw.FrameworkError, match="sensitive need a Framework Cloud blueprint"):
+        fw.new("X", tmp_path / "x", "project", sensitive=True, interactive=False)
+    with pytest.raises(fw.FrameworkError, match="not both"):
+        fw.new("X", tmp_path / "x", "project", blueprint="framework/project", interactive=False)

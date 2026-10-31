@@ -99,6 +99,26 @@ fw.new(key="fw_...")
 
 `new()` fetches the project's definition from the server and saves the token and server in the new project's `.env` as `FW_PROJECT_TOKEN` and `FW_CLOUD_URL`. The project then publishes to that server and uses its integrity ledger. The [Framework Cloud](guide:cloud) guide describes what the server receives.
 
+### From Blueprints and Structures
+
+Blueprints, structures, and sets saved on Framework Cloud can be used directly. Log in first with [cloud_login()](ref:cloud_login), then pass a `blueprint` or a `structure` handle.
+
+```python
+fw.new("Lab Notes", "~/projects/lab-notes", blueprint="ada/lab")
+fw.new(
+    "Stats 101",
+    "~/teaching/stats-101",
+    structure="framework/course",
+    tools=["quarto_slides"],
+    skill_sets=["ada/teaching"],
+    sensitive=False,
+)
+```
+
+A structure replaces the blueprint's structure. `tools`, `package_sets`, `skill_sets`, and `skills` take handles, where a bare id such as `quarto` means Framework's. `sensitive`, `ai`, and `git` set those settings. Tools that Framework's tools require are added before the choices are sent.
+
+`new()` sends the choices to the server, which resolves them into layers. It builds the project from those layers, then registers it on the server, which records the choices and returns a project token that `new()` saves in `.env`. If registration fails, the project is still created and `new()` reports why. Only the choices you pass are sent. Data and code stay on your computer.
+
 ## What Gets Created
 
 A new project contains these files, depending on its type.

@@ -523,6 +523,12 @@ def new(
     tools: Mapping[str, bool] | Sequence[str] | None = None,
     package_sets: Sequence[str] = (),
     skill_sets: Sequence[str] = (),
+    blueprint: str | None = None,
+    structure: str | None = None,
+    skills: Sequence[str] = (),
+    sensitive: bool | None = None,
+    ai: bool | Mapping[str, Any] | None = None,
+    git: bool | None = None,
     key: str | None = None,
     interactive: bool | None = None,
 ) -> Path:
@@ -538,8 +544,25 @@ def new(
             true or false, which can also turn off a default such as Quarto. A tool another
             one needs is turned on too, with a message. Default: the type's tools (uv, and
             Quarto for every type but bare). See [`tools_available()`](ref:tools_available).
-        package_sets: Bundled package sets to add.
-        skill_sets: Bundled skill sets to add, such as ``["framework"]``.
+        package_sets: Package sets to add. Offline, a bundled set; with ``blueprint`` or
+            ``structure``, any handle on Framework Cloud.
+        skill_sets: Skill sets to add, such as ``["framework"]``. They replace the type's
+            default skills; a sensitive project keeps framework-sensitive-data.
+        blueprint: A Framework Cloud blueprint handle, such as ``"framework/project"`` or
+            ``"ada/lab"``. With ``blueprint`` or ``structure``, the choices are resolved by the
+            cloud (you must be logged in with [`cloud_login()`](ref:cloud_login)), the project
+            is built from the layers it returns, and then it is registered there and gets a
+            project token in ``.env``. Cannot be combined with ``type``.
+        structure: A Framework Cloud structure handle, such as ``"framework/course"``. It
+            replaces the blueprint's structure.
+        skills: Skill handles to add on Framework Cloud. Needs ``blueprint`` or
+            ``structure``.
+        sensitive: Turn the sensitive-data setting on or off. Needs ``blueprint`` or
+            ``structure``; offline, use ``type="project_sensitive"``.
+        ai: Turn AI assistants on or off, or a map such as
+            ``{"enabled": True, "assistants": {"claude": True}}``. Needs ``blueprint`` or
+            ``structure``.
+        git: Turn git on or off. Needs ``blueprint`` or ``structure``.
         key: A Framework Cloud project token. The project's definition (its
             layers) is fetched from the cloud, and the token is saved in the
             new project's ``.env`` for publishing and the ledger.
@@ -551,6 +574,25 @@ def new(
     interactive = sys.stdin.isatty() if interactive is None else interactive
     if key is not None:
         return _new_from_cloud(key, location, interactive)
+    cloud_choices = blueprint is not None or structure is not None
+    if cloud_choices and type is not None:
+        raise FrameworkError("Pass type, or blueprint and structure, not both")
+    if not cloud_choices:
+        needs_cloud = [
+            name
+            for name, given in (
+                ("skills", bool(skills)),
+                ("sensitive", sensitive is not None),
+                ("ai", ai is not None),
+                ("git", git is not None),
+            )
+            if given
+        ]
+        if needs_cloud:
+            raise FrameworkError(
+                f"{', '.join(needs_cloud)} need a Framework Cloud blueprint or structure. "
+                "Pass blueprint= or structure=, or use type= for Framework's own structures."
+            )
     if name is None:
         if not interactive:
             raise FrameworkError("Project name is required in non-interactive mode")
@@ -562,6 +604,11 @@ def new(
             raise FrameworkError("Project location is required in non-interactive mode")
         suggested = Path("~") / "projects" / kebab_case(name)
         location = input(f"Project location [{suggested}]: ").strip() or suggested
+    if cloud_choices:
+        body = _choices_body(
+            name, blueprint, structure, tools, package_sets, skill_sets, skills, sensitive, ai, git
+        )
+        return _new_from_choices(name, location, body)
     if type is None:
         if interactive:
             choices = ", ".join(TYPES)
@@ -580,6 +627,8 @@ def new(
         {"kind": "project", "layer": {"type": type, "language": "python"}},
     ]
     spec = spec_resolve(layers, name).spec
+    if skill_sets:
+        _replace_default_skills(spec, type, layers)
     spec["source"] = {"origin": "python"}
     inform(f"Creating {type} project: {name}")
     root = project_create(spec, location)
@@ -588,6 +637,106 @@ def new(
 
         register_project(root, name, type)
     return root
+
+
+def _choices_body(
+    name: str,
+    blueprint: str | None,
+    structure: str | None,
+    tools: Mapping[str, bool] | Sequence[str] | None,
+    package_sets: Sequence[str],
+    skill_sets: Sequence[str],
+    skills: Sequence[str],
+    sensitive: bool | None,
+    ai: bool | Mapping[str, Any] | None,
+    git: bool | None,
+) -> dict[str, Any]:
+    """The body for the cloud's resolve and create endpoints.
+
+    Framework's tools get what they require added here, with a message, so
+    the cloud's strict check never rejects the request.
+    """
+    from framework.features import _tools, resolve_tools
+
+    choices = dict(tools) if isinstance(tools, Mapping) else dict.fromkeys(tools or (), True)
+    off = [t for t, on in choices.items() if on is False]
+    known = [t for t, on in choices.items() if on and t in _tools()]
+    for tool in resolve_tools(known, off):
+        choices.setdefault(tool, True)
+    body: dict[str, Any] = {"name": name, "language": "python"}
+    if blueprint is not None:
+        body["blueprint"] = blueprint
+    if structure is not None:
+        body["structure"] = structure
+    if choices:
+        body["tools"] = choices
+    for field, values in (
+        ("package_sets", package_sets),
+        ("skill_sets", skill_sets),
+        ("skills", skills),
+    ):
+        if values:
+            body[field] = list(values)
+    settings = {
+        k: v for k, v in (("sensitive", sensitive), ("git", git), ("ai", ai)) if v is not None
+    }
+    if settings:
+        body["settings"] = settings
+    return body
+
+
+def _new_from_choices(name: str, location: str | Path, body: dict[str, Any]) -> Path:
+    """Resolve choices on the cloud, build the project, then register it there."""
+    from framework.cloud import (
+        CloudError,
+        _require_token,
+        api,
+        cloud_server,
+        host,
+        write_project_token,
+    )
+
+    server = cloud_server().url
+    token = _require_token(server)
+    if Path(location).expanduser().exists():
+        raise FrameworkError(f"Project directory already exists: {Path(location).expanduser()}")
+    inform(f"Resolving the project's pieces on {host(server)}")
+    envelope = api("/api/v2/resolve", token, server, method="POST", body=body)
+    if not isinstance(envelope, dict):
+        raise FrameworkError("The server returned an unexpected project definition.")
+    spec = spec_resolve(envelope.get("layers") or [], name, envelope.get("author")).spec
+    spec["source"] = envelope.get("source") or {"origin": "cloud"}
+    root = project_create(spec, location)
+    try:
+        created = api("/api/v2/projects", token, server, method="POST", body=body)
+    except CloudError as error:
+        inform(f"Cloud project registration skipped: {error}")
+        return root
+    inform(f"[ok] Registered on {host(server)}: {created.get('slug')}")
+    if spec_core_files(spec) and created.get("token"):
+        write_project_token(root, str(created["token"]), server)
+    return root
+
+
+def _replace_default_skills(spec: dict[str, Any], type: str, layers: Sequence[Any]) -> None:
+    """Chosen skill sets replace the type's default skills, as in R.
+
+    A sensitive project keeps framework-sensitive-data.
+    """
+    from framework.spec.resolve import package_defaults
+
+    chosen = {
+        name
+        for entry in layers
+        if str(entry.get("key", "")).startswith("framework/skills-")
+        for name in (entry["layer"].get("skills") or {})
+    }
+    defaults = set(package_defaults(type)["skills"]) - {"framework-sensitive-data"}
+    spec["skills"] = {
+        name: value
+        for name, value in spec["skills"].items()
+        if name not in defaults or name in chosen
+    }
 
 
 def _new_from_cloud(key: str, location: str | Path | None, interactive: bool) -> Path:
