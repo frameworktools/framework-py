@@ -1,8 +1,68 @@
 # Golden No Assistants
 
-This is a Framework project (Python). Framework skills for this project are installed for your AI assistant.
+This file provides guidance to AI assistants working with this Framework project.
+It is the canonical context file; detailed workflow instructions live in the
+skills listed below. Edit the sections without regeneration markers freely -
+they won't be overwritten.
 
-Start every notebook and script with `import framework as fw` and `fw.scaffold()`. It loads the project's settings, environment, and functions.
+## Skills
+
+Detailed instructions live in skill files, loaded on demand. Claude Code discovers
+them automatically; other agents should read the relevant SKILL.md before working
+on a matching task.
+
+| Skill | Covers | Path |
+|-------|--------|------|
+| `framework-workflow` | scaffold() initialization, critical rules, creating notebooks/scripts | `.agents/skills/framework-workflow/SKILL.md` |
+| `framework-data` | reading and saving data (data_read/data_save are mandatory) | `.agents/skills/framework-data/SKILL.md` |
+| `framework-packages` | adding and managing Python packages (package_add, never pip install) | `.agents/skills/framework-packages/SKILL.md` |
+| `framework-outputs` | results, caching, database queries, publishing | `.agents/skills/framework-outputs/SKILL.md` |
+
+## Framework Environment <!-- @framework:regenerate -->
+
+This project uses Framework for reproducible data analysis. **Every notebook and script
+MUST begin with `import framework as fw` and `fw.scaffold()`**, which initializes the environment.
+
+### What scaffold() Does
+
+1. **Finds the project root** and loads `.env` and the settings (it does not change the working directory)
+2. **Creates framework.db** if needed and records the scaffold time
+3. **Puts `functions/` on the import path**, so its modules import directly
+4. **Runs `scaffold.py`** from the project root, if there is one
+
+### CRITICAL RULES
+
+**DO NOT** run `pip install` or `uv add` yourself. Add packages with `fw.package_add("name")`, which records them in pyproject.toml.
+
+**DO NOT** copy helpers between notebooks. Put them in `functions/` and import them.
+
+## Installed Packages <!-- @framework:regenerate -->
+
+**Dependencies** (in pyproject.toml): framework-py
+
+Add packages with `fw.package_add("name")`.
+
+## Data Management <!-- @framework:regenerate -->
+
+**All data I/O MUST use `fw.data_read()` and `fw.data_save()`** - see the
+`framework-data` skill for the full rules. This project's data directories:
+
+| Purpose | Directory |
+|---------|-----------|
+| Raw data (immutable) | `inputs/raw/` |
+| Intermediate/cleaned data | `inputs/intermediate/` |
+| Analysis-ready data | `inputs/final/` |
+| Output tables | `outputs/tables/` |
+| Output figures | `outputs/figures/` |
+| Saved models | `outputs/models/` |
+| Reports | `outputs/reports/` |
+
+## Workflow Guidelines
+
+Follow the standard Framework workflow (see the `framework-workflow` skill):
+import with `fw.data_read()`, clean and save with `fw.data_save()`, analyze from
+final datasets, export with `fw.save_table()`, `fw.save_figure()`, or `fw.save_model()`.
 
 ## Project Notes
 
+*Add your project-specific notes, conventions, and documentation here.*

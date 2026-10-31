@@ -8,6 +8,7 @@ from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any
 
+from framework._agents_md import agents_md
 from framework.spec.check import ASSISTANTS
 
 AGENTS_DEFAULT = ".agents/skills"
@@ -47,25 +48,15 @@ def restricted_paths(spec: dict[str, Any]) -> list[str]:
     return sorted(restricted)
 
 
-def agents_md_stub(spec: dict[str, Any]) -> str:
-    lines = [
-        f"# {spec['name']}",
-        "",
-        "This is a Framework project (Python). Framework skills for this project are "
-        "installed for your AI assistant.",
-        "",
-        "Start every notebook and script with `import framework as fw` and `fw.scaffold()`. "
-        "It loads the project's settings, environment, and functions.",
-    ]
-    if spec.get("security", {}).get("sensitive"):
-        folders = ", ".join(f"`{path}`" for path in restricted_paths(spec))
-        lines += [
-            "",
-            f"This project holds restricted data. Do not read or print files in {folders}. "
-            "Work from the data dictionary and simulated data instead.",
-        ]
-    lines += ["", "## Project Notes", ""]
-    return "\n".join(lines) + "\n"
+def restricted_notice(spec: dict[str, Any]) -> str | None:
+    """The line naming the folders agents must stay out of, for sensitive projects."""
+    if not spec.get("security", {}).get("sensitive"):
+        return None
+    folders = ", ".join(f"`{path}`" for path in restricted_paths(spec))
+    return (
+        f"This project holds restricted data. Do not read or print files in {folders}. "
+        "Work from the data dictionary and simulated data instead."
+    )
 
 
 def pointer_stub(name: str) -> str:
@@ -96,7 +87,9 @@ def write_ai_files(root: Path, spec: dict[str, Any]) -> list[str]:
     files = spec.get("files") or {}
 
     if spec.get("ai", {}).get("agents_md") == "stub" and "AGENTS.md" not in files:
-        _write(root, "AGENTS.md", agents_md_stub(spec))
+        # The full guide, as R writes it; its skills table points at the first skills folder
+        skills_dir = folders[0] if folders else ".agents/skills"
+        _write(root, "AGENTS.md", agents_md(spec, skills_dir, restricted_notice(spec)))
         written.append("AGENTS.md")
     for stub in stubs:
         _write(root, stub, "@AGENTS.md\n" if stub == "CLAUDE.md" else pointer_stub(spec["name"]))

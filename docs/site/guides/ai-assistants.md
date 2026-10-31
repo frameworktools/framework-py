@@ -34,20 +34,16 @@ Claude Code is selected by default. A list under `defaults.ai.assistants` in you
 
 ## AGENTS.md
 
-`AGENTS.md` is the single source of project instructions. Framework writes a short stub when it creates the project.
+`AGENTS.md` is the single source of project instructions. When Framework creates a project, it writes a guide generated from the project's settings, with these sections.
 
-```markdown
-# Vaccine Study
+- **Skills.** A table of the installed skills, what each covers, and the path to its `SKILL.md` in the first assistant's skills folder.
+- **Framework Environment.** What [scaffold()](ref:scaffold) does, and the rules that follow from it, such as adding packages with [package_add()](ref:package_add) instead of `pip install`.
+- **Installed Packages.** The project's dependencies.
+- **Data Management.** The rule to read and save data with [data_read()](ref:data_read) and [data_save()](ref:data_save), and a table of the project's data folders.
+- **Workflow, course, presentation, or privacy notes**, depending on the project. A privacy-sensitive project also gets a line right after the title that names the private folders and tells assistants not to read or print files in them.
+- **Project Notes.** Space for your own instructions.
 
-This is a Framework project (Python). Framework skills for this project are installed for your AI assistant.
-
-Start every notebook and script with `import framework as fw` and `fw.scaffold()`. It loads the project's settings, environment, and functions.
-
-## Project Notes
-
-```
-
-Add your own instructions under **Project Notes**: the study design, naming habits, data caveats, and anything else an assistant should know. Framework does not rewrite `AGENTS.md` after creation.
+Add your own instructions under **Project Notes**: the study design, naming habits, data caveats, and anything else an assistant should know. You can edit any section. Framework does not rewrite `AGENTS.md` after creation. The R package writes the same sections, with R's functions.
 
 The stub files point back to it. `CLAUDE.md` is written only when Claude Code is selected, and it contains one line, which tells Claude Code to read `AGENTS.md`.
 
@@ -140,4 +136,4 @@ The `framework-sensitive-data` skill gives assistants the same rules in prose, t
 
 ## Differences from R
 
-The R package once generated long context files and kept them in sync with a git hook. framework-py writes a short `AGENTS.md` stub and relies on skills, so it has no context regeneration and no `ai_sync` hook.
+The R package once kept its context files in sync with a git hook. framework-py writes `AGENTS.md` once, when the project is created, and relies on skills for detailed instructions, so it has no context regeneration and no `ai_sync` hook.
