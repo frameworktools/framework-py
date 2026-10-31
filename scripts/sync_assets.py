@@ -32,6 +32,10 @@ ASSETS: dict[str, str] = {
     "inst/schema/docs-site.md": "docs",
     "inst/templates/init.sql": "src/framework/_assets",
     "inst/hooks/pre-commit": "src/framework/_assets/hooks",
+    # Framework's tools and its skill and package sets, canonical in R.
+    "inst/features/*.json": "src/framework/_assets/features",
+    "inst/sets/skills/*.json": "src/framework/_assets/sets/skills",
+    "inst/sets/packages/*.json": "src/framework/_assets/sets/packages",
     "inst/conformance/README.md": "tests/shared/conformance",
     "inst/conformance/merge/*.json": "tests/shared/conformance/merge",
     "NAMESPACE": "tests/shared",

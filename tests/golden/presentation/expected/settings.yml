@@ -2,6 +2,9 @@ default:
   project_name: Golden Presentation
   project_type: presentation
   language: python
+  tools:
+    quarto: true
+    uv: true
   directories:
     presentation_source: presentation.qmd
     rendered_slides: '.'

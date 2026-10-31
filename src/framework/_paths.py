@@ -41,15 +41,25 @@ def directory(config: dict[str, Any], key: str, default: str, root: Path | None 
     return in_root(value if isinstance(value, str) and value else default, root)
 
 
-def output_directory(config: dict[str, Any], kind: str, public: bool) -> Path:
+def output_directory(
+    config: dict[str, Any], kind: str, public: bool, root: Path | None = None
+) -> Path:
     """Where outputs of one kind (tables, figures, ...) go.
 
-    Sensitive projects split outputs into public and private folders; other
-    projects use one folder per kind. This follows R's ``save_*()`` functions.
+    A project with private and public output folders (sensitive data on, or
+    ``outputs_private_*`` or ``outputs_public_*`` directories) splits by
+    ``public``. Any other project has one folder per kind. This follows R's
+    ``save_*()`` functions.
     """
-    if config.get("project_type") == "project_sensitive":
-        key = f"outputs_{'public' if public else 'private'}_{kind}"
-    else:
-        key = f"outputs_{kind}"
-    default = f"outputs/public/{kind}" if public else f"outputs/{kind}"
-    return directory(config, key, default)
+    directories = config.get("directories")
+    directories = directories if isinstance(directories, dict) else {}
+    security = config.get("security")
+    split = (
+        (isinstance(security, dict) and security.get("sensitive") is True)
+        or f"outputs_private_{kind}" in directories
+        or f"outputs_public_{kind}" in directories
+    )
+    if not split:
+        return directory(config, f"outputs_{kind}", f"outputs/{kind}", root)
+    side = "public" if public else "private"
+    return directory(config, f"outputs_{side}_{kind}", f"outputs/{side}/{kind}", root)

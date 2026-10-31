@@ -169,7 +169,8 @@ def quarto_regenerate(project_path: str | Path, backup: bool = True) -> Regenera
         backup folder (None without ``backup``).
 
     Raises:
-        FrameworkError: When the project has no settings file.
+        FrameworkError: When the project has no settings file, or its settings turn the Quarto
+            tool off.
     """
     root = Path(project_path).expanduser()
     settings_file = next(
@@ -178,6 +179,13 @@ def quarto_regenerate(project_path: str | Path, backup: bool = True) -> Regenera
     if settings_file is None:
         raise FrameworkError("Project settings.yml/config.yml not found")
     config = settings_read(settings_file)
+    # A project without a tools section predates it and keeps Quarto
+    tools = config.get("tools")
+    if isinstance(tools, dict) and tools.get("quarto") is not True:
+        raise FrameworkError(
+            "This project doesn't use Quarto (tools: quarto is off in settings.yml). Set "
+            "tools: {quarto: true} to turn it on, then run quarto_regenerate() again."
+        )
 
     backed_up: list[str] = []
     location = None

@@ -29,7 +29,7 @@ REQUIRED = (
     "files",
     "skills",
 )
-OPTIONAL = ("quarto", "source")
+OPTIONAL = ("quarto", "source", "tools", "core_files", "settings_layout")
 
 # Assistant -> (skills folder, stub file). Adding an assistant is one row.
 ASSISTANTS: dict[str, tuple[str, str | None]] = {
@@ -38,7 +38,7 @@ ASSISTANTS: dict[str, tuple[str, str | None]] = {
     "copilot": (".agents/skills", ".github/copilot-instructions.md"),
 }
 
-_TYPES = ("project", "project_sensitive", "course", "presentation", "bare")
+_LABEL = re.compile(r"^[a-z][a-z0-9_]*$")
 _SOURCES = ("pypi", "github")
 _PACKAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _SKILL = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -141,8 +141,18 @@ def spec_check(spec: dict[str, Any]) -> list[str]:
 
     if spec.get("spec_version") != 1:
         add(f"spec_version must be 1, got {spec.get('spec_version')}")
-    if spec.get("type") not in _TYPES:
-        add(f"unknown project type '{spec.get('type')}'")
+    # type is a label; behavior follows settings, tools, and core_files
+    if not isinstance(spec.get("type"), str) or not _LABEL.match(spec["type"]):
+        add(f"type must be a lowercase id such as 'project', got '{spec.get('type')}'")
+    if spec.get("core_files") is not None and not isinstance(spec["core_files"], bool):
+        add("core_files must be true or false")
+    if spec.get("settings_layout") not in (None, "split", "flat"):
+        add("settings_layout must be 'split' or 'flat'")
+    for tool, on in _dict(spec.get("tools")).items():
+        if not _LABEL.match(str(tool)):
+            add(f"tools: invalid tool id '{tool}'")
+        if not isinstance(on, bool):
+            add(f"tools.{tool} must be true or false")
     if spec.get("language") != "python":
         add(f"language must be 'python' for the Python package, got '{spec.get('language')}'")
 

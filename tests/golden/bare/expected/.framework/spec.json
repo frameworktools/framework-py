@@ -3,6 +3,12 @@
   "name": "Golden Bare",
   "type": "bare",
   "language": "python",
+  "core_files": false,
+  "settings_layout": "flat",
+  "tools": {
+    "quarto": false,
+    "uv": true
+  },
   "author": {
     "name": "",
     "email": "",

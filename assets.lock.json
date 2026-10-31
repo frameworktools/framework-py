@@ -1,9 +1,37 @@
 {
-  "commit": "f9a16c0af72b7f0dbc80db0a8cfef47bdcb43f66",
+  "commit": "8bb43cd5e5c2dd04c21f4a7cd33686871386cb21",
   "files": {
     "docs/docs-site.md": {
       "sha256": "a1d525010bb582a2ae0e6872ed2ec8b466ec56193554468c51dc7fcc0bd2aafd",
       "source": "inst/schema/docs-site.md"
+    },
+    "src/framework/_assets/features/jupyter.json": {
+      "sha256": "0653e047d3887e694c553b2dc2959b62b000e0c371eb542f2bd9726eb36d1a00",
+      "source": "inst/features/jupyter.json"
+    },
+    "src/framework/_assets/features/quarto.json": {
+      "sha256": "01e9e3ca0cd079e2c10131d14539177b46f72d4b3e025c143e3dafa8e7123b6f",
+      "source": "inst/features/quarto.json"
+    },
+    "src/framework/_assets/features/quarto_manuscript.json": {
+      "sha256": "0acd44fc856931cc7230ac5d1b29c32a143f04ac9bb05a5ad73a7267a0821c6b",
+      "source": "inst/features/quarto_manuscript.json"
+    },
+    "src/framework/_assets/features/quarto_slides.json": {
+      "sha256": "a9b2f92245a41ab0e073456c7f27201a5b0cf10c3f26229d2419fcd2f2f216f1",
+      "source": "inst/features/quarto_slides.json"
+    },
+    "src/framework/_assets/features/renv.json": {
+      "sha256": "7f7ca54d3472dde665c4b7831ec3f31ddae0ccbef272a8f5d4108c27cd426015",
+      "source": "inst/features/renv.json"
+    },
+    "src/framework/_assets/features/targets.json": {
+      "sha256": "cef009f74f591727572d42b9c58df4ca36e7fae2b107b359f4ba12209991ef2c",
+      "source": "inst/features/targets.json"
+    },
+    "src/framework/_assets/features/uv.json": {
+      "sha256": "4db22e5a58c66d974f7ab994e82dce19b4735cbe7588da2896a436ec580ca51b",
+      "source": "inst/features/uv.json"
     },
     "src/framework/_assets/hooks/pre-commit": {
       "sha256": "c1790d7adb2e6f7b138b62d87b007e6f90d137cca801df8cf291bd3846b44cfb",
@@ -18,16 +46,28 @@
       "source": "inst/schema/docs-reference.v1.json"
     },
     "src/framework/_assets/schema/layer.v1.json": {
-      "sha256": "99f1f1d673304103a2b0afd0b62ca7b7f66b995fb4b802b393e36f561ff84b39",
+      "sha256": "89d098996158e9c229cd43f5eca524eda3a1480683acee7f1107c66d0eb51580",
       "source": "inst/schema/layer.v1.json"
     },
     "src/framework/_assets/schema/layers.v1.json": {
-      "sha256": "dc74cac172b3edbfb09bc0731f2db9e09fe2a29c542c6094ef1e29e1970487f6",
+      "sha256": "548453105811683072e2738597b5c0349b58ff9dacbea1cff4e338e5f8e08d67",
       "source": "inst/schema/layers.v1.json"
     },
     "src/framework/_assets/schema/spec.v1.json": {
-      "sha256": "d6e35829aa628ae6ed86234cfa1e727000286e2775f1db4874ed5c9589971387",
+      "sha256": "dd0b269036dace8c158d4c3656f61bce0b96963362065e9e03bf73a5350e7ae6",
       "source": "inst/schema/spec.v1.json"
+    },
+    "src/framework/_assets/sets/packages/tidyverse-analysis.json": {
+      "sha256": "a20224197cc9c5af559cf7a2bbe8b79023e57a72fb1686f7c885a4bd5d49d0bb",
+      "source": "inst/sets/packages/tidyverse-analysis.json"
+    },
+    "src/framework/_assets/sets/skills/framework.json": {
+      "sha256": "8b74ed492f27bd1e3294d2ae95ae1666d9eb1b43e3e2872ee80dd2cfc1d82aca",
+      "source": "inst/sets/skills/framework.json"
+    },
+    "src/framework/_assets/sets/skills/ggplot2.json": {
+      "sha256": "498c49a8af991c8a4588014a302895456466feab2a44605173e5cd91108f57ee",
+      "source": "inst/sets/skills/ggplot2.json"
     },
     "tests/integration/compose.yml": {
       "sha256": "b37fae50c03bbf6adcb04d3f4df7e32be0a3a450a48ccdc0673734de2fa3e7d8",
@@ -76,8 +116,12 @@
     "tests/shared/conformance/merge/maps-and-null-removal.json": {
       "sha256": "98ecad70cba4a1537fe7612d2c2191ebce0c4b7892da628474d94924f5812334",
       "source": "inst/conformance/merge/maps-and-null-removal.json"
+    },
+    "tests/shared/conformance/merge/tools-and-core-files.json": {
+      "sha256": "48d949b3212e8a8e640164ebaa8921e4d63a649dd7dfef57133198b8bb3454ed",
+      "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "f9a16c0",
+  "ref": "8bb43cd",
   "source": "framework (R package)"
 }

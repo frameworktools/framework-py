@@ -43,7 +43,7 @@
   description: Creating and managing projects
   common: [new, project_create]
   names: [new, project_create, project_create_from_layers, project_add_directory, project_root,
-          project_list, project_register, project_unregister]
+          project_list, project_register, project_unregister, tools_available]
 
 - id: publishing
   title: Publishing

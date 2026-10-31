@@ -1,7 +1,8 @@
 """Command-line entry points: ``python -m framework``.
 
     python -m framework create --from-layers FILE --path DIR [--interactive]
-    python -m framework create --name NAME --path DIR [--type TYPE] [--interactive]
+    python -m framework create --name NAME --path DIR [--type TYPE] [--tool ID[=false]]...
+        [--skill-set ID]... [--package-set ID]... [--interactive]
     python -m framework bootstrap [--path DIR] [--interactive] [--no-packages]
     python -m framework hook pre-commit
 
@@ -35,6 +36,19 @@ def _parser() -> argparse.ArgumentParser:
         help="project type, with --name (default: bare, or asked with --interactive)",
     )
     create.add_argument(
+        "--tool",
+        action="append",
+        default=[],
+        metavar="ID[=false]",
+        help="with --name, turn a tool on, or off with =false (repeatable)",
+    )
+    create.add_argument(
+        "--skill-set", action="append", default=[], metavar="ID", help="add a skill set"
+    )
+    create.add_argument(
+        "--package-set", action="append", default=[], metavar="ID", help="add a package set"
+    )
+    create.add_argument(
         "--interactive",
         action="store_true",
         help=(
@@ -64,8 +78,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         from framework.hooks import hook_run
 
         return hook_run(args.name)
-    if args.command == "create" and args.from_layers and args.type:
-        parser.error("--type can only be used with --name")
+    name_only = args.command == "create" and (
+        args.type or args.tool or args.skill_set or args.package_set
+    )
+    if name_only and args.from_layers:
+        parser.error("--type, --tool, --skill-set, and --package-set need --name")
     try:
         if args.command == "bootstrap":
             from framework.bootstrap import bootstrap
@@ -82,7 +99,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             from framework.create import new
 
-            path = new(args.name, args.path, args.type, interactive=args.interactive)
+            tools = {}
+            for tool in args.tool:
+                name, _, value = tool.partition("=")
+                tools[name] = value.lower() not in ("false", "no", "0", "off")
+            path = new(
+                args.name,
+                args.path,
+                args.type,
+                tools=tools,
+                package_sets=args.package_set,
+                skill_sets=args.skill_set,
+                interactive=args.interactive,
+            )
     except FrameworkError as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1

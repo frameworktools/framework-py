@@ -2,6 +2,9 @@ default:
   project_name: Golden Project Sensitive
   project_type: project_sensitive
   language: python
+  tools:
+    quarto: true
+    uv: true
   directories:
     functions: functions
     notebooks: notebooks

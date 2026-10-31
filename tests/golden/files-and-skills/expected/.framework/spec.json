@@ -3,6 +3,12 @@
   "name": "Golden Files And Skills",
   "type": "project",
   "language": "python",
+  "core_files": true,
+  "settings_layout": "split",
+  "tools": {
+    "quarto": true,
+    "uv": true
+  },
   "author": {
     "name": "Ada Lovelace",
     "email": "ada@example.org",

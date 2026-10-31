@@ -2,6 +2,9 @@ default:
   project_name: Golden Course
   project_type: course
   language: python
+  tools:
+    quarto: true
+    uv: true
   directories:
     data: data
     slides: slides

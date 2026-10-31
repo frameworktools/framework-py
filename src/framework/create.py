@@ -28,12 +28,18 @@ from framework.errors import FrameworkError
 from framework.quarto import quarto_generate_all
 from framework.spec.check import ASSISTANTS, spec_check
 from framework.spec.merge import SpecError
-from framework.spec.resolve import TYPES, author_normalize, spec_resolve
+from framework.spec.resolve import (
+    TYPES,
+    author_normalize,
+    spec_core_files,
+    spec_resolve,
+    spec_settings_layout,
+    spec_tool_on,
+)
 
 CHECKOUT_ALLOWLIST = frozenset({".git", ".github", ".framework", "README.md", "LICENSE"})
 FILE_LIKE = re.compile(r"\.(qmd|Rmd|R|md|py|ipynb)$")
 _TEMPLATE_VARS = ("project_name", "author", "author_email", "affiliation", "date")
-_SPLIT_TYPES = ("project", "project_sensitive")
 # Lines that ignore .env (or re-include it with a leading "!"), as in R.
 _ENV_RULE = re.compile(r"^(!?)/?(\*\*/)?(\.env\*?|\*\.env)$")
 
@@ -140,8 +146,10 @@ def _write_settings(root: Path, spec: Mapping[str, Any]) -> None:
         "project_name": spec["name"],
         "project_type": spec["type"],
         "language": spec["language"],
-        "directories": spec.get("directories") or {},
     }
+    if spec.get("tools"):
+        main["tools"] = dict(spec["tools"])
+    main["directories"] = spec.get("directories") or {}
     extra = [
         {"key": key, "label": entry.get("label", key), "path": entry["path"]}
         for key, entry in (spec.get("extra_directories") or {}).items()
@@ -150,7 +158,7 @@ def _write_settings(root: Path, spec: Mapping[str, Any]) -> None:
         main["extra_directories"] = extra
     main["render_dirs"] = spec.get("render_dirs") or {}
 
-    if spec["type"] in _SPLIT_TYPES:
+    if spec_settings_layout(spec) == "split":
         for section in ("author", "git", "ai", "scaffold", "quarto"):
             main[section] = f"settings/{section}.yml"
             _yaml.write(root / "settings" / f"{section}.yml", {section: sections[section]})
@@ -351,7 +359,7 @@ def project_create(
     root.mkdir(parents=True, exist_ok=True)
     inform(f"Creating project in: {root}")
 
-    bare = spec["type"] == "bare"
+    bare = not spec_core_files(spec)
     _create_directories(root, spec)
     _write_settings(root, spec)
     if not bare:
@@ -374,7 +382,7 @@ def project_create(
         content = entry["content"]
         _write(root, relative, fill_template(content, spec) if entry.get("template") else content)
 
-    if not bare:
+    if not bare and spec_tool_on(spec, "quarto"):
         quarto_generate_all(
             root,
             spec["type"],
@@ -382,6 +390,7 @@ def project_create(
             spec.get("quarto") or {},
             spec.get("directories") or {},
         )
+    if not bare:
         db.ensure_db(root)
     _record(root, spec)
 
@@ -511,6 +520,9 @@ def new(
     location: str | Path | None = None,
     type: str | None = None,
     *,
+    tools: Mapping[str, bool] | Sequence[str] | None = None,
+    package_sets: Sequence[str] = (),
+    skill_sets: Sequence[str] = (),
     key: str | None = None,
     interactive: bool | None = None,
 ) -> Path:
@@ -522,6 +534,12 @@ def new(
         type: project, project_sensitive, course, presentation, or bare. When
             left out, it is asked for interactively and is ``bare`` otherwise,
             as in R's ``new()``.
+        tools: Tools to turn on, as a list of ids such as ``["jupyter"]``, or a map of id to
+            true or false, which can also turn off a default such as Quarto. A tool another
+            one needs is turned on too, with a message. Default: the type's tools (uv, and
+            Quarto for every type but bare). See [`tools_available()`](ref:tools_available).
+        package_sets: Bundled package sets to add.
+        skill_sets: Bundled skill sets to add, such as ``["framework"]``.
         key: A Framework Cloud project token. The project's definition (its
             layers) is fetched from the cloud, and the token is saved in the
             new project's ``.env`` for publishing and the ledger.
@@ -553,7 +571,10 @@ def new(
     if type not in TYPES:
         raise FrameworkError(f"Invalid project type. Must be one of: {', '.join(TYPES)}")
 
+    from framework.features import definition_layers
+
     layers: Sequence[Any] = [
+        *definition_layers(tools or (), package_sets, skill_sets),
         {"kind": "user", "key": "settings-catalog", "layer": catalog_layer(type)},
         {"kind": "user", "layer": user_layer(type)},
         {"kind": "project", "layer": {"type": type, "language": "python"}},
@@ -584,7 +605,7 @@ def _new_from_cloud(key: str, location: str | Path | None, interactive: bool) ->
     spec = resolved.spec
     spec["source"] = envelope.get("source") or {"origin": "cloud"}
     root = project_create(spec, location)
-    if spec["type"] != "bare":
+    if spec_core_files(spec):
         write_project_token(root, key, server)
     inform(f"Project ready at {root}")
     return root

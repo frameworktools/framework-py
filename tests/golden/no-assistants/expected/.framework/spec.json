@@ -3,6 +3,12 @@
   "name": "Golden No Assistants",
   "type": "project",
   "language": "python",
+  "core_files": true,
+  "settings_layout": "split",
+  "tools": {
+    "quarto": true,
+    "uv": true
+  },
   "author": {
     "name": "",
     "email": "",

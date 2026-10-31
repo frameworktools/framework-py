@@ -69,6 +69,7 @@ from framework.errors import (
     SettingsError,
     UnsupportedFormatError,
 )
+from framework.features import tools_available
 from framework.global_config import (
     configure_global,
     framework_template_path,
@@ -246,5 +247,6 @@ __all__ = [
     "stubs_list",
     "stubs_path",
     "stubs_publish",
+    "tools_available",
     "write_framework_template",
 ]

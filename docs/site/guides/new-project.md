@@ -28,6 +28,31 @@ In an interactive session, `new()` asks for any value you leave out. It suggests
 
 The folder must not exist yet. `new()` returns the path of the new project.
 
+### Tools and Sets
+
+Tools are switches for what a project uses beyond its folders. Each tool adds only its own files, folders, and packages. [tools_available()](ref:tools_available) lists the tools for Python projects.
+
+- `uv` manages the project's dependencies in `pyproject.toml` and `uv.lock`. It is on for every project.
+- `quarto` writes the `_quarto.yml` files and render settings. It is on for every type except `bare`.
+- `jupyter` adds the `ipykernel` package for Jupyter notebooks. It is off unless you turn it on.
+- `quarto_slides` adds a `slides/` folder that renders as RevealJS.
+- `quarto_manuscript` adds a `manuscript/` folder with a Quarto manuscript to start from.
+
+Pass `tools` as a list of tools to turn on, or as a map that can also turn a default off.
+
+```python
+fw.new(
+    "Lab Notes", "~/projects/lab-notes", type="project", tools={"quarto": False, "jupyter": True}
+)
+fw.new("Q4 Review", "~/talks/q4-review", type="project", tools=["quarto_slides"])
+```
+
+A tool that another tool needs is turned on too, with a message. `quarto_slides` and `quarto_manuscript` turn on `quarto`. Turning off a tool that another one needs is an error. The project's tools are recorded under `tools` in `settings.yml`. A project without a `tools` section predates it and keeps using Quarto.
+
+`skill_sets` and `package_sets` add bundled sets of AI skills and packages. The `framework` skill set adds Framework's four skills. The tool and set definitions are shared with the R package and Framework Cloud, so a project gets the same pieces whichever one creates it.
+
+With the command line, `--tool ID` turns a tool on and `--tool ID=false` turns it off. `--skill-set` and `--package-set` add sets. Each option can be repeated.
+
 ## Create a Project from the Command Line
 
 The package's command-line entry point runs `new()` with the same defaults.

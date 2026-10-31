@@ -2,6 +2,9 @@ default:
   project_name: Golden Bare
   project_type: bare
   language: python
+  tools:
+    quarto: false
+    uv: true
   directories: {}
   render_dirs: {}
   author:

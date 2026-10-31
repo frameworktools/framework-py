@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib import resources
@@ -20,7 +21,10 @@ from framework.spec.merge import (
     normalize_layers,
 )
 
+# Framework's own structures. Any other lowercase label is a blueprint whose
+# layers bring its folders.
 TYPES = ("project", "project_sensitive", "course", "presentation", "bare")
+_LABEL = re.compile(r"^[a-z][a-z0-9_]*$")
 LANGUAGES = ("r", "python", "stata")
 LANGUAGE = "python"
 
@@ -29,6 +33,9 @@ _ORDER = (
     "name",
     "type",
     "language",
+    "core_files",
+    "settings_layout",
+    "tools",
     "author",
     "directories",
     "extra_directories",
@@ -65,10 +72,45 @@ def _defaults() -> dict[str, Any]:
     return data
 
 
+def default_settings_layout(type: str) -> str:
+    """Split settings files for project and project_sensitive, one file for the rest."""
+    return "split" if type in ("project", "project_sensitive") else "flat"
+
+
+def spec_core_files(spec: Mapping[str, Any]) -> bool:
+    """Whether the project gets .env, scaffold.py, framework.db, and the AI files.
+
+    A spec without ``core_files`` predates it: every type but bare has them.
+    """
+    value = spec.get("core_files")
+    return spec.get("type") != "bare" if value is None else value is True
+
+
+def spec_settings_layout(spec: Mapping[str, Any]) -> str:
+    """``split`` or ``flat``, with today's default for specs without ``settings_layout``."""
+    return str(spec.get("settings_layout") or default_settings_layout(str(spec.get("type"))))
+
+
+def spec_tool_on(spec: Mapping[str, Any], tool: str) -> bool:
+    """Whether the spec turns a tool on."""
+    tools = spec.get("tools")
+    return isinstance(tools, Mapping) and tools.get(tool) is True
+
+
 def package_defaults(type: str) -> dict[str, Any]:
-    """Python's package defaults for a project type: the bottom layer of every spec."""
+    """Python's package defaults for a project type: the bottom layer of every spec.
+
+    Framework's own structures have defaults. Any other label is a blueprint
+    whose structure layer brings its folders, so it starts like bare but with
+    core files, as in R.
+    """
     defaults = _defaults()
+    known = type in TYPES
+    label = type
+    if not known:
+        type = "bare"
     type_config = defaults["types"][type]
+    core_files = label != "bare"
     skills: dict[str, Any] = {}
     if type != "bare":
         names = list(defaults["skills"])
@@ -79,6 +121,11 @@ def package_defaults(type: str) -> dict[str, Any]:
     if type_config.get("render_dir") is not None:
         quarto["render_dir"] = type_config["render_dir"]
     return {
+        "core_files": core_files,
+        "settings_layout": default_settings_layout(label),
+        # Framework's structures other than bare include Quarto; uv manages every
+        # Python project's dependencies
+        "tools": {"quarto": known and core_files, "uv": True},
         "author": dict(defaults["author"]),
         "directories": dict(type_config["directories"]),
         "extra_directories": {},
@@ -221,7 +268,9 @@ def spec_resolve(
     """Merge layers over Python's package defaults into one complete project spec.
 
     The project type comes from the last layer that sets ``type`` (default
-    ``"project"``), and the language from the last layer that sets
+    ``"project"``). It is a label: Framework's five structures have package
+    defaults, and any other lowercase id starts like bare with core files. The
+    language from the last layer that sets
     ``language`` (default ``"r"``, as in R). This package builds Python
     projects only, so the language must resolve to ``"python"``.
 
@@ -239,8 +288,8 @@ def spec_resolve(
     for entry in entries:
         type = entry.layer.get("type") or type
         language = entry.layer.get("language") or language
-    if type not in TYPES:
-        raise SpecError(f"Unknown project type '{type}'. Use one of: {', '.join(TYPES)}")
+    if not isinstance(type, str) or not _LABEL.match(type):
+        raise SpecError(f"Project type must be a lowercase id such as 'project', got '{type}'")
     if language != LANGUAGE:
         raise SpecError(language_message(language))
 

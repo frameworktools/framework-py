@@ -42,6 +42,7 @@ ATOMIC_MAPS = frozenset(
 
 # Sections that must be objects keyed by name.
 MAP_PATHS: tuple[tuple[str, ...], ...] = (
+    ("tools",),
     ("directories",),
     ("extra_directories",),
     ("render_dirs",),

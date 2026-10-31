@@ -2,6 +2,9 @@ default:
   project_name: Golden Project
   project_type: project
   language: python
+  tools:
+    quarto: true
+    uv: true
   directories:
     notebooks: notebooks
     scripts: scripts

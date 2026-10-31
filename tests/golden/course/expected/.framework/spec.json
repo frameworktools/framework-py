@@ -3,6 +3,12 @@
   "name": "Golden Course",
   "type": "course",
   "language": "python",
+  "core_files": true,
+  "settings_layout": "flat",
+  "tools": {
+    "quarto": true,
+    "uv": true
+  },
   "author": {
     "name": "",
     "email": "",
