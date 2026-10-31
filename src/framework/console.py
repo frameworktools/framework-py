@@ -10,7 +10,12 @@ from dataclasses import dataclass, field
 
 @dataclass
 class CapturedOutput:
-    """Text printed inside a ``capture_output()`` block, stdout and stderr together."""
+    """Text printed inside a ``capture_output()`` block, stdout and stderr together.
+
+    Attributes:
+        output: Everything printed to stdout and stderr in the block, in order. It is empty
+            until the block ends.
+    """
 
     output: str = ""
     _buffer: io.StringIO = field(default_factory=io.StringIO, repr=False)

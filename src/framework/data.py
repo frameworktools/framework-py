@@ -22,7 +22,7 @@ import pandas as pd
 from framework import _yaml, db
 from framework._log import inform
 from framework._paths import in_root, relative_to_root
-from framework.catalog import DataInfo, data_info
+from framework.catalog import DataInfo, catalog_locate, data_info
 from framework.errors import (
     DataChangedWarning,
     DataNotFoundError,
@@ -57,7 +57,9 @@ _DIRECT_TYPES = {
     "parquet": "parquet",
 }
 
-# Extension -> type recorded by data_add(), as R's data_add() does.
+# Extension -> type recorded by data_add(). R's data_add() records .por as
+# spss and .xpt as sas, which its own data_read() then opens with the wrong
+# reader. Python records the reader types, which R reads too.
 _ADD_TYPES = {
     "csv": "csv",
     "tsv": "tsv",
@@ -69,11 +71,15 @@ _ADD_TYPES = {
     "dta": "stata",
     "sav": "spss",
     "zsav": "spss",
-    "por": "spss",
+    "por": "spss_por",
     "sas7bdat": "sas",
-    "xpt": "sas",
+    "xpt": "sas_xpt",
     "parquet": "parquet",
 }
+
+# Catalog entries R's data_add() wrote for these extensions carry the generic
+# type, so the extension picks the reader.
+_GENERIC_TYPES = {("spss", ".por"): "spss_por", ("sas", ".xpt"): "sas_xpt"}
 
 _SAVE_TYPES = ("csv", "parquet")
 
@@ -236,7 +242,7 @@ def data_read(
             format Python cannot read.
         IntegrityError: A locked file changed since its hash was recorded.
     """
-    direct = Path(path)
+    direct = Path(path).expanduser()
     if direct.is_file():
         extension = direct.suffix.lower().lstrip(".")
         if extension not in _DIRECT_TYPES:
@@ -262,8 +268,9 @@ def data_read(
             FrameworkWarning,
             stacklevel=2,
         )
+    file_type = _GENERIC_TYPES.get((info.type, info.path.suffix.lower()), info.type)
     try:
-        data: pd.DataFrame = _reader(info.type)(info.path, delimiter, keep_attributes, dict(kwargs))
+        data: pd.DataFrame = _reader(file_type)(info.path, delimiter, keep_attributes, dict(kwargs))
     except (FrameworkError, ImportError):
         raise
     except Exception as error:
@@ -306,10 +313,17 @@ def _save_target(path: str, type: str | None) -> tuple[Path, str, bool]:
         )
 
     config = settings_read()
-    directories = config.get("directories") or {}
-    key = f"{parts[0]}_{parts[1]}"
-    folder = directories.get(key) if isinstance(directories, dict) else None
-    if not isinstance(folder, str) or not folder:
+    directories = config.get("directories")
+    if not isinstance(directories, dict):
+        directories = {}
+    # The longest run of leading parts that names a directory key selects the
+    # folder, so inputs.private.raw.x uses inputs_private_raw. R joins only
+    # the first two parts, so it cannot reach three-part keys.
+    for end in range(len(parts) - 1, 1, -1):
+        folder = directories.get("_".join(parts[:end]))
+        if isinstance(folder, str) and folder:
+            break
+    else:
         available = ", ".join(k.replace("_", ".") for k in directories) or "none"
         raise FrameworkError(
             f"Unknown directory '{parts[0]}.{parts[1]}'. Use a configured directory.\n\n"
@@ -318,7 +332,7 @@ def _save_target(path: str, type: str | None) -> tuple[Path, str, bool]:
             "  data_save(df, 'outputs.private.results')"
         )
     type = type or "parquet"
-    target = in_root(folder, project_root()) / f"{'_'.join(parts[2:])}.{type}"
+    target = in_root(folder, project_root()) / f"{'_'.join(parts[end:])}.{type}"
     return target, type, True
 
 
@@ -335,10 +349,11 @@ def data_save(
     Args:
         data: The data to save.
         path: A catalog name such as ``"inputs.intermediate.cleaned"`` or a
-            file path ending in ``.csv`` or ``.parquet``. A name's first two
-            parts select a folder from ``directories`` (``inputs_intermediate``),
-            and the rest becomes the file name. A name is also added to the
-            data catalog, so ``data_read()`` finds it.
+            file path ending in ``.csv`` or ``.parquet``. A name's leading
+            parts select a folder from ``directories``: the longest run that
+            names a key, such as ``inputs_intermediate`` or
+            ``inputs_private_raw``. The rest becomes the file name. A name is
+            also added to the data catalog, so ``data_read()`` finds it.
         type: ``"parquet"`` or ``"csv"``. Default: from the file extension,
             or Parquet for a catalog name.
         delimiter: Delimiter for CSV files: comma, tab, semicolon, or space.
@@ -440,13 +455,18 @@ def _catalog_set(name: str, entry: dict[str, Any]) -> None:
     if not isinstance(current, dict):
         current = {}
 
-    node = current
-    parts = name.split(".")
-    for part in parts[:-1]:
-        if not isinstance(node.get(part), dict):
-            node[part] = {}
-        node = node[part]
-    node[parts[-1]] = entry
+    # An entry already written with dotted keys is updated where it is.
+    existing = catalog_locate(name, current)
+    if existing is not None:
+        existing[0][existing[1]] = entry
+    else:
+        node = current
+        parts = name.split(".")
+        for part in parts[:-1]:
+            if not isinstance(node.get(part), dict):
+                node[part] = {}
+            node = node[part]
+        node[parts[-1]] = entry
 
     if split_path is not None:
         _yaml.write(split_path, {"data": current})
@@ -478,7 +498,7 @@ def data_add(
         The catalog entry. Its path is relative to the project root, so the
         project still works after it is moved or cloned.
     """
-    path = Path(file_path)
+    path = Path(file_path).expanduser()
     if not path.is_file():
         raise DataNotFoundError(f"File not found: {file_path}")
     path = path.resolve()

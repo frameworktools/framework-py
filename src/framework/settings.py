@@ -62,7 +62,7 @@ def _settings_path(settings_file: str | Path | None) -> Path:
         if found is None:
             raise SettingsError("No settings file found. Looking for settings.yml or config.yml")
         return found
-    path = Path(settings_file)
+    path = Path(settings_file).expanduser()
     if not path.is_file():
         raise SettingsError(f"Settings file not found: {path}")
     return path
@@ -366,6 +366,20 @@ def settings(
     A one-part key is looked up in ``directories`` first, so
     ``settings("notebooks")`` returns the notebooks folder. With no key, the
     whole settings dict is returned. A missing key returns ``default``.
+
+    Args:
+        key: A dot-notation key. A one-part key is looked up in ``directories``, then as
+            ``<key>_dir`` in ``options``, then at the top level. Default: the whole settings
+            dict.
+        default: The value returned when the key is missing.
+        settings_file: The settings file. Default: settings.yml (or config.yml) in the current
+            folder or the nearest parent folder that has one.
+
+    Returns:
+        The value, the whole settings dict, or ``default``.
+
+    Raises:
+        SettingsError: When the settings file is not found or cannot be parsed.
     """
     config = settings_read(settings_file)
     if key is None:
@@ -389,6 +403,18 @@ def settings(
     return value
 
 
+def _split_values(section: str, values: Mapping[str, Any]) -> dict[str, Any]:
+    """Section values wrapped in the section key, as split files hold them.
+
+    A split file wraps its content in the section key (``git:`` in
+    ``settings/git.yml``). Its other top-level keys are read as top-level
+    settings, so values without the wrapper must not land there. Values may
+    come with or without the wrapper. R merges them as given.
+    """
+    wrapped = set(values) == {section} and isinstance(values[section], Mapping)
+    return {section: dict(values[section]) if wrapped else dict(values)}
+
+
 def settings_write(
     values: Mapping[str, Any],
     settings_file: str | Path | None = None,
@@ -398,16 +424,31 @@ def settings_write(
 
     With ``section``, only that section of the active environment is
     replaced. When the section is stored in a split file under ``settings/``,
-    the values are merged into that file instead. Without ``section``, the
+    the values are merged into that file instead, under the section key the
+    file wraps its content in. The values may include that key
+    (``{"git": {...}}``) or leave it out. Without ``section``, the
     whole file is replaced, wrapped in a ``default:`` environment.
 
     Comments in a rewritten file are not kept.
+
+    Args:
+        values: The settings to write. Without ``section``, a mapping without a ``default``
+            key is wrapped in one.
+        settings_file: The settings file. Default: the settings.yml or config.yml found from
+            the current directory, else ``settings.yml`` in the current directory.
+        section: The top-level section to replace, such as "directories", in the active
+            environment (``active_environment()``), or at the top level of a flat file with
+            no environments. Default: replace the whole file.
+
+    Raises:
+        SettingsError: When ``section`` is given and the settings file or its split file does
+            not exist.
     """
     if settings_file is None:
         found = find_settings_file()
         path = found if found is not None else Path("settings.yml")
     else:
-        path = Path(settings_file)
+        path = Path(settings_file).expanduser()
 
     if section is None:
         data = dict(values)
@@ -422,10 +463,14 @@ def settings_write(
             "Call settings_write(values) without 'section' to create it first."
         )
     current = _yaml.read(path) or {}
-    environment = active_environment()
-    env_config = current.setdefault(environment, {})
-    if env_config is None:
-        env_config = current[environment] = {}
+    if _has_environment_sections(current):
+        environment = active_environment()
+        env_config = current.setdefault(environment, {})
+        if env_config is None:
+            env_config = current[environment] = {}
+    else:
+        # A flat file has no environments: its sections are at the top level.
+        env_config = current
 
     reference = env_config.get(section)
     if isinstance(reference, str) and reference.startswith("settings/"):
@@ -433,7 +478,10 @@ def settings_write(
         if not split_path.is_file():
             raise SettingsError(f"Split file '{reference}' does not exist")
         split = _yaml.read(split_path) or {}
-        _yaml.write(split_path, modify_list(split, dict(values)))
+        if split and section not in split:
+            # An older split file without the section key: wrap it, as R does.
+            split = {section: split}
+        _yaml.write(split_path, modify_list(split, _split_values(section, values)))
     else:
         env_config[section] = dict(values)
         _yaml.write(path, current)

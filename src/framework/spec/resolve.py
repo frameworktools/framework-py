@@ -152,7 +152,13 @@ def author_merge(
 
 @dataclass
 class ResolvedSpec:
-    """A complete project spec and the keys more than one layer set."""
+    """A complete project spec and the keys more than one layer set.
+
+    Attributes:
+        spec: The resolved spec, ready for ``spec_check()`` and ``project_create()``.
+        conflicts: Keys that more than one layer set to different values, each with its path
+            and the labels of the layers that set it. Package defaults do not count.
+    """
 
     spec: dict[str, Any]
     conflicts: list[Conflict] = field(default_factory=list)

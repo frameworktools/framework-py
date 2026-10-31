@@ -280,6 +280,13 @@ class Connection:
 def db_connect(name: str) -> Connection:
     """Open a database connection defined in the settings.
 
+    Args:
+        name: The connection's name under ``connections`` in the settings.
+
+    Returns:
+        A ``Connection`` that wraps the driver's connection object. Use it in a ``with`` block
+        to close it afterward.
+
     Raises:
         FrameworkError: The connection is not configured, its driver package
             is not installed, or connecting failed.
@@ -314,6 +321,18 @@ def db_query(
     Pass values in ``params``, never by formatting them into the SQL. The
     placeholder style is the driver's: ``?`` for sqlite, duckdb, and
     sqlserver, and ``%s`` for postgres and mysql.
+
+    Args:
+        query: The SQL query.
+        connection_name: The connection's name in the settings. The connection is opened for
+            this query and closed afterward.
+        params: Values for the query's placeholders, as a sequence or a mapping.
+
+    Returns:
+        The result rows, with the query's column names.
+
+    Raises:
+        FrameworkError: When the connection cannot be opened or the query fails.
     """
     with db_connect(connection_name) as connection:
         cursor = connection.cursor()
@@ -331,7 +350,21 @@ def db_query(
 def db_execute(
     query: str, connection_name: str, params: Sequence[Any] | Mapping[str, Any] | None = None
 ) -> int:
-    """Run a statement, commit it, and return the number of rows affected."""
+    """Run a statement, commit it, and return the number of rows affected.
+
+    Args:
+        query: The SQL statement.
+        connection_name: The connection's name in the settings. The connection is opened for
+            this statement and closed afterward.
+        params: Values for the statement's placeholders, as a sequence or a mapping. The
+            placeholder style is the driver's, as in ``db_query()``.
+
+    Returns:
+        The driver's count of affected rows, or -1 when the driver does not report one.
+
+    Raises:
+        FrameworkError: When the connection cannot be opened or the statement fails.
+    """
     with db_connect(connection_name) as connection:
         cursor = connection.cursor()
         try:
@@ -355,6 +388,16 @@ def db_transaction(connection: Connection) -> Iterator[Connection]:
 
         with fw.db_connect("warehouse") as conn, fw.db_transaction(conn):
             conn.cursor().execute("UPDATE ...")
+
+    Args:
+        connection: An open connection from ``db_connect()``.
+
+    Returns:
+        A context manager that yields ``connection``.
+
+    Raises:
+        FrameworkError: When the block raises an exception. The transaction is rolled back and
+            the original exception is chained as the cause.
     """
     if connection._in_transaction:
         yield connection

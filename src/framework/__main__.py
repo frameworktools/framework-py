@@ -37,7 +37,12 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument(
         "--interactive",
         action="store_true",
-        help="prompt for missing answers, initialize git, and register the project",
+        help=(
+            "with --name, ask for the type when --type is missing (the project is "
+            "registered and gets a git repository either way, unless your defaults turn "
+            "git off); with --from-layers, initialize git and register the project "
+            "instead of running headless"
+        ),
     )
 
     bootstrap = commands.add_parser("bootstrap", help="prepare a cloned project")

@@ -268,28 +268,101 @@ def make_qmd(
     overwrite: bool = False,
     subdir: str | None = None,
 ) -> Path:
-    """Create a Quarto notebook (``.qmd``) with Python code chunks."""
+    """Create a Quarto notebook (``.qmd``) with Python code chunks.
+
+    Args:
+        name: The file name before slugifying, such as "Data Cleaning", which becomes
+            ``data-cleaning.qmd``.
+        dir: The folder. Default: ``directories: notebooks`` or ``directories: work`` in the
+            settings, then ``options: notebook_dir``, then an existing ``notebooks/`` or
+            ``work/`` folder, then the project root. The folder is created when missing.
+        stub: The stub to start from, such as "default" or "minimal". The project's
+            ``stubs/notebook-{stub}.qmd`` is used first, then your template, then Framework's.
+        overwrite: Replace an existing file.
+        subdir: A subfolder of ``dir``.
+
+    Returns:
+        The path of the new file.
+
+    Raises:
+        FrameworkError: When the file exists and ``overwrite`` is False, or the stub is not
+            found.
+    """
     return make_notebook(name, "quarto", dir, stub, overwrite=overwrite, subdir=subdir)
 
 
 def make_revealjs(
     name: str, dir: str | Path | None = None, *, overwrite: bool = False, subdir: str | None = None
 ) -> Path:
-    """Create a Quarto reveal.js presentation."""
+    """Create a Quarto reveal.js presentation.
+
+    The file starts from the "revealjs" stub.
+
+    Args:
+        name: The file name before slugifying, such as "Data Cleaning", which becomes
+            ``data-cleaning.qmd``.
+        dir: The folder. Default: ``directories: notebooks`` or ``directories: work`` in the
+            settings, then ``options: notebook_dir``, then an existing ``notebooks/`` or
+            ``work/`` folder, then the project root. The folder is created when missing.
+        overwrite: Replace an existing file.
+        subdir: A subfolder of ``dir``.
+
+    Returns:
+        The path of the new file.
+
+    Raises:
+        FrameworkError: When the file exists and ``overwrite`` is False, or the stub is not
+            found.
+    """
     return make_notebook(name, "quarto", dir, "revealjs", overwrite=overwrite, subdir=subdir)
 
 
 def make_presentation(
     name: str, dir: str | Path | None = None, *, overwrite: bool = False, subdir: str | None = None
 ) -> Path:
-    """Create a presentation. The same as ``make_revealjs()``."""
+    """Create a presentation. The same as ``make_revealjs()``.
+
+    Args:
+        name: The file name before slugifying, such as "Data Cleaning", which becomes
+            ``data-cleaning.qmd``.
+        dir: The folder. Default: ``directories: notebooks`` or ``directories: work`` in the
+            settings, then ``options: notebook_dir``, then an existing ``notebooks/`` or
+            ``work/`` folder, then the project root. The folder is created when missing.
+        overwrite: Replace an existing file.
+        subdir: A subfolder of ``dir``.
+
+    Returns:
+        The path of the new file.
+
+    Raises:
+        FrameworkError: When the file exists and ``overwrite`` is False, or the stub is not
+            found.
+    """
     return make_revealjs(name, dir, overwrite=overwrite, subdir=subdir)
 
 
 def make_script(
     name: str, dir: str | Path | None = None, stub: str = "default", *, overwrite: bool = False
 ) -> Path:
-    """Create a Python script (``.py``) in the scripts folder."""
+    """Create a Python script (``.py``) in the scripts folder.
+
+    Args:
+        name: The file name before slugifying, such as "Load Data", which becomes
+            ``load-data.py``. A ``.py`` extension is added when missing.
+        dir: The folder. Default: ``directories: scripts`` in the settings, then
+            ``options: script_dir``, then an existing ``scripts/`` folder, then the project
+            root. The folder is created when missing.
+        stub: The stub to start from, such as "default". The project's
+            ``stubs/script-{stub}.py`` is used first, then your template, then Framework's.
+        overwrite: Replace an existing file.
+
+    Returns:
+        The path of the new file.
+
+    Raises:
+        FrameworkError: When the file exists and ``overwrite`` is False, or the stub is not
+            found.
+    """
     if not name.lower().endswith(".py"):
         name = f"{name}.py"
     return make_notebook(name, "script", dir, stub, overwrite=overwrite)
@@ -298,9 +371,16 @@ def make_script(
 def stubs_list(type: NotebookType | None = None) -> pd.DataFrame:
     """The available stubs: the project's own, then Framework's.
 
+    Args:
+        type: Only list stubs of this type. One of "quarto", "jupyter", or "script".
+            Default: every type.
+
     Returns:
         A DataFrame with columns name, type, and source (``user`` or
         ``framework``). A project stub hides Framework's of the same name.
+
+    Raises:
+        ValueError: When ``type`` is not allowed.
     """
     if type is not None and type not in _EXTENSIONS:
         raise ValueError("type must be 'quarto', 'jupyter', or 'script'")
@@ -326,6 +406,16 @@ def stubs_path(which: Literal["auto", "user", "framework"] = "auto") -> Path:
     """Where stubs are read from: the project's ``stubs/`` folder or Framework's.
 
     ``"auto"`` gives the project folder when it exists.
+
+    Args:
+        which: One of "auto", "user", or "framework". "user" gives the project's ``stubs/``
+            folder even when it does not exist. Default: "auto".
+
+    Returns:
+        The stubs folder.
+
+    Raises:
+        ValueError: When ``which`` is not allowed.
     """
     if which not in ("auto", "user", "framework"):
         raise ValueError("which must be 'auto', 'user', or 'framework'")

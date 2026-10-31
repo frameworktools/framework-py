@@ -133,3 +133,48 @@ def test_capture_output() -> None:
         print("before")
         raise ValueError("boom")
     assert failed.output == "before\n"
+
+
+def test_source_all_functions_from_scaffold_settings(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # New projects write source_all_functions under scaffold:, in a split file.
+    (project / "settings.yml").write_text(
+        "default:\n  scaffold: settings/scaffold.yml\n", encoding="utf-8"
+    )
+    (project / "settings").mkdir()
+    (project / "settings/scaffold.yml").write_text(
+        "scaffold:\n  source_all_functions: false\n", encoding="utf-8"
+    )
+    (project / "functions").mkdir()
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    fw.scaffold()
+    assert str((project / "functions").resolve()) not in sys.path
+
+
+def test_options_source_all_functions_still_applies(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n  options:\n    source_all_functions: false\n", encoding="utf-8"
+    )
+    (project / "functions").mkdir()
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    fw.scaffold()
+    assert str((project / "functions").resolve()) not in sys.path
+
+
+def test_user_paths_expand_the_home_folder(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(project.parent))
+    monkeypatch.setenv("USERPROFILE", str(project.parent))
+    monkeypatch.chdir(project.parent)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    settings_file = f"~/{project.name}/settings.yml"
+    assert fw.scaffold(settings_file) == project.resolve()
+    assert fw.settings_read(settings_file)["project_name"] == "Test"
+    assert not fw.git_security_audit(settings_file, verbose=False).summary.empty
+    assert list(fw.git_hooks_list(settings_file)["enabled"]) == [False, False]
+    fw.ai_skills_update(f"~/{project.name}")
+    fw.quarto_regenerate(f"~/{project.name}", backup=False)
+    assert not (project.parent / "~").exists()
+    assert (project / "_quarto.yml").is_file()

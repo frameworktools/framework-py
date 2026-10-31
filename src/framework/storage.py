@@ -366,6 +366,34 @@ def publish_notebook(
     A bucket with ``static_hosting: true`` gets ``<dest>/index.html`` and a
     clean URL ending in ``/``. Other buckets get ``<dest>.html`` as one
     self-contained file.
+
+    With no ``connection`` and no buckets in the settings, a project with a Framework Cloud
+    token publishes to the cloud instead.
+
+    Args:
+        file: An existing ``.qmd`` or ``.ipynb`` file.
+        dest: Where to put the result in the bucket, without ``.html``. Default: the file's
+            name without its extension. On Framework Cloud it names the document when ``slug``
+            is not a string.
+        connection: A storage bucket name from the settings. Setting it always publishes to a
+            bucket. Default: the project's default bucket, or Framework Cloud when no bucket is
+            configured.
+        self_contained: Embed resources in one HTML file. Buckets without static hosting are
+            always self-contained. With static hosting, False uploads the render folder.
+        format: The Quarto output format passed to ``--to``. Framework Cloud accepts only
+            "html". Default: "html".
+        slug: For Framework Cloud: a string names the document and turns on its readable URL,
+            True uses the derived name, and False turns the readable URL off. A storage bucket
+            ignores it with a warning.
+        allow_private: Publish even though the source is inside a ``private`` folder in the
+            project. Only a person who has reviewed the file should set this.
+
+    Returns:
+        The public URL.
+
+    Raises:
+        FrameworkError: When the file is missing or not a notebook, is inside a ``private``
+            folder, Quarto is not installed, rendering fails, or there is nowhere to publish.
     """
     source = Path(file)
     if not source.is_file() or source.suffix.lower() not in (".qmd", ".ipynb"):
@@ -426,6 +454,24 @@ def publish_data(
     """Upload a DataFrame (as CSV, Parquet, or JSON) or a data file.
 
     With ``compress``, the file is gzipped and ``.gz`` is added to ``dest``.
+
+    Args:
+        data: A DataFrame to write in ``format``, or the path of a file to upload as is.
+        dest: The object's path in the bucket, including any extension.
+        format: How a DataFrame is written. One of "csv", "parquet", or "json" (records).
+            Default: "csv". It is checked for files too, but does not change them.
+        connection: A storage bucket name from the settings. Default: the project's default
+            bucket, then one marked ``default: true``, then the first.
+        compress: Gzip the file before uploading.
+        allow_private: Publish a file even though it is inside a ``private`` folder in the
+            project. Only a person who has reviewed the file should set this.
+
+    Returns:
+        The public URL.
+
+    Raises:
+        FrameworkError: When ``format`` is not allowed, the file is missing or inside a
+            ``private`` folder, no bucket is configured, or the upload fails.
     """
     if format not in ("csv", "parquet", "json"):
         raise FrameworkError("format must be csv, parquet, or json (rds is R-only)")
@@ -463,7 +509,27 @@ def publish_dir(
     recursive: bool = True,
     allow_private: bool = False,
 ) -> list[str]:
-    """Upload the files in a folder. ``pattern`` is a regular expression on the paths."""
+    """Upload the files in a folder. ``pattern`` is a regular expression on the paths.
+
+    Args:
+        dir: The folder to upload.
+        dest: The folder in the bucket. Each file keeps its path relative to ``dir``. Default:
+            the folder's name.
+        connection: A storage bucket name from the settings. Default: the project's default
+            bucket, then one marked ``default: true``, then the first.
+        pattern: Only upload files whose path matches this regular expression (searched
+            anywhere in the path). Default: every file.
+        recursive: Include files in subfolders.
+        allow_private: Publish even though the source is inside a ``private`` folder in the
+            project. Only a person who has reviewed the file should set this.
+
+    Returns:
+        The public URL of each file uploaded. The list is empty when no file matched.
+
+    Raises:
+        FrameworkError: When the folder is missing or inside a ``private`` folder, no bucket is
+            configured, or an upload fails.
+    """
     folder = Path(dir)
     if not folder.is_dir():
         raise FrameworkError(f"Directory not found: {folder}")
@@ -483,7 +549,21 @@ def publish_dir(
 def publish_list(
     prefix: str | None = None, connection: str | None = None, max: int = 1000
 ) -> pd.DataFrame:
-    """Objects in the bucket (under its prefix): key, size, last_modified, and url."""
+    """Objects in the bucket (under its prefix): key, size, last_modified, and url.
+
+    Args:
+        prefix: Only list objects under this path, which is added to the bucket's prefix.
+            Default: everything under the bucket's prefix.
+        connection: A storage bucket name from the settings. Default: the project's default
+            bucket, then one marked ``default: true``, then the first.
+        max: The most objects to list. Default: 1000.
+
+    Returns:
+        A DataFrame with columns key, size, last_modified, and url.
+
+    Raises:
+        FrameworkError: When no bucket is configured or listing fails.
+    """
     bucket = resolve_bucket(connection)
     full_prefix = bucket.key(prefix) if prefix else bucket.prefix
     try:
@@ -505,7 +585,18 @@ def publish_list(
 
 
 def storage_test(connection: str | None = None) -> bool:
-    """Whether the bucket exists and the credentials can reach it."""
+    """Whether the bucket exists and the credentials can reach it.
+
+    Args:
+        connection: A storage bucket name from the settings. Default: the project's default
+            bucket, then one marked ``default: true``, then the first.
+
+    Returns:
+        True when the bucket answers, False when the request fails.
+
+    Raises:
+        FrameworkError: When no bucket is configured or the named one is not found.
+    """
     bucket = resolve_bucket(connection)
     try:
         bucket.client().head_bucket(Bucket=bucket.bucket)

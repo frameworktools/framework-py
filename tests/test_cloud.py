@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -365,6 +366,28 @@ def test_cloud_publish_html_and_bundle(cloud_project: Path, server: FakeCloud) -
     assert b'name="readable"\r\n\r\n0' in second
     assert b'filename="bundle.zip"' in second
     assert server.requests[-1].headers["Authorization"] == "Bearer fwp_project0123"
+
+
+def test_cloud_publish_renders_a_jupyter_notebook(
+    cloud_project: Path, server: FakeCloud, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def render(command: list[str], **kwargs: Any) -> Any:
+        out = Path(command[command.index("--output-dir") + 1])
+        out.mkdir(parents=True)
+        (out / "analysis.html").write_text("<p>rendered</p>", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(cloud.shutil, "which", lambda name: "/usr/bin/quarto")
+    monkeypatch.setattr(cloud.subprocess, "run", render)
+    server.route(
+        "POST",
+        "/api/v1/documents",
+        lambda r: httpx.Response(201, json={"url": "https://cloud.example.edu/d/k", "version": 1}),
+    )
+    notebook = cloud_project / "analysis.ipynb"
+    notebook.write_text("{}", encoding="utf-8")
+    assert cloud.cloud_publish(notebook) == "https://cloud.example.edu/d/k"
+    assert b"<p>rendered</p>" in server.requests[-1].content
 
 
 def test_cloud_publish_errors(cloud_project: Path, server: FakeCloud) -> None:

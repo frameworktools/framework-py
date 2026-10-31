@@ -23,15 +23,15 @@ from typing import Any
 from framework import _yaml, db
 from framework._log import inform, show_messages
 from framework.ai import write_ai_files
-from framework.config_home import global_settings, project_register
+from framework.config_home import config_dir, global_settings, project_register
 from framework.errors import FrameworkError
 from framework.quarto import quarto_generate_all
-from framework.spec.check import spec_check
+from framework.spec.check import ASSISTANTS, spec_check
 from framework.spec.merge import SpecError
 from framework.spec.resolve import TYPES, author_normalize, spec_resolve
 
 CHECKOUT_ALLOWLIST = frozenset({".git", ".github", ".framework", "README.md", "LICENSE"})
-_FILE_LIKE = re.compile(r"\.(qmd|Rmd|R|md|py|ipynb)$")
+FILE_LIKE = re.compile(r"\.(qmd|Rmd|R|md|py|ipynb)$")
 _TEMPLATE_VARS = ("project_name", "author", "author_email", "affiliation", "date")
 _SPLIT_TYPES = ("project", "project_sensitive")
 # Lines that ignore .env (or re-include it with a leading "!"), as in R.
@@ -95,13 +95,13 @@ def _assert_checkout(root: Path) -> None:
 
 def _create_directories(root: Path, spec: Mapping[str, Any]) -> None:
     for path in (spec.get("directories") or {}).values():
-        if path and not path.startswith("outputs/") and not _FILE_LIKE.search(path):
+        if path and not path.startswith("outputs/") and not FILE_LIKE.search(path):
             (root / path).mkdir(parents=True, exist_ok=True)
     for entry in (spec.get("extra_directories") or {}).values():
         if entry.get("path"):
             (root / entry["path"]).mkdir(parents=True, exist_ok=True)
     for key, path in (spec.get("render_dirs") or {}).items():
-        if path and "notebook" in key.lower() and not _FILE_LIKE.search(path):
+        if path and "notebook" in key.lower() and not FILE_LIKE.search(path):
             (root / path).mkdir(parents=True, exist_ok=True)
 
 
@@ -401,6 +401,24 @@ def project_create_from_layers(
 
     With ``interactive=False`` (the default) it runs headless for automation,
     as ``project_create(headless=True)`` describes.
+
+    Args:
+        layers_file: A JSON file with ``spec_version`` (which must be 1), ``name``,
+            ``layers``, and optionally ``author`` and ``source``. The layers are resolved with
+            ``spec_resolve()``.
+        path: The project folder. Default: the current directory. In headless mode it must be
+            a fresh checkout. Otherwise it must not exist.
+        interactive: Create the project in regular mode, with git initialization and a
+            registry entry. Nothing is prompted for either way. Default: False, which creates
+            it headless.
+
+    Returns:
+        The project folder.
+
+    Raises:
+        FrameworkError: When the layers file cannot be read, has an unsupported
+            ``spec_version``, or has no name, or when the project cannot be created there.
+        SpecError: When the resolved spec is invalid.
     """
     source = Path(layers_file)
     try:
@@ -421,14 +439,12 @@ def project_create_from_layers(
     return project_create(spec, path, headless=not interactive)
 
 
-def user_layer(type: str) -> dict[str, Any]:
-    """The user's defaults from the global settings, as a spec layer.
+def _defaults_layer(settings: Mapping[str, Any], type: str) -> dict[str, Any]:
+    """A spec layer from settings in the global-settings format.
 
-    Reads ``author`` and the ``defaults`` section (scaffold, AI assistants,
-    git, and the directories for this project type) of ``settings.yml`` in
-    ``config_dir()``.
+    Reads ``author``, the ``defaults`` section (scaffold, AI assistants, and
+    git), and the directories of this project type.
     """
-    settings = global_settings()
     raw_defaults = settings.get("defaults")
     defaults: dict[str, Any] = raw_defaults if isinstance(raw_defaults, dict) else {}
     layer: dict[str, Any] = {}
@@ -446,8 +462,13 @@ def user_layer(type: str) -> dict[str, Any]:
         layer["ai"] = {
             key: value for key, value in (("enabled", ai.get("enabled")),) if value is not None
         }
-        if isinstance(assistants, list):
-            layer["ai"]["assistants"] = {name: True for name in assistants}
+        if isinstance(assistants, list) and assistants:
+            # The list replaces the selection, as in R: assistants it leaves
+            # out (Claude Code included) are turned off.
+            selected = {name: True for name in assistants}
+            layer["ai"]["assistants"] = {name: False for name in ASSISTANTS} | selected
+        elif isinstance(assistants, dict):
+            layer["ai"]["assistants"] = assistants
     git = defaults.get("git")
     if isinstance(git, dict):
         layer["git"] = {
@@ -460,6 +481,29 @@ def user_layer(type: str) -> dict[str, Any]:
     if isinstance(type_config, dict) and isinstance(type_config.get("directories"), dict):
         layer["directories"] = type_config["directories"]
     return layer
+
+
+def user_layer(type: str) -> dict[str, Any]:
+    """The user's defaults from the global settings, as a spec layer.
+
+    Reads ``author`` and the ``defaults`` section (scaffold, AI assistants,
+    git, and the directories for this project type) of ``settings.yml`` in
+    ``config_dir()``. A list in ``defaults.ai.assistants`` replaces the
+    default selection.
+    """
+    return _defaults_layer(global_settings(), type)
+
+
+def catalog_layer(type: str) -> dict[str, Any]:
+    """The user's settings catalog, ``settings-catalog.yml`` in ``config_dir()``, as a spec layer.
+
+    R's ``new()`` starts from the settings catalog with this file merged over
+    it, so Python applies it too, below the global settings. Its keys are read
+    as in the global settings. Without the file the layer is empty.
+    """
+    path = config_dir() / "settings-catalog.yml"
+    catalog = _yaml.read(path) if path.is_file() else None
+    return _defaults_layer(catalog, type) if isinstance(catalog, dict) else {}
 
 
 def new(
@@ -510,6 +554,7 @@ def new(
         raise FrameworkError(f"Invalid project type. Must be one of: {', '.join(TYPES)}")
 
     layers: Sequence[Any] = [
+        {"kind": "user", "key": "settings-catalog", "layer": catalog_layer(type)},
         {"kind": "user", "layer": user_layer(type)},
         {"kind": "project", "layer": {"type": type, "language": "python"}},
     ]
@@ -559,7 +604,7 @@ def project_add_directory(project_path: str | Path, key: str, label: str, path: 
     """
     from framework.spec.check import is_safe_path
 
-    root = Path(project_path)
+    root = Path(project_path).expanduser()
     if not is_safe_path(path):
         raise FrameworkError(f"Path must be relative and stay inside the project: {path}")
     settings_file = next(

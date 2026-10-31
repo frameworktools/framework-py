@@ -52,6 +52,23 @@ def test_prepares_a_clone(clone: Path) -> None:
     assert "Created framework.db" in result.done
 
 
+def test_file_entries_in_directories_stay_files(clone: Path) -> None:
+    # Presentation projects list presentation.qmd under directories.
+    text = (clone / "settings.yml").read_text(encoding="utf-8")
+    (clone / "settings.yml").write_text(
+        text.replace(
+            "  directories:\n", "  directories:\n    presentation_source: presentation.qmd\n"
+        ),
+        encoding="utf-8",
+    )
+    result = fw.bootstrap(clone, packages=False)
+    assert not (clone / "presentation.qmd").exists()
+    assert "presentation.qmd" not in " ".join(result.done)
+    (clone / "presentation.qmd").write_text("---\n---\n", encoding="utf-8")
+    fw.bootstrap(clone, packages=False)
+    assert (clone / "presentation.qmd").is_file()
+
+
 def test_is_idempotent(clone: Path) -> None:
     fw.bootstrap(clone, packages=False)
     (clone / ".env").write_text("DB_PASSWORD=kept\n", encoding="utf-8")
@@ -144,3 +161,14 @@ def test_created_project_bootstraps(tmp_path: Path) -> None:
     result = fw.bootstrap(root, packages=False)
     assert (root / "inputs").is_dir()
     assert "Created framework.db" in result.done
+
+
+def test_create_help_describes_interactive(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("COLUMNS", "500")
+    with pytest.raises(SystemExit):
+        main(["create", "--help"])
+    text = " ".join(capsys.readouterr().out.split())
+    assert "with --name, ask for the type when --type is missing" in text
+    assert "with --from-layers, initialize git and register the project" in text

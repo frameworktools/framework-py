@@ -119,7 +119,16 @@ def _dict(value: Any) -> dict[str, Any]:
 
 
 def spec_check(spec: dict[str, Any]) -> list[str]:
-    """Problems that would stop ``project_create()``. An empty list means the spec is valid."""
+    """Problems that would stop ``project_create()``. An empty list means the spec is valid.
+
+    Args:
+        spec: A resolved spec, such as ``spec_resolve().spec``. It is checked for required and
+            unknown sections, the spec version, project type, and language, safe relative
+            paths, package and skill entries, and AI and scaffold settings.
+
+    Returns:
+        One message per problem found.
+    """
     problems: list[str] = []
     add = problems.append
 

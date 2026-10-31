@@ -239,9 +239,41 @@ def test_new_uses_user_defaults(tmp_path: Path) -> None:
     spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
     assert spec["author"]["name"] == "Grace Hopper"
     assert spec["scaffold"]["seed"] == "2024"
-    assert spec["ai"]["assistants"] == {"claude": True, "codex": True}
+    # The list replaces the default selection, as in R, so Claude Code is off.
+    assert spec["ai"]["assistants"] == {"codex": True}
+    assert not (root / "CLAUDE.md").exists()
     assert spec["directories"]["notebooks"] == "analysis"
     assert spec["source"]["origin"] == "python"
+
+
+def test_new_with_an_empty_assistant_list_keeps_claude(tmp_path: Path) -> None:
+    config = fw.config_dir()
+    config.mkdir(parents=True)
+    (config / "settings.yml").write_text("defaults:\n  ai: {assistants: []}\n", encoding="utf-8")
+    root = fw.new("Empty", tmp_path / "empty", "project", interactive=False)
+    spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
+    assert spec["ai"]["assistants"] == {"claude": True}
+
+
+def test_new_applies_the_user_settings_catalog(tmp_path: Path) -> None:
+    config = fw.config_dir()
+    config.mkdir(parents=True)
+    (config / "settings-catalog.yml").write_text(
+        "defaults:\n"
+        "  scaffold: {seed: 999, ide: positron}\n"
+        "  ai: {assistants: [copilot]}\n"
+        "project_types:\n"
+        "  project: {directories: {notebooks: analysis}}\n",
+        encoding="utf-8",
+    )
+    (config / "settings.yml").write_text("defaults:\n  scaffold: {seed: 2024}\n", encoding="utf-8")
+    root = fw.new("Catalog", tmp_path / "catalog", "project", interactive=False)
+    spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
+    # The global settings win over the catalog, which wins over the package defaults.
+    assert spec["scaffold"]["seed"] == "2024"
+    assert spec["scaffold"]["ide"] == "positron"
+    assert spec["ai"]["assistants"] == {"copilot": True}
+    assert spec["directories"]["notebooks"] == "analysis"
 
 
 def test_new_defaults_to_bare_and_needs_answers(tmp_path: Path) -> None:

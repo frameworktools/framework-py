@@ -174,6 +174,15 @@ def test_write_section(project: Path) -> None:
     assert fw.settings("project_name") == "Test"
 
 
+def test_write_section_in_a_flat_file(project: Path) -> None:
+    write(project / "settings.yml", "project_name: Flat\ndirectories:\n  notebooks: notebooks\n")
+    fw.settings_write({"notebooks": "nb"}, section="directories")
+    assert _yaml.read(project / "settings.yml") == {
+        "project_name": "Flat",
+        "directories": {"notebooks": "nb"},
+    }
+
+
 def test_write_section_into_split_file(project: Path) -> None:
     write(project / "settings.yml", "default:\n  git: settings/git.yml\n")
     write(project / "settings/git.yml", "git:\n  use_git: true\n  hooks: {}\n")
@@ -210,3 +219,30 @@ def test_values_r_would_misread_are_quoted() -> None:
     text = _yaml.dump({"a": ".", "b": "y", "c": ".na", "d": "N", "e": "plain", "f": "yes"})
     assert text == "a: '.'\nb: 'y'\nc: '.na'\nd: 'N'\ne: plain\nf: 'yes'\n"
     assert _yaml.load(text) == {"a": ".", "b": "y", "c": ".na", "d": "N", "e": "plain", "f": "yes"}
+
+
+@pytest.mark.parametrize(
+    "values", [{"use_git": False}, {"git": {"use_git": False}}], ids=["bare", "wrapped"]
+)
+def test_write_section_into_split_file_with_or_without_the_wrapper(
+    project: Path, values: dict[str, object]
+) -> None:
+    write(project / "settings.yml", "default:\n  git: settings/git.yml\n")
+    write(project / "settings/git.yml", "git:\n  use_git: true\n  hooks: {}\n")
+    fw.settings_write(values, section="git")
+    assert _yaml.read(project / "settings/git.yml") == {"git": {"use_git": False, "hooks": {}}}
+    assert fw.settings("git.use_git") is False
+
+
+def test_write_section_into_an_empty_split_file(project: Path) -> None:
+    write(project / "settings.yml", "default:\n  git: settings/git.yml\n")
+    write(project / "settings/git.yml", "")
+    fw.settings_write({"use_git": False}, section="git")
+    assert _yaml.read(project / "settings/git.yml") == {"git": {"use_git": False}}
+
+
+def test_write_section_wraps_an_older_unwrapped_split_file(project: Path) -> None:
+    write(project / "settings.yml", "default:\n  git: settings/git.yml\n")
+    write(project / "settings/git.yml", "use_git: true\nhooks: {}\n")
+    fw.settings_write({"use_git": False}, section="git")
+    assert _yaml.read(project / "settings/git.yml") == {"git": {"use_git": False, "hooks": {}}}

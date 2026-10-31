@@ -59,7 +59,7 @@ def hook_script() -> str:
 
 
 def _settings_path(settings_file: str | Path | None) -> Path:
-    path = Path(settings_file) if settings_file is not None else find_settings_file()
+    path = Path(settings_file).expanduser() if settings_file is not None else find_settings_file()
     if path is None or not path.is_file():
         raise FrameworkError("Settings file not found (expected settings.yml or config.yml)")
     return path.resolve()
@@ -150,8 +150,18 @@ def git_hooks_install(
     A pre-commit hook Framework wrote earlier (by R or Python) is replaced. Any
     other pre-commit hook is kept unless ``force`` is True.
 
+    Args:
+        settings_file: The project's settings file. Default: the settings.yml or config.yml
+            found from the current directory.
+        force: Replace a pre-commit hook that Framework did not write.
+        verbose: Print what was done.
+
     Returns:
-        Whether the hook was installed.
+        Whether the hook was installed. False outside a git repository, when no check is
+        enabled, or when another hook is kept.
+
+    Raises:
+        FrameworkError: When the settings file is not found.
     """
     path = _settings_path(settings_file)
     root = path.parent
@@ -181,6 +191,12 @@ def git_hooks_install(
 def git_hooks_uninstall(settings_file: str | Path | None = None, *, verbose: bool = True) -> bool:
     """Remove Framework's pre-commit hook. A hook Framework did not write is kept.
 
+    Args:
+        settings_file: The project's settings file, whose folder holds the repository.
+            Default: the folder of the settings file found from the current directory, or the
+            current directory when there is none.
+        verbose: Print what was done.
+
     Returns:
         Whether a hook was removed.
     """
@@ -207,8 +223,20 @@ def git_hooks_enable(
 ) -> bool:
     """Turn on one hook check in the settings and (re)install the hook.
 
+    Args:
+        hook_name: The check. One of "data_security" or "check_sensitive_dirs". The older
+            name "warn_unignored_sensitive" is accepted for "check_sensitive_dirs".
+        settings_file: The project's settings file. Default: the settings.yml or config.yml
+            found from the current directory.
+        verbose: Print what was done.
+
     Returns:
         Whether the hook is installed.
+
+    Raises:
+        ValueError: When ``hook_name`` is not a known check, including the removed
+            "ai_sync".
+        FrameworkError: When the settings file is not found.
     """
     name = _hook_name(hook_name)
     path = _settings_path(settings_file)
@@ -225,8 +253,21 @@ def git_hooks_disable(
     ``"ai_sync"`` is accepted so older settings can be cleaned up: it is set
     to false.
 
+    Args:
+        hook_name: The check. One of "data_security", "check_sensitive_dirs", or
+            "ai_sync". The older name "warn_unignored_sensitive" is accepted for
+            "check_sensitive_dirs", and turning that check off also turns off the older
+            setting.
+        settings_file: The project's settings file. Default: the settings.yml or config.yml
+            found from the current directory.
+        verbose: Print what was done.
+
     Returns:
         Whether the hook is still installed.
+
+    Raises:
+        ValueError: When ``hook_name`` is not a known check.
+        FrameworkError: When the settings file is not found.
     """
     name = "ai_sync" if hook_name == "ai_sync" else _hook_name(hook_name)
     path = _settings_path(settings_file)
@@ -246,6 +287,10 @@ def git_hooks_disable(
 
 def git_hooks_list(settings_file: str | Path | None = None) -> pd.DataFrame:
     """The hook checks and whether each is enabled.
+
+    Args:
+        settings_file: The project's settings file. Default: the settings.yml or config.yml
+            found from the current directory.
 
     Returns:
         A DataFrame with columns hook, enabled, and description. Its

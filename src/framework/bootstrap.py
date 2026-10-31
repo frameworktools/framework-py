@@ -29,7 +29,7 @@ from typing import Any
 from framework import db, dotenv
 from framework._log import inform, show_messages
 from framework._paths import in_root
-from framework.create import ensure_secrets_ignored
+from framework.create import FILE_LIKE, ensure_secrets_ignored
 from framework.errors import FrameworkError
 from framework.hooks import git_hooks_install
 from framework.project import _settings_in
@@ -111,7 +111,13 @@ def _folders(config: dict[str, Any]) -> list[str]:
     folders: list[str] = []
     directories = config.get("directories")
     if isinstance(directories, dict):
-        folders += [value for value in directories.values() if isinstance(value, str) and value]
+        # Entries that name a file, such as presentation.qmd, are skipped, as
+        # project creation skips them. R's bootstrap() creates them as folders.
+        folders += [
+            value
+            for value in directories.values()
+            if isinstance(value, str) and value and not FILE_LIKE.search(value)
+        ]
     extra = config.get("extra_directories")
     if isinstance(extra, list):
         folders += [

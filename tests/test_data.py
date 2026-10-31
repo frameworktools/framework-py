@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -188,3 +189,68 @@ def test_add_into_inline_catalog_and_flat_settings(project: Path) -> None:
 def test_add_missing_file(data_project: Path) -> None:
     with pytest.raises(fw.DataNotFoundError):
         fw.data_add("inputs/raw/none.csv")
+
+
+def test_save_by_name_uses_the_longest_directory_key(project: Path) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n"
+        "  directories:\n"
+        "    inputs_private_raw: inputs/private/raw\n"
+        "    outputs_private: outputs/private\n"
+        "    outputs_private_tables: outputs/private/tables\n",
+        encoding="utf-8",
+    )
+    fw.data_save(FRAME, "inputs.private.raw.patients", force=True)
+    assert (project / "inputs/private/raw/patients.parquet").is_file()
+    assert fw.data_read("inputs.private.raw.patients").shape == FRAME.shape
+    fw.data_save(FRAME, "outputs.private.tables.summary", force=True)
+    assert (project / "outputs/private/tables/summary.parquet").is_file()
+    fw.data_save(FRAME, "outputs.private.results", force=True)
+    assert (project / "outputs/private/results.parquet").is_file()
+
+
+@pytest.mark.parametrize(("name", "expected"), [("a.por", "spss_por"), ("b.xpt", "sas_xpt")])
+def test_add_records_the_reader_type(data_project: Path, name: str, expected: str) -> None:
+    (data_project / "inputs/raw" / name).write_bytes(b"x")
+    assert fw.data_add(data_project / "inputs/raw" / name)["type"] == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "recorded", "reader"), [("a.por", "spss", "spss_por"), ("b.xpt", "sas", "sas_xpt")]
+)
+def test_generic_types_from_r_use_the_extension(
+    data_project: Path, monkeypatch: pytest.MonkeyPatch, name: str, recorded: str, reader: str
+) -> None:
+    # R's data_add() records .por as spss and .xpt as sas.
+    (data_project / "inputs/raw" / name).write_bytes(b"x")
+    (data_project / "settings/data.yml").write_text(
+        f"data:\n  old: {{path: inputs/raw/{name}, type: {recorded}}}\n", encoding="utf-8"
+    )
+    used = []
+
+    def fake_reader(file_type: str) -> Any:
+        used.append(file_type)
+        return lambda *args: pd.DataFrame({"a": [1]})
+
+    monkeypatch.setattr("framework.data._reader", fake_reader)
+    fw.data_read("old")
+    assert used == [reader]
+
+
+def test_add_updates_an_entry_written_with_dotted_keys(data_project: Path) -> None:
+    (data_project / "settings/data.yml").write_text(
+        "data:\n  inputs:\n    raw.survey: inputs/raw/old.csv\n", encoding="utf-8"
+    )
+    (data_project / "inputs/raw/survey.csv").write_text("a\n1\n", encoding="utf-8")
+    fw.data_add(data_project / "inputs/raw/survey.csv", name="inputs.raw.survey")
+    catalog = _yaml.read(data_project / "settings/data.yml")["data"]
+    assert catalog == {
+        "inputs": {
+            "raw.survey": {
+                "path": "inputs/raw/survey.csv",
+                "type": "csv",
+                "delimiter": "comma",
+                "locked": True,
+            }
+        }
+    }

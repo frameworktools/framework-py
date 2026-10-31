@@ -27,6 +27,7 @@ import pandas as pd
 
 from framework import db
 from framework._log import inform, show_messages
+from framework._paths import has_private_segment
 from framework.errors import FrameworkError
 from framework.project import find_settings_file
 from framework.settings import settings_read
@@ -52,9 +53,6 @@ _EXCLUDED_DIRS = (
     ".framework", ".claude", ".github", ".vscode", ".idea", ".positron", "node_modules",
 )  # fmt: skip
 _EXCLUDED_FILES = {"framework.db", ".framework_renv_enabled", ".framework_scaffolded", ".initiated"}
-_PRIVATE_SEGMENT = re.compile(
-    r"(^|/)[^/]*(private|confidential|sensitive)[^/]*(/|$)", re.IGNORECASE
-)
 _SECRETS_FILE = re.compile(r"^\.env(\..+)?$")
 _SECRETS_EXAMPLE = re.compile(r"\.(example|template|sample)$")
 _HISTORY_ACTIONS = {"A": "added", "M": "modified", "D": "deleted"}
@@ -208,16 +206,20 @@ def _data_directories(config: dict[str, Any], root: Path) -> dict[str, str]:
 
 
 def _private_directories(folders: dict[str, str]) -> dict[str, str]:
-    """The folders whose contents must not be committed."""
+    """The folders whose contents must not be committed.
+
+    These are the folders every project type's ``.gitignore`` ignores:
+    ``cache``, ``scratch``, and ``logs``, and folders whose key or path is
+    marked private (``outputs_private``, ``inputs/private/raw``). R's audit
+    also counts every other ``inputs_*`` and ``outputs_*`` folder, which a
+    standard project's ``.gitignore`` does not ignore, so its audit always
+    failed there. Keys containing ``_public`` are exempt.
+    """
     return {
         key: path
         for key, path in folders.items()
         if "_public" not in key
-        and (
-            key.startswith(("inputs_", "outputs_"))
-            or "private" in key
-            or key in ("cache", "scratch", "logs")
-        )
+        and ("private" in key or has_private_segment(path) or key in ("cache", "scratch", "logs"))
     }
 
 
@@ -298,7 +300,7 @@ def _check_exposure(
         for name in tracked
         if name not in reported
         and _is_data_file(name, extensions)
-        and _PRIVATE_SEGMENT.search(str(Path(name).parent.as_posix()))
+        and has_private_segment(Path(name).parent)
     ]
     advice = (
         [
@@ -559,7 +561,7 @@ def git_security_audit(
         raise ValueError("history_depth must be 'all', 'shallow', or a positive number of commits")
     if verbose:
         show_messages()
-    path = Path(settings_file) if settings_file is not None else find_settings_file()
+    path = Path(settings_file).expanduser() if settings_file is not None else find_settings_file()
     if path is None or not path.is_file():
         raise FrameworkError("Settings file not found (expected settings.yml or config.yml)")
     root = path.resolve().parent

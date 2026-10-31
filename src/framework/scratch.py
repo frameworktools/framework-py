@@ -64,7 +64,7 @@ def scratch_capture(
         location: Folder to write to. Default: the scratch folder.
         n: For a DataFrame, write only the first ``n`` rows.
     """
-    folder = Path(location) if location is not None else scratch_dir()
+    folder = Path(location).expanduser() if location is not None else scratch_dir()
     folder.mkdir(parents=True, exist_ok=True)
     if name is None:
         name = f"capture_{datetime.now():%Y%m%d_%H%M%S}"

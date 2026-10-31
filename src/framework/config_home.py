@@ -150,7 +150,16 @@ def _save_global_settings(settings: dict[str, Any]) -> None:
 
 
 def project_register(path: str | Path) -> int:
-    """Add a project to the registry in the global settings. Returns its id."""
+    """Add a project to the registry in the global settings. Returns its id.
+
+    Args:
+        path: The project folder. It is expanded and resolved to an absolute path before it is
+            stored.
+
+    Returns:
+        The project's id. A project already in the registry keeps its id and is not added
+        again.
+    """
     settings = global_settings()
     projects = settings.get("projects") or []
     resolved = str(Path(path).expanduser().resolve())
@@ -165,7 +174,15 @@ def project_register(path: str | Path) -> int:
 
 
 def project_unregister(project: int | str | Path) -> bool:
-    """Remove a project from the registry by id or path. Returns whether it was there."""
+    """Remove a project from the registry by id or path. Returns whether it was there.
+
+    Args:
+        project: The project's id as an integer, or its folder as a path or string. A string is
+            always read as a path, so pass ids as integers.
+
+    Returns:
+        True when a project was removed, False when none matched.
+    """
     settings = global_settings()
     projects = settings.get("projects") or []
     if isinstance(project, int):

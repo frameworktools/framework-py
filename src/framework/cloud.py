@@ -413,7 +413,19 @@ def cloud_login(
 
 
 def cloud_logout(url: str | None = None) -> list[str]:
-    """Remove this machine's stored token for a server. Returns what was removed."""
+    """Remove this machine's stored token for a server. Returns what was removed.
+
+    Both the keyring entry and the token file are removed. For the default server, the legacy
+    keyring entry and ``~/.secrets/framework/token`` are removed too.
+
+    Args:
+        url: The server. Default: ``FW_CLOUD_URL``, then your saved default, then
+            https://framework.pub.
+
+    Returns:
+        A description of each keyring entry and the path of each file removed. The list is
+        empty when no token was stored.
+    """
     show_messages()
     server = cloud_server(url).url
     removed = []
@@ -436,7 +448,19 @@ def cloud_logout(url: str | None = None) -> list[str]:
 
 
 def cloud_status(url: str | None = None) -> bool:
-    """Report the server in use and whether this machine is connected to it."""
+    """Report the server in use and whether this machine is connected to it.
+
+    The server, where that setting came from, and the account are printed. When the project
+    publishes to a different server, that server is printed too.
+
+    Args:
+        url: The server. Default: ``FW_CLOUD_URL``, then your saved default, then
+            https://framework.pub.
+
+    Returns:
+        True when a token is stored and the server accepts it. False when no token is stored,
+        the server is unreachable, or the token is invalid.
+    """
     show_messages()
     server = cloud_server(url)
     inform(f"Server: {server.url} (from {server.source})")
@@ -488,6 +512,18 @@ def cloud_sync(direction: str = "auto") -> int:
     sends your local mirror, and ``"auto"`` picks the side that changed and
     stops when both did. The mirror is ``cloud-settings.yml`` in
     ``config_dir()``.
+
+    Args:
+        direction: One of "auto", "pull", or "push". Default: "auto". With "auto", a pull
+            happens when there is no local mirror or sync state yet.
+
+    Returns:
+        The settings revision after the sync.
+
+    Raises:
+        CloudError: When ``direction`` is not allowed, no token is stored, both sides changed
+            under "auto", a push has no local mirror or sync state, or the server rejects a
+            push.
     """
     show_messages()
     if direction not in ("auto", "pull", "push"):
@@ -662,7 +698,17 @@ def ledger_push() -> dict[str, int]:
 
 
 def ledger_list(name: str | None = None) -> pd.DataFrame:
-    """The project's cloud ledger, newest first."""
+    """The project's cloud ledger, newest first.
+
+    Args:
+        name: Only list entries for this catalog name. Default: every entry.
+
+    Returns:
+        A DataFrame with columns sequence, name, hash, size_bytes, and recorded_at.
+
+    Raises:
+        CloudError: When the project has no token, or the server request fails.
+    """
     columns = ["sequence", "name", "hash", "size_bytes", "recorded_at"]
     rows = [{key: entry.get(key) for key in columns} for entry in _ledger_entries(name)]
     return pd.DataFrame(rows, columns=columns)
@@ -672,6 +718,21 @@ def data_verify(name: str) -> bool:
     """Check a catalog file against framework.db and, if connected, the cloud ledger.
 
     Returns True when every record matches. A mismatch issues a warning.
+
+    The file's SHA-256 digest is compared with its framework.db record and, when the project
+    has a token, with the newest cloud ledger entry for the name. A missing record, an
+    unreachable ledger, or a name with no ledger entries is reported but does not count as a
+    mismatch.
+
+    Args:
+        name: A catalog name or file path, as accepted by ``data_info()``.
+
+    Returns:
+        True when every available record matches the file, otherwise False.
+
+    Raises:
+        DataNotFoundError: When the name is not in the catalog.
+        FrameworkError: When the file does not exist.
     """
     import warnings
 
@@ -743,10 +804,10 @@ def cloud_publish(
     slug: str | bool | None = None,
     title: str | None = None,
 ) -> str:
-    """Publish rendered HTML (or a .qmd to render) to the project's cloud server.
+    """Publish rendered HTML (or a .qmd or .ipynb to render) to the project's cloud server.
 
     Accepts a self-contained ``.html``, an ``.html`` with a sibling
-    ``<name>_files/`` folder, a render output folder, or a ``.qmd``. Each
+    ``<name>_files/`` folder, a render output folder, or a ``.qmd`` or ``.ipynb``. Each
     publish adds a version. ``slug`` names the document and turns on its
     readable URL (``True`` uses the derived name, ``False`` turns it off).
     """
@@ -766,7 +827,7 @@ def cloud_publish(
             if not pages:
                 raise CloudError(f"No HTML file found at the top of {source}")
             entrypoint = "index.html" if "index.html" in pages else pages[0]
-        elif suffix == ".qmd":
+        elif suffix in (".qmd", ".ipynb"):
             quarto = shutil.which("quarto")
             if quarto is None:
                 raise CloudError("Rendering requires the quarto command on your PATH.")
@@ -803,8 +864,8 @@ def cloud_publish(
                 html = source
         else:
             raise CloudError(
-                "Framework Cloud publishing takes rendered HTML, a render folder, or a .qmd "
-                f"to render. Got: {suffix or source.name}"
+                "Framework Cloud publishing takes rendered HTML, a render folder, or a .qmd or "
+                f".ipynb to render. Got: {suffix or source.name}"
             )
 
         readable = None if slug is None else slug is not False

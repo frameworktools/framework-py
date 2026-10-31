@@ -179,13 +179,16 @@ def ai_skills_update(project_path: str | Path = ".") -> list[str]:
     come from ``.framework/spec.json``, or from the settings for projects
     without one.
 
+    Args:
+        project_path: The project's root directory. Default: the current directory.
+
     Returns:
         The skill folders written.
     """
     from framework._log import inform, show_messages
 
     show_messages()
-    root = Path(project_path)
+    root = Path(project_path).expanduser()
     spec = _installed_spec(root)
     folders, _ = assistant_targets(spec)
     updated = []

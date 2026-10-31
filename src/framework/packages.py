@@ -200,7 +200,17 @@ def packages_snapshot() -> None:
 
 
 def packages_update(packages: str | list[str] | None = None) -> None:
-    """Upgrade locked versions, all of them or the named ones, and install them."""
+    """Upgrade locked versions, all of them or the named ones, and install them.
+
+    Runs ``uv lock --upgrade`` (or ``--upgrade-package`` for each name) and then ``uv sync`` in
+    the project root.
+
+    Args:
+        packages: A package name or a list of names to upgrade. Default: every package.
+
+    Raises:
+        FrameworkError: When uv is not installed or a uv command fails.
+    """
     show_messages()
     root = project_root()
     uv = _require_uv("Updating packages")
@@ -219,6 +229,14 @@ class PackagesStatus:
     """Whether the lock file and the environment match ``pyproject.toml``.
 
     ``lock_current`` and ``synced`` are None when uv is not installed.
+
+    Attributes:
+        lock_current: Whether ``uv lock --check`` passes, so ``uv.lock`` matches
+            ``pyproject.toml``. False when there is no ``uv.lock``.
+        synced: Whether ``uv sync --check --frozen`` passes, so the project environment
+            matches ``uv.lock``. None when there is no ``uv.lock``.
+        missing: Dependencies in ``pyproject.toml`` that are not installed in the running
+            Python environment.
     """
 
     lock_current: bool | None

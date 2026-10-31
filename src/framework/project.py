@@ -39,6 +39,13 @@ def find_settings_file(start: str | Path | None = None) -> Path | None:
 def project_root(start: str | Path | None = None) -> Path:
     """The root folder of the Framework project containing ``start`` (default: the current folder).
 
+    Args:
+        start: The folder to search from. The search moves up through its parents. Default: the
+            current directory.
+
+    Returns:
+        The folder that holds the project's settings.yml or config.yml.
+
     Raises:
         ProjectNotFoundError: No settings.yml or config.yml was found.
     """

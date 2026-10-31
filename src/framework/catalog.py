@@ -3,7 +3,10 @@
 The catalog is the ``data`` section of the settings. An entry is either a
 path string or a mapping with ``path`` and optional ``type``, ``delimiter``,
 ``locked``, ``description``, and other fields. Nested mappings without a
-``path`` group entries, and their keys form the dot-notation name.
+``path`` group entries, and their keys form the dot-notation name. A key may
+itself contain dots, so ``inputs.raw.survey`` is found as nested YAML, as
+``raw.survey:`` under ``inputs:``, or as ``inputs.raw.survey:`` directly under
+``data:``.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from typing import Any
 
 import pandas as pd
 
+from framework._paths import has_private_segment
 from framework.errors import DataNotFoundError
 from framework.project import find_settings_file
 from framework.settings import settings_read
@@ -48,7 +52,9 @@ class DataInfo:
         delimiter: For delimited text: comma, tab, semicolon, or space. None
             means it is guessed from the extension.
         locked: Whether the file's hash is checked against framework.db on read.
-        private: Whether the file is in a folder named ``private``.
+        private: Whether the file is in a private folder: one whose name
+            contains private, confidential, or sensitive, at any depth below
+            the project root.
         description: Shown when the data is read.
         name: The catalog name, when the file was found by name.
         extra: Any other fields of the catalog entry.
@@ -77,15 +83,33 @@ def _is_absolute(path: str) -> bool:
     return Path(path).is_absolute() or bool(re.match(r"^[A-Za-z]:[/\\]", path))
 
 
-def _build(path: str, base: Path, entry: dict[str, Any] | None, name: str | None) -> DataInfo:
-    full = Path(path) if _is_absolute(path) else base / path
+def _in_private_folder(path: Path, root: Path | None) -> bool:
+    """Whether any folder above ``path``, below the project root, is private.
+
+    R checks only the immediate folder, so it misses ``inputs/private/raw``.
+    """
+    folder = path.parent
+    if root is not None and folder.is_relative_to(root.resolve()):
+        folder = folder.relative_to(root.resolve())
+    return has_private_segment(folder)
+
+
+def _build(
+    path: str,
+    base: Path,
+    entry: dict[str, Any] | None,
+    name: str | None,
+    root: Path | None = None,
+) -> DataInfo:
+    expanded = Path(path).expanduser()
+    full = expanded if _is_absolute(str(expanded)) else base / expanded
     full = full.resolve()
     file_type, delimiter = type_from_extension(full)
     fields: dict[str, Any] = {
         "type": file_type,
         "delimiter": delimiter,
         "locked": False,
-        "private": full.parent.name == "private",
+        "private": _in_private_folder(full, root),
         "description": None,
     }
     extra: dict[str, Any] = {}
@@ -122,13 +146,35 @@ def catalog_names(data: Any, prefix: str = "") -> list[str]:
     return names
 
 
-def _lookup(name: str, data: Any) -> Any:
-    current = data
-    for part in name.split("."):
-        if not isinstance(current, dict) or current.get(part) is None:
+def catalog_locate(name: str, data: Any) -> tuple[dict[str, Any], str] | None:
+    """The mapping that holds a catalog name's value, and its key there.
+
+    Keys may contain dots, so each run of name parts is tried as one key:
+    nested keys first, then ``raw.survey:``-style mixed keys, then a flat
+    ``inputs.raw.survey:`` key.
+    """
+    parts = name.split(".")
+
+    def search(node: Any, start: int) -> tuple[dict[str, Any], str] | None:
+        if not isinstance(node, dict):
             return None
-        current = current[part]
-    return current
+        for end in range(start + 1, len(parts) + 1):
+            key = ".".join(parts[start:end])
+            if node.get(key) is None:
+                continue
+            if end == len(parts):
+                return node, key
+            found = search(node[key], end)
+            if found is not None:
+                return found
+        return None
+
+    return search(data, 0)
+
+
+def _lookup(name: str, data: Any) -> Any:
+    found = catalog_locate(name, data)
+    return None if found is None else found[0][found[1]]
 
 
 def _not_found(name: str, data: Any) -> DataNotFoundError:
@@ -153,24 +199,30 @@ def data_info(path: str) -> DataInfo:
     relative to the current folder (anything with a slash), or an absolute
     path. Catalog paths are relative to the project root.
 
-    Raises:
-        DataNotFoundError: The name is not in the catalog.
-    """
-    if _is_absolute(path):
-        return _build(path, Path.cwd(), None, None)
-    if "/" in path or "\\" in path:
-        return _build(path, Path.cwd(), None, None)
+    Args:
+        path: A dot-notation catalog name, a relative path containing a slash, or an absolute
+            path.
 
+    Returns:
+        The file's path, type, and catalog fields.
+
+    Raises:
+        DataNotFoundError: The name is not in the catalog, or its entry has no path.
+    """
     settings_file = find_settings_file()
-    base = settings_file.parent if settings_file else Path.cwd()
+    root = settings_file.parent if settings_file else None
+    if _is_absolute(path) or "/" in path or "\\" in path:
+        return _build(path, Path.cwd(), None, None, root)
+
+    base = root or Path.cwd()
     data = settings_read(settings_file).get("data")
     entry = _lookup(path, data)
     if entry is None:
         raise _not_found(path, data)
     if isinstance(entry, str):
-        return _build(entry, base, None, path)
+        return _build(entry, base, None, path, root)
     if isinstance(entry, dict) and isinstance(entry.get("path"), str):
-        return _build(entry["path"], base, entry, path)
+        return _build(entry["path"], base, entry, path, root)
     raise DataNotFoundError(f"Catalog entry '{path}' has no path")
 
 

@@ -178,7 +178,22 @@ def save_figure(
 
 
 def save_model(model: Any, name: str, public: bool = False, overwrite: bool = True) -> Path:
-    """Save a fitted model to the models output folder with pickle (``<name>.pkl``)."""
+    """Save a fitted model to the models output folder with pickle (``<name>.pkl``).
+
+    The file is recorded in the results table of framework.db.
+
+    Args:
+        model: The model, or any object pickle can save.
+        name: The file name without extension.
+        public: In a sensitive project, save to the public models folder.
+        overwrite: Replace an existing file.
+
+    Returns:
+        The saved file.
+
+    Raises:
+        FrameworkError: When the file exists and ``overwrite`` is False.
+    """
     path = _folder("models", public) / f"{name}.pkl"
     _check_overwrite(path, overwrite)
     with path.open("wb") as handle:

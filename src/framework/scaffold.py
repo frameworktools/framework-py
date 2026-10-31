@@ -111,8 +111,10 @@ def _set_seed(config: dict[str, Any]) -> int | None:
 
 def _add_function_folders(config: dict[str, Any], root: Path) -> list[Path]:
     """Put the project's function folders on the import path."""
+    # New projects write source_all_functions under scaffold:. R reads only
+    # options:, so it misses that setting; Python reads both, as for the seed.
     options = _section(config, "options")
-    if options.get("source_all_functions") is False:
+    if _first(config, "source_all_functions") is False:
         return []
     folders = options.get("functions_dir") or _section(config, "directories").get("functions")
     if folders is None:
@@ -141,11 +143,18 @@ def scaffold(settings_file: str | Path | None = None) -> Path:
     The working directory is not changed: Framework resolves project paths
     from the root wherever the notebook runs.
 
+    Args:
+        settings_file: The project's settings file. Default: the settings.yml or config.yml
+            found in the current directory or its parents.
+
     Returns:
         The project root.
+
+    Raises:
+        ProjectNotFoundError: When no settings file is found.
     """
     show_messages()
-    path = Path(settings_file) if settings_file is not None else find_settings_file()
+    path = Path(settings_file).expanduser() if settings_file is not None else find_settings_file()
     if path is None or not path.is_file():
         raise ProjectNotFoundError(
             "Could not locate a Framework project: no settings.yml or config.yml in "
@@ -245,9 +254,15 @@ def project_info(verbose: bool = False) -> pd.DataFrame:
     Folders that do not exist are created the first time something is saved
     there. With ``verbose``, the project name and type are printed too.
 
+    Args:
+        verbose: Print the project name and type.
+
     Returns:
         A DataFrame with columns key, path, and exists. Its ``attrs`` hold the
         project ``name`` and ``type``.
+
+    Raises:
+        ProjectNotFoundError: When no settings file is found.
     """
     settings_file = find_settings_file()
     if settings_file is None:

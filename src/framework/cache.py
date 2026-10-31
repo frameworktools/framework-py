@@ -210,7 +210,19 @@ def _lookup(name: str, file: str | Path | None) -> Any:
 
 
 def cache_get(name: str, file: str | Path | None = None, default: Any = None) -> Any:
-    """A cached value, or ``default`` when it is missing, expired, or unreadable."""
+    """A cached value, or ``default`` when it is missing, expired, or unreadable.
+
+    An expired value is removed. A value saved by R (``.rds``) or one whose file hash no longer
+    matches its record counts as missing.
+
+    Args:
+        name: The cache name.
+        file: Read the value from this file instead of the cache folder.
+        default: The value to return when the cache has no usable value.
+
+    Returns:
+        The cached value, or ``default``.
+    """
     value = _lookup(name, file)
     return default if value is _MISSING else value
 
@@ -298,7 +310,13 @@ def cache_remember(
 
 
 def cache_forget(name: str, file: str | Path | None = None) -> None:
-    """Remove a cached value and its record, whichever language saved it."""
+    """Remove a cached value and its record, whichever language saved it.
+
+    Args:
+        name: The cache name.
+        file: Remove this file instead of the files in the cache folder and the one in the
+            cache record.
+    """
     _remove(name, file)
 
 

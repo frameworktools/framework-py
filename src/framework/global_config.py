@@ -143,12 +143,30 @@ _GITIGNORE = {
 
 
 def load_settings_catalog(include_user: bool = True, validate: bool = True) -> dict[str, Any]:
-    """The defaults new Python projects start from.
+    """Framework's package defaults, with the user's settings catalog merged over them.
 
     The catalog has ``defaults`` (Framework's package defaults, layer 0 of
     ``spec_resolve()``) and ``project_types``, each with its ``.gitignore``
     text. With ``include_user``, ``settings-catalog.yml`` in ``config_dir()``
     is merged over it.
+
+    ``new()`` starts from the same package defaults, applies
+    ``settings-catalog.yml`` over them as R's ``new()`` does, and then
+    applies the global ``settings.yml``. It reads ``author``, ``defaults.scaffold``,
+    ``defaults.ai``, ``defaults.git``, and ``project_types.<type>.directories``
+    from the file, with the same keys as the global settings.
+
+    Args:
+        include_user: Merge ``settings-catalog.yml`` from ``config_dir()`` over the shipped
+            catalog when that file exists.
+        validate: Check that the result has ``defaults`` and ``project_types`` mappings.
+
+    Returns:
+        The catalog, with ``meta``, ``defaults``, and ``project_types`` keys.
+
+    Raises:
+        SettingsError: When ``validate`` is true and ``defaults`` or ``project_types`` is
+            missing or not a mapping.
     """
     shipped = files("framework").joinpath("templates")
     defaults = _yaml.load(shipped.joinpath("defaults.yml").read_text(encoding="utf-8")) or {}
@@ -208,12 +226,32 @@ def _template_file(name: str) -> str:
 
 
 def framework_template_path(name: str) -> Path:
-    """The file your version of a template is saved in (it may not exist yet)."""
+    """The file your version of a template is saved in (it may not exist yet).
+
+    Args:
+        name: The template. One of "notebook", "script", or "presentation".
+
+    Returns:
+        The path in ``templates_dir()`` for that template.
+
+    Raises:
+        FrameworkError: When ``name`` is not a known template.
+    """
     return templates_dir() / _template_file(name)
 
 
 def read_framework_template(name: str) -> str:
-    """A template's text: yours when you saved one, otherwise Framework's."""
+    """A template's text: yours when you saved one, otherwise Framework's.
+
+    Args:
+        name: The template. One of "notebook", "script", or "presentation".
+
+    Returns:
+        The template's text.
+
+    Raises:
+        FrameworkError: When ``name`` is not a known template.
+    """
     path = framework_template_path(name)
     if path.is_file():
         return path.read_text(encoding="utf-8")
@@ -222,7 +260,19 @@ def read_framework_template(name: str) -> str:
 
 
 def write_framework_template(name: str, contents: str) -> Path:
-    """Save your version of a template. Returns its path."""
+    """Save your version of a template. Returns its path.
+
+    Args:
+        name: The template. One of "notebook", "script", or "presentation".
+        contents: The template's text. A trailing newline is added when it has none.
+
+    Returns:
+        The path the template was written to.
+
+    Raises:
+        FrameworkError: When ``name`` is not a known template.
+        TypeError: When ``contents`` is not a string.
+    """
     if not isinstance(contents, str):
         raise TypeError("contents must be text")
     path = framework_template_path(name)
@@ -232,7 +282,17 @@ def write_framework_template(name: str, contents: str) -> Path:
 
 
 def reset_framework_template(name: str) -> Path:
-    """Remove your version of a template, so Framework's is used again."""
+    """Remove your version of a template, so Framework's is used again.
+
+    Args:
+        name: The template. One of "notebook", "script", or "presentation".
+
+    Returns:
+        The path of the removed file. Nothing fails when it did not exist.
+
+    Raises:
+        FrameworkError: When ``name`` is not a known template.
+    """
     path = framework_template_path(name)
     path.unlink(missing_ok=True)
     return path

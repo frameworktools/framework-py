@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 from framework.project import project_root
+
+# A folder named like private, confidential, or sensitive (outputs_private and
+# private_raw count too), as the git security audit and R's audit match them.
+PRIVATE_SEGMENT = re.compile(r"(^|/)[^/]*(private|confidential|sensitive)[^/]*(/|$)", re.IGNORECASE)
+
+
+def has_private_segment(path: str | Path) -> bool:
+    """Whether a folder path, with ``/`` separators, has a private segment."""
+    return bool(PRIVATE_SEGMENT.search(Path(path).as_posix()))
 
 
 def relative_to_root(path: Path, root: Path) -> str:

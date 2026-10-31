@@ -91,3 +91,56 @@ def test_empty_data_list(project: Path) -> None:
     frame = fw.data_list()
     assert frame.empty
     assert list(frame.columns) == ["name", "path", "type", "locked", "description"]
+
+
+def test_dotted_keys_resolve_like_nested_ones(project: Path) -> None:
+    # R's data_list() lists these names but its data_read() cannot find them.
+    write_catalog(
+        project,
+        "  data:\n"
+        "    inputs:\n"
+        "      raw.survey: inputs/raw/survey.csv\n"
+        "      intermediate:\n"
+        "        clean: {path: inputs/intermediate/clean.parquet, locked: true}\n"
+        "    inputs.final.analysis: {path: inputs/final/analysis.csv, type: csv}\n",
+    )
+    assert fw.data_info("inputs.raw.survey").path == (project / "inputs/raw/survey.csv").resolve()
+    assert fw.data_info("inputs.intermediate.clean").locked is True
+    assert fw.data_info("inputs.final.analysis").name == "inputs.final.analysis"
+    listed = fw.data_list()
+    assert list(listed["name"]) == [
+        "inputs.raw.survey",
+        "inputs.intermediate.clean",
+        "inputs.final.analysis",
+    ]
+    assert listed["path"].iloc[0] == "inputs/raw/survey.csv"
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("inputs/private/raw/ids.csv", True),
+        ("inputs/private_raw/ids.csv", True),
+        ("outputs/confidential/tables/t.csv", True),
+        ("inputs/raw/ids.csv", False),
+    ],
+)
+def test_private_folders_at_any_depth(project: Path, path: str, expected: bool) -> None:
+    write_catalog(project, f"  data:\n    entry: {path}\n")
+    assert fw.data_info("entry").private is expected
+
+
+def test_private_ignores_folders_above_the_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "private" / "project"
+    root.mkdir(parents=True)
+    write_catalog(root, "  data:\n    entry: inputs/raw/ids.csv\n")
+    monkeypatch.chdir(root)
+    assert fw.data_info("entry").private is False
+
+
+def test_tilde_in_a_path_is_the_home_folder(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(project))
+    monkeypatch.setenv("USERPROFILE", str(project))
+    assert fw.data_info("~/inputs/a.csv").path == (project / "inputs/a.csv").resolve()
