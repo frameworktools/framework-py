@@ -575,3 +575,44 @@ def test_new_registers_its_pieces_with_v2(tmp_path: Path, server: FakeCloud) -> 
     assert sent["settings"]["sensitive"] is True
     assert sent["settings"]["ai"]["enabled"] is True
     assert dotenv.read(root / ".env")["FW_PROJECT_TOKEN"] == "fwp_pieces0123"
+
+
+def test_new_starts_from_your_cloud_defaults(
+    tmp_path: Path, server: FakeCloud, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    defaults = {
+        "blueprint": "framework/course",
+        "package_sets": [],
+        "skill_sets": ["framework/framework"],
+        "tools": {"renv": False, "targets": True, "quarto": True, "jupyter": True},
+        "settings": {"sensitive": False, "git": True, "ai": True},
+    }
+    server.route("GET", "/api/v2/defaults", lambda r: httpx.Response(200, json=defaults))
+    sent: list[dict[str, Any]] = []
+
+    def resolve(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json=choices_envelope())
+
+    server.route("POST", "/api/v2/resolve", resolve)
+    server.route(
+        "POST", "/api/v2/projects", lambda r: httpx.Response(201, json={"token": "fwp_d0123456"})
+    )
+    fw.new("Lab", tmp_path / "lab", interactive=False)
+    assert sent[0]["blueprint"] == "framework/course"
+    # R-only tools are left out; Python's stay
+    assert sent[0]["tools"] == {"quarto": True, "jupyter": True}
+    assert sent[0]["settings"] == {"sensitive": False, "git": True, "ai": True}
+
+    # Interactively, a Framework type answers the prompt and skips the cloud's defaults
+    monkeypatch.setattr("builtins.input", lambda prompt: "bare")
+    root = fw.new("Local", tmp_path / "local", interactive=True)
+    assert _yaml.read(root / "settings.yml")["default"]["project_type"] == "bare"
+    assert len(sent) == 1
+
+
+def test_new_without_cloud_defaults_stays_local(tmp_path: Path, server: FakeCloud) -> None:
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    root = fw.new("Plain", tmp_path / "plain", interactive=False)
+    assert _yaml.read(root / "settings.yml")["default"]["project_type"] == "bare"

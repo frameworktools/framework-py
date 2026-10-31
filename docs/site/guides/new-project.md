@@ -119,6 +119,8 @@ A structure replaces the blueprint's structure. `tools`, `package_sets`, `skill_
 
 `new()` sends the choices to the server, which resolves them into layers. It builds the project from those layers, then registers it on the server, which records the choices and returns a project token that `new()` saves in `.env`. If registration fails, the project is still created and `new()` reports why. Only the choices you pass are sent. Data and code stay on your computer.
 
+When you are logged in and pass no type, blueprint, structure, tools, or sets, `new()` starts from your defaults on Framework Cloud: your preferred blueprint, tools, sets, and settings. Interactively, it shows your default blueprint and accepts a Framework type or another blueprint instead. When the server can't be reached, `new()` uses the local defaults described above.
+
 ## What Gets Created
 
 A new project contains these files, depending on its type.

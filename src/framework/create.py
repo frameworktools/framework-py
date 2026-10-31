@@ -542,7 +542,9 @@ def new(
         location: The project folder to create. Asked for when interactive.
         type: project, project_sensitive, course, presentation, or bare. When
             left out, it is asked for interactively and is ``bare`` otherwise,
-            as in R's ``new()``.
+            as in R's ``new()``. When you are logged in to Framework Cloud and
+            pass no type, blueprint, structure, tools, or sets, the project
+            starts from your defaults there instead.
         tools: Tools to turn on, as a list of ids such as ``["jupyter"]``, or a map of id to
             true or false, which can also turn off a default such as Quarto. A tool another
             one needs is turned on too, with a message. Default: the type's tools (uv, and
@@ -607,6 +609,26 @@ def new(
             raise FrameworkError("Project location is required in non-interactive mode")
         suggested = Path("~") / "projects" / kebab_case(name)
         location = input(f"Project location [{suggested}]: ").strip() or suggested
+    if not cloud_choices and type is None and not (tools or package_sets or skill_sets):
+        # Logged in with no choices given: start from your defaults on the cloud
+        defaults = _user_defaults()
+        if defaults is not None:
+            blueprint = str(defaults["blueprint"])
+            if interactive:
+                answer = input(f"Project type or blueprint [{blueprint}]: ").strip()
+                if answer in TYPES:
+                    type = answer
+                elif answer:
+                    blueprint = answer
+            if type is None:
+                cloud_choices = True
+                tools = _python_tools(defaults.get("tools"))
+                package_sets = list(defaults.get("package_sets") or [])
+                skill_sets = list(defaults.get("skill_sets") or [])
+                settings = defaults.get("settings") or {}
+                sensitive, git, ai = (settings.get(k) for k in ("sensitive", "git", "ai"))
+            else:
+                blueprint = None
     if cloud_choices:
         body = _choices_body(
             name, blueprint, structure, tools, package_sets, skill_sets, skills, sensitive, ai, git
@@ -640,6 +662,40 @@ def new(
 
         register_project(root, name, type, spec, package_sets=package_sets, skill_sets=skill_sets)
     return root
+
+
+def _user_defaults() -> dict[str, Any] | None:
+    """Your defaults on Framework Cloud, or None when not logged in or unreachable."""
+    from framework.cloud import CloudError, api, cloud_server, cloud_token, host
+
+    try:
+        server = cloud_server().url
+    except CloudError:
+        return None
+    token = cloud_token(server)
+    if token is None:
+        return None
+    try:
+        defaults = api("/api/v2/defaults", token, server)
+    except CloudError:
+        return None
+    if not isinstance(defaults, dict) or not defaults.get("blueprint"):
+        return None
+    inform(f"Starting from your defaults on {host(server)}")
+    return defaults
+
+
+def _python_tools(tools: Any) -> dict[str, bool]:
+    """Default tools that apply to Python: Framework's R-only tools are left out."""
+    from framework.features import _tools
+
+    definitions = _tools()
+    return {
+        tool: on
+        for tool, on in (tools if isinstance(tools, dict) else {}).items()
+        if isinstance(on, bool)
+        and (tool not in definitions or "python" in (definitions[tool].get("language") or []))
+    }
 
 
 def _choices_body(
