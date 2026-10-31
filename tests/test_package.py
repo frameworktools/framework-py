@@ -20,10 +20,10 @@ def test_now_matches_r_format() -> None:
 def test_shipped_schemas_are_valid_json_schemas() -> None:
     folder = resources.files("framework").joinpath("_assets/schema")
     names = sorted(entry.name for entry in folder.iterdir())
-    assert names == ["layer.v1.json", "layers.v1.json", "spec.v1.json"]
+    assert names == ["docs-reference.v1.json", "layer.v1.json", "layers.v1.json", "spec.v1.json"]
     for name in names:
         schema = json.loads(folder.joinpath(name).read_text(encoding="utf-8"))
-        jsonschema.Draft7Validator.check_schema(schema)
+        jsonschema.validators.validator_for(schema).check_schema(schema)
 
 
 def test_spec_schema_knows_python() -> None:

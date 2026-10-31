@@ -1,0 +1,92 @@
+# Reference categories for py.framework.pub, in order. The names follow R's
+# inst/docs-export/categories.yml, so the two sites read alike. Every name in
+# framework.__all__ must appear exactly once (tests/test_docs_site.py checks).
+# `common` entries are listed first in their category.
+
+- id: workflow
+  title: Workflow
+  description: Setting up and managing the working environment
+  common: [scaffold, settings, bootstrap]
+  names: [scaffold, status, project_info, bootstrap, settings, settings_read, settings_write,
+          spec_resolve, spec_check, configure_global, global_settings, config_dir, config_sync,
+          load_settings_catalog, scratch_capture, scratch_clean, capture_output, now]
+
+- id: data
+  title: Data
+  description: Reading, writing, and managing data files
+  common: [data_read, data_save, data_add, data_list]
+  names: [data_read, data_save, data_add, data_list, data_info]
+
+- id: packages
+  title: Packages
+  description: Package management with uv
+  common: [package_add, packages_status]
+  names: [package_add, packages_list, packages_install, packages_restore, packages_snapshot,
+          packages_update, packages_status]
+
+- id: saving-work
+  title: Saving Work
+  description: Saving figures, tables, reports, and models
+  common: [save_table, save_figure]
+  names: [save_table, save_figure, save_model, save_report, save_notebook, result_list]
+
+- id: notebooks
+  title: Notebooks & Scripts
+  description: Creating notebooks, scripts, and presentations
+  common: [make_notebook, make_script]
+  names: [make_notebook, make_qmd, make_script, make_presentation, make_revealjs, stubs_list,
+          stubs_path, stubs_publish, quarto_generate_all, quarto_regenerate, framework_template_path,
+          read_framework_template, write_framework_template, reset_framework_template]
+
+- id: project-management
+  title: Project Management
+  description: Creating and managing projects
+  common: [new, project_create]
+  names: [new, project_create, project_create_from_layers, project_add_directory, project_root,
+          project_list, project_register, project_unregister]
+
+- id: publishing
+  title: Publishing
+  description: Publishing outputs and reports
+  common: [publish, publish_notebook]
+  names: [publish, publish_notebook, publish_data, publish_dir, publish_list, storage_test]
+
+- id: cloud
+  title: Cloud
+  description: Framework Cloud login, settings sync, and the integrity ledger
+  common: [cloud_login, cloud_status]
+  names: [cloud_login, cloud_logout, cloud_status, cloud_settings, cloud_sync, ledger_push,
+          ledger_list, data_verify]
+
+- id: git
+  title: Git
+  description: Git hooks and the security audit
+  common: [git_security_audit, git_hooks_install]
+  names: [git_security_audit, git_hooks_install, git_hooks_uninstall, git_hooks_enable,
+          git_hooks_disable, git_hooks_list]
+
+- id: caching
+  title: Caching
+  description: Caching computed values for performance
+  common: [cache_remember, cache_get]
+  names: [cache, cache_remember, cache_get, cache_list, cache_forget, cache_flush]
+
+- id: database
+  title: Database
+  description: Database connections and queries
+  common: [db_query, db_execute]
+  names: [db_query, db_execute, db_connect, db_transaction, db_list, connections_list,
+          db_drivers_status]
+
+- id: ai
+  title: AI
+  description: AI assistant integration
+  names: [ai_skills_update]
+
+- id: types
+  title: Errors and Types
+  description: Exceptions, warnings, and the result types functions return
+  names: [FrameworkError, SettingsError, SpecError, DataNotFoundError, ProjectNotFoundError,
+          UnsupportedFormatError, IntegrityError, CloudError, FrameworkWarning, CacheWarning,
+          DataChangedWarning, AuditResult, BootstrapResult, CapturedOutput, Connection, DataInfo,
+          PackagesStatus, ResolvedSpec]

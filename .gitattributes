@@ -5,3 +5,4 @@ tests/shared/** -text
 tests/fixtures/** -text
 tests/integration/compose.yml -text
 tests/integration/*/init.sql -text
+docs/docs-site.md -text

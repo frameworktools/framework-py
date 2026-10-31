@@ -1,0 +1,18 @@
+# The framework-py docs site (py.framework.pub). Format: R's
+# inst/schema/docs-site.md. Sections are the top-bar dropdowns and the
+# sidebar groups, in this order.
+product: py
+title: Framework for Python
+tagline: Structured data science projects in Python
+repository: https://github.com/frameworktools/framework-py
+install: uv add framework-py
+sections:
+  - id: getting_started
+    title: Getting Started
+  - id: features
+    title: Features
+  - id: project_types
+    title: Project Types
+  - id: reference
+    title: Reference
+    reference: true

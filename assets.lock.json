@@ -1,13 +1,21 @@
 {
-  "commit": "23a679d5820fb2f200059724572f8ebbbd21d031",
+  "commit": "56a64897341276902d2d7b0824f0407293295725",
   "files": {
+    "docs/docs-site.md": {
+      "sha256": "a1d525010bb582a2ae0e6872ed2ec8b466ec56193554468c51dc7fcc0bd2aafd",
+      "source": "inst/schema/docs-site.md"
+    },
     "src/framework/_assets/hooks/pre-commit": {
-      "sha256": "bf1e647db268dac0149ef11c65d9bfc25970f7fb0d5f8a39c65cd8268f3e8db0",
+      "sha256": "c1790d7adb2e6f7b138b62d87b007e6f90d137cca801df8cf291bd3846b44cfb",
       "source": "inst/hooks/pre-commit"
     },
     "src/framework/_assets/init.sql": {
       "sha256": "f9a222b887029819e218aabe087751b54895f5efc22d7a2ac71774e6c9e680e1",
       "source": "inst/templates/init.sql"
+    },
+    "src/framework/_assets/schema/docs-reference.v1.json": {
+      "sha256": "e115abd1d68a5f15d46c5794f05f880623e9286197ffda6a4c1fe8dcb9309f5f",
+      "source": "inst/schema/docs-reference.v1.json"
     },
     "src/framework/_assets/schema/layer.v1.json": {
       "sha256": "99f1f1d673304103a2b0afd0b62ca7b7f66b995fb4b802b393e36f561ff84b39",
@@ -70,6 +78,6 @@
       "source": "inst/conformance/merge/maps-and-null-removal.json"
     }
   },
-  "ref": "23a679d",
+  "ref": "56a6489",
   "source": "framework (R package)"
 }

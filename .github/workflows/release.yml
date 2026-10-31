@@ -29,14 +29,23 @@ jobs:
           enable-cache: false
       - run: uv build
       - run: uvx twine check dist/*
+      # The docs site archive for py.framework.pub. It stays out of dist/,
+      # which goes to PyPI.
+      - run: uv run --locked python scripts/build_docs.py --archive site-dist/docs-site.tar.gz
       # Signed build provenance: gh attestation verify <file> --repo frameworktools/framework-py
       - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
         with:
-          subject-path: dist/*
+          subject-path: |
+            dist/*
+            site-dist/docs-site.tar.gz
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: docs-site
+          path: site-dist/
 
   publish:
     name: Publish to PyPI
@@ -55,7 +64,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
 
   github-release:
-    name: Attach files to the GitHub release
+    name: Attach the package and docs to the GitHub release
     needs: build
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
@@ -66,7 +75,11 @@ jobs:
         with:
           name: dist
           path: dist/
-      - run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: docs-site
+          path: site-dist/
+      - run: gh release upload "$TAG" dist/* site-dist/docs-site.tar.gz --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}

@@ -85,7 +85,7 @@ strict = true
 files = ["src", "scripts"]
 
 [[tool.mypy.overrides]]
-module = ["pyarrow", "pyarrow.*", "keyring", "keyring.*", "secretstorage", "matplotlib", "matplotlib.*", "openpyxl", "pyreadstat", "boto3", "botocore", "botocore.*", "pyodbc", "pymysql", "psycopg", "psycopg.*", "duckdb"]
+module = ["pyarrow", "pyarrow.*", "keyring", "keyring.*", "secretstorage", "jsonschema", "matplotlib", "matplotlib.*", "openpyxl", "pyreadstat", "boto3", "botocore", "botocore.*", "pyodbc", "pymysql", "psycopg", "psycopg.*", "duckdb"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

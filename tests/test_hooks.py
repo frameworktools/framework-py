@@ -39,7 +39,8 @@ def test_shipped_hook_is_a_posix_script() -> None:
     script = hook_script()
     assert script.startswith("#!/bin/sh\n")
     assert "\r" not in script
-    assert "python -m framework hook pre-commit" in script
+    assert "-m framework hook pre-commit" in script
+    assert "-c 'import framework'" in script
 
 
 def test_nothing_installed_until_a_hook_is_enabled(repo: Path) -> None:

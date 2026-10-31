@@ -28,6 +28,8 @@ WORKTREE = "worktree"
 # Runtime files go in the package; test-only files go in tests/shared.
 ASSETS: dict[str, str] = {
     "inst/schema/*.json": "src/framework/_assets/schema",
+    # The docs site format (docs/site, scripts/build_docs.py).
+    "inst/schema/docs-site.md": "docs",
     "inst/templates/init.sql": "src/framework/_assets",
     "inst/hooks/pre-commit": "src/framework/_assets/hooks",
     "inst/conformance/README.md": "tests/shared/conformance",
