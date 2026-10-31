@@ -44,17 +44,15 @@ def repo(project: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
     git(project, "remote", "add", "origin", REMOTE)
     # get-url still shows the GitHub URL; pushes go to the bare repository
     git(project, "config", f"url.{bare.as_uri()}.pushInsteadOf", REMOTE)
+    git(project, "config", "test.bare", str(bare))
     git(project, "add", "settings.yml")
     git(project, "commit", "-qm", "init")
     return project
 
 
 def bare_log(repo: Path, branch: str = "main") -> list[str]:
-    url = git(repo, "config", "--get-regexp", "pushinsteadof").split()[0]
-    bare = url.removeprefix("url.").removesuffix(".pushinsteadof")
-    return git(
-        repo, "--git-dir", bare.removeprefix("file://"), "log", "--format=%s", branch
-    ).splitlines()
+    bare = git(repo, "config", "test.bare")
+    return git(repo, "--git-dir", bare, "log", "--format=%s", branch).splitlines()
 
 
 def test_remote_and_url_helpers() -> None:
