@@ -41,6 +41,7 @@ import pandas as pd
 
 from framework import _secretservice, _wincred, _yaml, db, dotenv
 from framework._log import inform, show_messages
+from framework._private import confirm_private_upload
 from framework.config_home import config_dir, ensure_config_dir, r_config_dir
 from framework.errors import FrameworkError, FrameworkWarning
 from framework.integrity import file_hash
@@ -803,14 +804,23 @@ def cloud_publish(
     self_contained: bool = True,
     slug: str | bool | None = None,
     title: str | None = None,
+    include_private: bool = False,
 ) -> str:
     """Publish rendered HTML (or a .qmd or .ipynb to render) to the project's cloud server.
 
     Accepts a self-contained ``.html``, an ``.html`` with a sibling
     ``<name>_files/`` folder, a render output folder, or a ``.qmd`` or ``.ipynb``. Each
     publish adds a version. ``slug`` names the document and turns on its
-    readable URL (``True`` uses the derived name, ``False`` turns it off).
+    readable URL (``True`` uses the derived name, ``False`` turns it off). A source with
+    "private" in its path needs confirmation, or ``include_private=True``.
     """
+    sources = [source]
+    if source.is_dir():
+        sources = sorted(p for p in source.rglob("*") if p.is_file())
+    elif source.with_name(f"{source.stem}_files").is_dir():
+        assets = source.with_name(f"{source.stem}_files")
+        sources += sorted(p for p in assets.rglob("*") if p.is_file())
+    confirm_private_upload(sources, include_private)
     token = _require_project_token()
     with tempfile.TemporaryDirectory(prefix="fw_publish_") as temp:
         stage = Path(temp)

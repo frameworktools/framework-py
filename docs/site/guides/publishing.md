@@ -171,17 +171,22 @@ Each publish adds a new version of the document. The `slug` argument names the d
 
 Publishing sends only the document you name. The [Framework Cloud](guide:cloud) guide describes what else the cloud receives.
 
-## Private Folders
+## Private Paths
 
-Every publishing function refuses a source inside a folder named `private` within the project, such as `outputs/private/tables/` or `inputs/private/raw/`. Those folders hold restricted data.
+Publishing happens only when you call a publishing function, and framework-py never uploads anything on its own. Every publishing function checks the full path of each file it is about to upload. A path that contains `private` in any letter case, such as `outputs/private/tables/detail.csv` or `~/Private/notes.html`, gets a warning that lists the files.
+
+In an interactive session, the function then asks before it uploads anything. Answer `y` to upload, and anything else cancels. A session with no terminal, such as a script, a scheduled job, CI, or a notebook run by an assistant, cannot answer, so the function raises an error instead.
 
 ```text
-FrameworkError: Refusing to publish 'outputs/private/tables/detail.csv': it is inside a
-private folder, which holds restricted data. Pass allow_private=True if you really mean
-to publish it.
+Warning: 1 file(s) to upload have 'private' in their path:
+  /home/me/study/outputs/private/tables/detail.csv
+FrameworkError: Not uploading files with 'private' in their path without confirmation.
+Review them, then pass include_private=True to upload them.
 ```
 
-`allow_private=True` overrides the check. Only a person who has reviewed the file should pass it. A DataFrame passed to `publish_data()` has no path, so the check does not apply to it. Review the data before you publish it.
+`include_private=True` uploads without asking. Only a person who has reviewed the files should pass it. The older name `allow_private` still works but warns that it is deprecated. A DataFrame passed to `publish_data()` has no path, so the check does not apply to it. Review the data before you publish it.
+
+On macOS, the system resolves `/tmp` and `/var` to paths under `/private/`. That leading `/private/` does not count. A folder you named `private` always counts.
 
 In privacy-sensitive projects, save shareable results with `public=True` and publish them from the public folders.
 

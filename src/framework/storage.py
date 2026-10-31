@@ -12,8 +12,9 @@ Credentials come from the environment (``S3_ACCESS_KEY`` and
 environment variables take precedence over values in the settings.
 
 Publishing uploads files with a public-read ACL and returns their URLs.
-Sources inside a ``private`` folder of the project are refused unless
-``allow_private=True`` is passed, as in R.
+A source with "private" anywhere in its full path is listed with a warning
+and needs confirmation: an interactive session asks, and a session with no
+terminal raises an error unless ``include_private=True`` is passed.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from typing import Any
 import pandas as pd
 
 from framework._log import inform
+from framework._private import confirm_private_upload, include_private_arg
 from framework.errors import FrameworkError
 from framework.settings import settings_read
 
@@ -208,29 +210,6 @@ def resolve_bucket(connection: str | None = None) -> Bucket:
 # Uploading --------------------------------------------------------------------------
 
 
-def _refuse_private(path: Path, allow_private: bool) -> None:
-    """Refuse a source inside a folder named ``private`` within the project.
-
-    Folders above the project root do not count (macOS keeps temporary files
-    under ``/private``), and nothing is refused outside a project.
-    """
-    from framework.project import find_settings_file
-
-    settings_file = find_settings_file()
-    if allow_private or settings_file is None:
-        return
-    root = settings_file.parent.resolve()
-    resolved = path.resolve()
-    if not resolved.is_relative_to(root):
-        return
-    relative = resolved.relative_to(root)
-    if "private" in relative.parts:
-        raise FrameworkError(
-            f"Refusing to publish '{relative.as_posix()}': it is inside a private folder, which "
-            "holds restricted data. Pass allow_private=True if you really mean to publish it."
-        )
-
-
 def _content_type(path: Path) -> str:
     return (
         _CONTENT_TYPES.get(path.suffix.lower())
@@ -315,7 +294,9 @@ def publish(
     overwrite: bool = True,
     self_contained: bool = True,
     slug: str | bool | None = None,
-    allow_private: bool = False,
+    include_private: bool = False,
+    *,
+    allow_private: bool | None = None,
 ) -> str | list[str]:
     """Upload a file or folder to the project's storage bucket.
 
@@ -326,8 +307,9 @@ def publish(
         overwrite: Accepted for parity with R; uploads always replace.
         self_contained: For Framework Cloud publishing.
         slug: For Framework Cloud publishing.
-        allow_private: Publish even though the source is inside a ``private``
-            folder. Only a person who has reviewed the file should set this.
+        include_private: Upload files with "private" in their path without asking. Only a
+            person who has reviewed the files should set this.
+        allow_private: Deprecated name for ``include_private``.
 
     Returns:
         The public URL, or a list of URLs for a folder.
@@ -335,11 +317,14 @@ def publish(
     path = Path(source)
     if not path.exists():
         raise FrameworkError(f"Source not found: {path}")
-    _refuse_private(path, allow_private)
+    include = include_private_arg(include_private, allow_private)
+    confirm_private_upload(_files(path, True, None) if path.is_dir() else [path], include)
     if _target(connection) == "cloud":
         from framework.cloud import cloud_publish
 
-        return cloud_publish(path, dest=dest, self_contained=self_contained, slug=slug)
+        return cloud_publish(
+            path, dest=dest, self_contained=self_contained, slug=slug, include_private=True
+        )
     _slug_ignored(slug)
     bucket = resolve_bucket(connection)
     dest = dest or path.name
@@ -359,7 +344,9 @@ def publish_notebook(
     self_contained: bool = True,
     format: str = "html",
     slug: str | bool | None = None,
-    allow_private: bool = False,
+    include_private: bool = False,
+    *,
+    allow_private: bool | None = None,
 ) -> str:
     """Render a Quarto notebook with the ``quarto`` command and upload the result.
 
@@ -385,20 +372,22 @@ def publish_notebook(
         slug: For Framework Cloud: a string names the document and turns on its readable URL,
             True uses the derived name, and False turns the readable URL off. A storage bucket
             ignores it with a warning.
-        allow_private: Publish even though the source is inside a ``private`` folder in the
-            project. Only a person who has reviewed the file should set this.
+        include_private: Upload files with "private" in their path without asking. Only a
+            person who has reviewed the files should set this.
+        allow_private: Deprecated name for ``include_private``.
 
     Returns:
         The public URL.
 
     Raises:
-        FrameworkError: When the file is missing or not a notebook, is inside a ``private``
-            folder, Quarto is not installed, rendering fails, or there is nowhere to publish.
+        FrameworkError: When the file is missing or not a notebook, has "private" in its path
+            and is not confirmed, Quarto is not installed, rendering fails, or there is nowhere
+            to publish.
     """
     source = Path(file)
     if not source.is_file() or source.suffix.lower() not in (".qmd", ".ipynb"):
         raise FrameworkError(f"publish_notebook() needs an existing .qmd or .ipynb file: {source}")
-    _refuse_private(source, allow_private)
+    confirm_private_upload([source], include_private_arg(include_private, allow_private))
     quarto = shutil.which("quarto")
     if quarto is None:
         raise FrameworkError(
@@ -409,7 +398,9 @@ def publish_notebook(
             raise FrameworkError(f'Framework Cloud publishes HTML only (got format="{format}").')
         from framework.cloud import cloud_publish
 
-        return cloud_publish(source, dest=dest, self_contained=self_contained, slug=slug)
+        return cloud_publish(
+            source, dest=dest, self_contained=self_contained, slug=slug, include_private=True
+        )
     _slug_ignored(slug)
     bucket = resolve_bucket(connection)
     self_contained = self_contained or not bucket.static_hosting
@@ -449,7 +440,9 @@ def publish_data(
     format: str = "csv",
     connection: str | None = None,
     compress: bool = False,
-    allow_private: bool = False,
+    include_private: bool = False,
+    *,
+    allow_private: bool | None = None,
 ) -> str:
     """Upload a DataFrame (as CSV, Parquet, or JSON) or a data file.
 
@@ -463,18 +456,20 @@ def publish_data(
         connection: A storage bucket name from the settings. Default: the project's default
             bucket, then one marked ``default: true``, then the first.
         compress: Gzip the file before uploading.
-        allow_private: Publish a file even though it is inside a ``private`` folder in the
-            project. Only a person who has reviewed the file should set this.
+        include_private: Upload files with "private" in their path without asking. Only a
+            person who has reviewed the files should set this.
+        allow_private: Deprecated name for ``include_private``.
 
     Returns:
         The public URL.
 
     Raises:
-        FrameworkError: When ``format`` is not allowed, the file is missing or inside a
-            ``private`` folder, no bucket is configured, or the upload fails.
+        FrameworkError: When ``format`` is not allowed, the file is missing or has "private"
+            in its path and is not confirmed, no bucket is configured, or the upload fails.
     """
     if format not in ("csv", "parquet", "json"):
         raise FrameworkError("format must be csv, parquet, or json (rds is R-only)")
+    include = include_private_arg(include_private, allow_private)
     bucket = resolve_bucket(connection)
     with tempfile.TemporaryDirectory(prefix="publish_data_") as temp:
         if isinstance(data, pd.DataFrame):
@@ -489,7 +484,7 @@ def publish_data(
             source = Path(data)
             if not source.is_file():
                 raise FrameworkError(f"File not found: {source}")
-            _refuse_private(source, allow_private)
+            confirm_private_upload([source], include)
         if compress:
             compressed = Path(temp) / f"{source.name}.gz"
             with source.open("rb") as raw, gzip.open(compressed, "wb") as packed:
@@ -507,7 +502,9 @@ def publish_dir(
     connection: str | None = None,
     pattern: str | None = None,
     recursive: bool = True,
-    allow_private: bool = False,
+    include_private: bool = False,
+    *,
+    allow_private: bool | None = None,
 ) -> list[str]:
     """Upload the files in a folder. ``pattern`` is a regular expression on the paths.
 
@@ -520,25 +517,27 @@ def publish_dir(
         pattern: Only upload files whose path matches this regular expression (searched
             anywhere in the path). Default: every file.
         recursive: Include files in subfolders.
-        allow_private: Publish even though the source is inside a ``private`` folder in the
-            project. Only a person who has reviewed the file should set this.
+        include_private: Upload files with "private" in their path without asking. Only a
+            person who has reviewed the files should set this.
+        allow_private: Deprecated name for ``include_private``.
 
     Returns:
         The public URL of each file uploaded. The list is empty when no file matched.
 
     Raises:
-        FrameworkError: When the folder is missing or inside a ``private`` folder, no bucket is
-            configured, or an upload fails.
+        FrameworkError: When the folder is missing, a file has "private" in its path and is
+            not confirmed, no bucket is configured, or an upload fails.
     """
     folder = Path(dir)
     if not folder.is_dir():
         raise FrameworkError(f"Directory not found: {folder}")
-    _refuse_private(folder, allow_private)
-    bucket = resolve_bucket(connection)
+    include = include_private_arg(include_private, allow_private)
     files = _files(folder, recursive, pattern)
     if not files:
         inform("No files found to upload")
         return []
+    confirm_private_upload(files, include)
+    bucket = resolve_bucket(connection)
     dest = dest or folder.resolve().name
     inform(f"Uploading {len(files)} files...")
     urls = _upload_folder(folder, dest, bucket, files)

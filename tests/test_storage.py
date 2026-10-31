@@ -66,15 +66,15 @@ def test_publish_file_and_folder(project: Path, s3: FakeS3) -> None:
     assert urls == ["https://my-reports.s3.us-east-2.amazonaws.com/project-x/reports/charts/a.png"]
 
 
-def test_private_files_are_never_published(project: Path, s3: FakeS3) -> None:
+def test_flagged_paths_need_confirmation_without_a_terminal(project: Path, s3: FakeS3) -> None:
     secret = project / "outputs/private/ids.csv"
     secret.parent.mkdir(parents=True)
     secret.write_text("id\n1\n", encoding="utf-8")
-    with pytest.raises(fw.FrameworkError, match="inside a private folder"):
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
         fw.publish(secret)
-    with pytest.raises(fw.FrameworkError, match="inside a private folder"):
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
         fw.publish_dir(secret.parent)
-    with pytest.raises(fw.FrameworkError, match="inside a private folder"):
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
         fw.publish_data(secret, "ids.csv")
     assert s3.uploads == {}
 
@@ -152,19 +152,20 @@ def test_publish_notebook(project: Path, s3: FakeS3) -> None:
     assert "analysis/index.html" in s3.uploads
 
 
-def test_allow_private_override_and_outside_a_project(
+def test_override_with_include_private_or_allow_private(
     project: Path, s3: FakeS3, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
-    secret = project / "inputs/private/summary.csv"
+    secret = project / "inputs/Private/summary.csv"
     secret.parent.mkdir(parents=True)
     secret.write_text("n\n10\n", encoding="utf-8")
-    with pytest.raises(
-        fw.FrameworkError, match=r"'inputs/private/summary\.csv'.*allow_private=True"
-    ):
-        fw.publish(secret)
-    assert fw.publish(secret, allow_private=True).endswith("project-x/summary.csv")
+    assert fw.publish(secret, include_private=True).endswith("project-x/summary.csv")
+    with pytest.warns(DeprecationWarning, match="use include_private"):
+        assert fw.publish_data(secret, "s.csv", allow_private=True).endswith("project-x/s.csv")
 
+    # Outside a project too: the rule looks at the whole path
     elsewhere = tmp_path_factory.mktemp("outside") / "private"
     elsewhere.mkdir()
     (elsewhere / "a.txt").write_text("a", encoding="utf-8")
-    assert fw.publish_dir(elsewhere, dest="d")
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
+        fw.publish_dir(elsewhere, dest="d")
+    assert fw.publish_dir(elsewhere, dest="d", include_private=True)

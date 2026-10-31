@@ -138,7 +138,7 @@ inputs/
     └── final/
 ```
 
-Everything under a `private/` folder is ignored by git and refused by the publishing functions. When Claude Code is one of the project's assistants, its settings deny it access to these folders. The [Project Types](guide:project-types) guide compares the types.
+Everything under a `private/` folder is ignored by git, and the publishing functions ask before they upload it. When Claude Code is one of the project's assistants, its settings deny it access to these folders. The [Project Types](guide:project-types) guide compares the types.
 
 ## Data Integrity
 

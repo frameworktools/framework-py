@@ -400,6 +400,18 @@ def test_cloud_publish_errors(cloud_project: Path, server: FakeCloud) -> None:
         fw.publish(report)
 
 
+def test_cloud_publish_asks_about_private_paths(cloud_project: Path, server: FakeCloud) -> None:
+    server.route(
+        "POST", "/api/v1/documents", lambda r: httpx.Response(200, json={"url": "https://x/d/1"})
+    )
+    report = cloud_project / "private" / "report.html"
+    report.parent.mkdir()
+    report.write_text("<p>hi</p>", encoding="utf-8")
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
+        fw.publish(report)
+    assert fw.publish(report, include_private=True) == "https://x/d/1"
+
+
 # Projects ------------------------------------------------------------------------------------
 
 

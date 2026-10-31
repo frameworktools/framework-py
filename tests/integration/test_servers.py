@@ -222,6 +222,6 @@ def test_private_files_never_reach_the_server(project: Path, bucket: str) -> Non
     secret = project / "outputs/private/ids.csv"
     secret.parent.mkdir(parents=True)
     secret.write_text("id\n1\n", encoding="utf-8")
-    with pytest.raises(fw.FrameworkError, match="inside a private folder"):
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
         fw.publish(secret)
     assert fw.publish_list().empty

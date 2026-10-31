@@ -15,8 +15,9 @@ whether something is safe, treat it as private.
 2. Raw data with identifiers goes in a `private/` folder.
 3. Only de-identified, aggregated data goes in a `public/` folder.
 4. Review every output before saving it to a public folder.
-5. Never publish anything from a private folder, and never pass
-   `allow_private=True` to a publish function on your own.
+5. Never publish anything from a private folder. Never pass
+   `include_private=True` to a publish function or answer its prompt on the
+   user's behalf.
 6. Do not read or print restricted files. Values you print are sent to the
    model provider. Work from the data dictionary and simulated data instead.
 

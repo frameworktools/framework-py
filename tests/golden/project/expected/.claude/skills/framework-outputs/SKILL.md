@@ -61,8 +61,8 @@ fw.publish("outputs/report.html")
 fw.publish_notebook("notebooks/analysis.qmd")
 ```
 
-The publish functions refuse files inside a `private` folder, because those
-folders hold restricted data. They take `allow_private=True` to override
-this. Never pass `allow_private=True` on your own: only the person who has
-reviewed the file can decide that it is safe to publish. See the
-`framework-sensitive-data` skill if this project has one.
+The publish functions warn about any file with "private" in its path and ask
+the user to confirm. In a script they stop with an error. Never pass
+`include_private=True` or answer the prompt on the user's behalf: only the
+person who has reviewed the file can decide that it is safe to publish. See
+the `framework-sensitive-data` skill if this project has one.

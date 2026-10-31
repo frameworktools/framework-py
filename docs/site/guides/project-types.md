@@ -125,7 +125,7 @@ Several parts of Framework treat the private folders as restricted.
 
 - **Git.** The `.gitignore` ignores `/inputs/private/`, `/outputs/private/`, and every folder named `private` or `sensitive`. It keeps `README.md` and `.gitkeep` files, so the folder structure can be documented.
 - **Outputs.** The `save_*()` functions save to private folders unless you pass `public=True`.
-- **Publishing.** Every publishing function refuses files inside a `private` folder.
+- **Publishing.** Every publishing function warns about files with `private` in their path and asks before it uploads them.
 - **AI assistants.** `AGENTS.md` tells assistants not to read the private folders. When Claude Code is selected, `.claude/settings.json` denies it access to them and to `.env`. The `framework-sensitive-data` skill is installed.
 - **Settings.** `security: sensitive: true` marks the project.
 - **Audit.** [git_security_audit()](ref:git_security_audit) passes on a new privacy-sensitive project. Turning on the `data_security` hook check runs it before every commit.
