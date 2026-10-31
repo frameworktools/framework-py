@@ -20,7 +20,10 @@ def test_full_path_match_ignores_case(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "/private/var/folders/ab/report.html",
+        pytest.param(
+            "/private/var/folders/ab/report.html",
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="a macOS system path"),
+        ),
         "/srv/project/outputs/public/report.html",
     ],
 )
