@@ -186,6 +186,10 @@ def _default_type(config: dict[str, Any]) -> NotebookType:
     )
     if value in ("jupyter", "ipynb"):
         return "jupyter"
+    # A project that turned the Quarto tool off gets Jupyter notebooks, as in R
+    tools = config.get("tools")
+    if isinstance(tools, dict) and tools.get("quarto") is False:
+        return "jupyter"
     return "quarto"
 
 

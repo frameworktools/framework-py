@@ -1,5 +1,5 @@
 {
-  "commit": "8bb43cd5e5c2dd04c21f4a7cd33686871386cb21",
+  "commit": "ef856afbb28e98b55e13f740b30a9891f99ba6f5",
   "files": {
     "docs/docs-site.md": {
       "sha256": "a1d525010bb582a2ae0e6872ed2ec8b466ec56193554468c51dc7fcc0bd2aafd",
@@ -58,15 +58,15 @@
       "source": "inst/schema/spec.v1.json"
     },
     "src/framework/_assets/sets/packages/tidyverse-analysis.json": {
-      "sha256": "a20224197cc9c5af559cf7a2bbe8b79023e57a72fb1686f7c885a4bd5d49d0bb",
+      "sha256": "f5b157a35097ab007d2a5b7837faf78fdce2bd523c5d6fa6e5f0c433f4fdd738",
       "source": "inst/sets/packages/tidyverse-analysis.json"
     },
     "src/framework/_assets/sets/skills/framework.json": {
-      "sha256": "8b74ed492f27bd1e3294d2ae95ae1666d9eb1b43e3e2872ee80dd2cfc1d82aca",
+      "sha256": "fb9963be10a404f684d1b158d93372865b12e9dc2edf9761a44b5a57c0eb57b9",
       "source": "inst/sets/skills/framework.json"
     },
     "src/framework/_assets/sets/skills/ggplot2.json": {
-      "sha256": "498c49a8af991c8a4588014a302895456466feab2a44605173e5cd91108f57ee",
+      "sha256": "524bb5822139694f01e46e3c94e1f960b722ac2ae0438a97bee7b8e097f0c2be",
       "source": "inst/sets/skills/ggplot2.json"
     },
     "tests/integration/compose.yml": {
@@ -122,6 +122,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "8bb43cd",
+  "ref": "ef856af",
   "source": "framework (R package)"
 }

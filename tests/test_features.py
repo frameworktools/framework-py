@@ -145,3 +145,12 @@ def test_skill_sets_replace_the_default_skills() -> None:
 def test_off_switches_come_last() -> None:
     keys = [e["key"] for e in definition_layers({"quarto": False, "jupyter": True})]
     assert keys[-1] == "framework/tools-off"
+
+
+def test_projects_without_quarto_make_jupyter_notebooks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = fw.new("Nb", tmp_path / "nb", "project", tools={"quarto": False}, interactive=False)
+    assert _yaml.read(root / "settings/scaffold.yml")["scaffold"]["notebook_format"] == "jupyter"
+    monkeypatch.chdir(root)
+    assert fw.make_notebook("first").suffix == ".ipynb"

@@ -30,7 +30,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -301,6 +301,10 @@ def _client() -> httpx.Client:
     )
 
 
+class _MissingEndpointError(CloudError):
+    """HTTP 404 or 405: an older server without this endpoint."""
+
+
 def _error(response: httpx.Response, what: str) -> CloudError:
     try:
         body = response.json()
@@ -319,7 +323,9 @@ def _error(response: httpx.Response, what: str) -> CloudError:
         ]
         if details:
             message = "\n".join([str(message), *details])
-    return CloudError(str(message))
+    return (_MissingEndpointError if response.status_code in (404, 405) else CloudError)(
+        str(message)
+    )
 
 
 def api(
@@ -956,20 +962,75 @@ def write_project_token(project_dir: Path, token: str, url: str) -> list[str]:
     return list(missing)
 
 
-def register_project(project_dir: Path, name: str, type: str) -> Any:
-    """Register a new local project on the cloud when logged in. Never fails creation."""
+def registration_body(
+    name: str,
+    type: str,
+    spec: Mapping[str, Any],
+    package_sets: Sequence[str] = (),
+    skill_sets: Sequence[str] = (),
+) -> dict[str, Any]:
+    """The choices a project built offline was made from, for ``/api/v2/projects``.
+
+    Each of Framework's five types is a structure of the same name.
+    """
+    ai = spec.get("ai") or {}
+    body: dict[str, Any] = {
+        "name": name,
+        "language": "python",
+        "structure": f"framework/{type}",
+        "tools": dict(spec.get("tools") or {}),
+        "settings": {
+            "sensitive": (spec.get("security") or {}).get("sensitive") is True,
+            "git": (spec.get("git") or {}).get("use_git") is not False,
+            "ai": {
+                "enabled": ai.get("enabled") is True,
+                "assistants": dict(ai.get("assistants") or {}),
+            },
+        },
+    }
+    if package_sets:
+        body["package_sets"] = [s if "/" in s else f"framework/{s}" for s in package_sets]
+    if skill_sets:
+        body["skill_sets"] = [s if "/" in s else f"framework/{s}" for s in skill_sets]
+    return body
+
+
+def register_project(
+    project_dir: Path,
+    name: str,
+    type: str,
+    spec: Mapping[str, Any] | None = None,
+    package_sets: Sequence[str] = (),
+    skill_sets: Sequence[str] = (),
+) -> Any:
+    """Register a new local project on the cloud when logged in. Never fails creation.
+
+    The cloud records the structure, tools, sets, and settings the project
+    was built from. A server without ``/api/v2/projects`` gets the older
+    registration.
+    """
     server = cloud_server().url
     token = cloud_token(server)
     if token is None:
         return None
-    body = {"name": name, "project_type": type, "language": "python"}
     try:
-        result = api("/api/v1/projects", token, server, method="POST", body=body)
+        if spec is not None:
+            body = registration_body(name, type, spec, package_sets, skill_sets)
+            try:
+                result = api("/api/v2/projects", token, server, method="POST", body=body)
+                slug, project_token = result.get("slug"), result.get("token")
+            except _MissingEndpointError:
+                spec = None
+        if spec is None:
+            body = {"name": name, "project_type": type, "language": "python"}
+            result = api("/api/v1/projects", token, server, method="POST", body=body)
+            slug, project_token = result["project"]["slug"], result["pull_token"]
     except CloudError as error:
         inform(f"Cloud project registration skipped: {error}")
         return None
-    inform(f"[ok] Registered on {host(server)}: {result['project']['slug']}")
-    write_project_token(project_dir, result["pull_token"], server)
+    inform(f"[ok] Registered on {host(server)}: {slug}")
+    if project_token:
+        write_project_token(project_dir, str(project_token), server)
     return result
 
 

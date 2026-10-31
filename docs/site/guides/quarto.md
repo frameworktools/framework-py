@@ -10,7 +10,7 @@ position: 6
 
 Framework uses [Quarto](https://quarto.org) to render notebooks, documents, and presentations. When it creates a project, it writes `_quarto.yml` files that set rendering defaults and send rendered output to a separate folder. Python chunks in `.qmd` files run through Jupyter.
 
-Quarto is a tool that a project can turn off. It is on for every project type except `bare`, and `tools={"quarto": False}` in [new()](ref:new) creates a project without the `_quarto.yml` files. Such a project records `quarto: false` under `tools` in `settings.yml`, and [quarto_regenerate()](ref:quarto_regenerate) refuses to run there. The [New Project](guide:new-project#tools-and-sets) guide covers tools.
+Quarto is a tool that a project can turn off. It is on for every project type except `bare`, and `tools={"quarto": False}` in [new()](ref:new) creates a project without the `_quarto.yml` files. Such a project records `quarto: false` under `tools` in `settings.yml`. Its notebooks are Jupyter notebooks, so [make_notebook()](ref:make_notebook) creates `.ipynb` files, and [quarto_regenerate()](ref:quarto_regenerate) refuses to run there. The [New Project](guide:new-project#tools-and-sets) guide covers tools.
 
 ## Render Folders
 

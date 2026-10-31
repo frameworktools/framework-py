@@ -133,7 +133,10 @@ def _sections(spec: Mapping[str, Any]) -> dict[str, Any]:
             "seed_on_scaffold": scaffold.get("seed_on_scaffold", False),
             "seed": scaffold.get("seed", ""),
             "source_all_functions": scaffold.get("source_all_functions", True),
-            "notebook_format": scaffold.get("notebook_format", "quarto"),
+            # Without the Quarto tool, notebooks are Jupyter notebooks
+            "notebook_format": scaffold.get("notebook_format", "quarto")
+            if spec_tool_on(spec, "quarto")
+            else "jupyter",
         },
         "quarto": spec.get("quarto") or {},
         "connections": spec.get("connections") or {},
@@ -635,7 +638,7 @@ def new(
     if type != "bare":
         from framework.cloud import register_project
 
-        register_project(root, name, type)
+        register_project(root, name, type, spec, package_sets=package_sets, skill_sets=skill_sets)
     return root
 
 

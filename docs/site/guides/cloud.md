@@ -19,7 +19,7 @@ Connecting a machine enables these transfers when you use the related features.
 | Feature | What is sent | Sent by |
 |---------|--------------|---------|
 | Settings sync | Your Framework settings document | [cloud_sync()](ref:cloud_sync) |
-| Project registration | The project's name, type, and language | [new()](ref:new), when you are logged in |
+| Project registration | The project's name, language, structure, tools, chosen sets, and its sensitive-data, git, and AI settings | [new()](ref:new), when you are logged in |
 | Integrity ledger | Catalog names, file hashes, file sizes, and the machine's hostname | [data_save()](ref:data_save) in live mode, and [ledger_push()](ref:ledger_push) |
 | Publishing | The documents you publish | [publish()](ref:publish) and [publish_notebook()](ref:publish_notebook) |
 

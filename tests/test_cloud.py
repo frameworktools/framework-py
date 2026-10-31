@@ -550,3 +550,28 @@ def test_cloud_only_choices_need_a_blueprint(tmp_path: Path) -> None:
         fw.new("X", tmp_path / "x", "project", sensitive=True, interactive=False)
     with pytest.raises(fw.FrameworkError, match="not both"):
         fw.new("X", tmp_path / "x", "project", blueprint="framework/project", interactive=False)
+
+
+def test_new_registers_its_pieces_with_v2(tmp_path: Path, server: FakeCloud) -> None:
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    sent: dict[str, Any] = {}
+
+    def create(request: httpx.Request) -> httpx.Response:
+        sent.update(json.loads(request.content))
+        return httpx.Response(201, json={"slug": "pieces", "token": "fwp_pieces0123"})
+
+    server.route("POST", "/api/v2/projects", create)
+    root = fw.new(
+        "Pieces",
+        tmp_path / "pieces",
+        "project_sensitive",
+        tools=["jupyter"],
+        skill_sets=["framework"],
+        interactive=False,
+    )
+    assert sent["structure"] == "framework/project_sensitive"
+    assert sent["tools"] == {"quarto": True, "uv": True, "jupyter": True}
+    assert sent["skill_sets"] == ["framework/framework"]
+    assert sent["settings"]["sensitive"] is True
+    assert sent["settings"]["ai"]["enabled"] is True
+    assert dotenv.read(root / ".env")["FW_PROJECT_TOKEN"] == "fwp_pieces0123"
