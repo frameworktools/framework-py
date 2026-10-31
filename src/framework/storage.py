@@ -274,6 +274,37 @@ def _target(connection: str | None) -> str:
     )
 
 
+def _publish_github(
+    to: str,
+    source: Path,
+    dest: str | None,
+    connection: str | None,
+    slug: str | bool | None,
+    self_contained: bool,
+) -> str:
+    """``to="github"``, after rejecting arguments that mean something only elsewhere."""
+    from framework._pages import github_publish
+
+    if to != "github":
+        raise FrameworkError(f'to must be "github" or None (got "{to}").')
+    given = [
+        name
+        for name, used in (
+            ("dest", dest is not None),
+            ("connection", connection is not None),
+            ("slug=True/False", isinstance(slug, bool)),
+        )
+        if used
+    ]
+    if given:
+        raise FrameworkError(
+            f'Not used with to="github": {", ".join(given)}. Name the published folder with '
+            'slug="...".'
+        )
+    assert not isinstance(slug, bool)
+    return github_publish(source, slug=slug, self_contained=self_contained)
+
+
 def _slug_ignored(slug: str | bool | None) -> None:
     if slug is not None:
         import warnings
@@ -296,6 +327,7 @@ def publish(
     slug: str | bool | None = None,
     include_private: bool = False,
     *,
+    to: str | None = None,
     allow_private: bool | None = None,
 ) -> str | list[str]:
     """Upload a file or folder to the project's storage bucket.
@@ -309,6 +341,10 @@ def publish(
         slug: For Framework Cloud publishing.
         include_private: Upload files with "private" in their path without asking. Only a
             person who has reviewed the files should set this.
+        to: "github" publishes to the project's GitHub Pages site: the page is copied to
+            ``published/<slug>/`` at the top of the repository, only that folder is
+            committed, and the commit is pushed. Pages sites are public, even from a private
+            repository. Default: a storage bucket or Framework Cloud.
         allow_private: Deprecated name for ``include_private``.
 
     Returns:
@@ -319,6 +355,8 @@ def publish(
         raise FrameworkError(f"Source not found: {path}")
     include = include_private_arg(include_private, allow_private)
     confirm_private_upload(_files(path, True, None) if path.is_dir() else [path], include)
+    if to is not None:
+        return _publish_github(to, path, dest, connection, slug, self_contained)
     if _target(connection) == "cloud":
         from framework.cloud import cloud_publish
 
@@ -346,6 +384,7 @@ def publish_notebook(
     slug: str | bool | None = None,
     include_private: bool = False,
     *,
+    to: str | None = None,
     allow_private: bool | None = None,
 ) -> str:
     """Render a Quarto notebook with the ``quarto`` command and upload the result.
@@ -374,6 +413,10 @@ def publish_notebook(
             ignores it with a warning.
         include_private: Upload files with "private" in their path without asking. Only a
             person who has reviewed the files should set this.
+        to: "github" publishes to the project's GitHub Pages site: the page is copied to
+            ``published/<slug>/`` at the top of the repository, only that folder is
+            committed, and the commit is pushed. Pages sites are public, even from a private
+            repository. Default: a storage bucket or Framework Cloud.
         allow_private: Deprecated name for ``include_private``.
 
     Returns:
@@ -388,6 +431,10 @@ def publish_notebook(
     if not source.is_file() or source.suffix.lower() not in (".qmd", ".ipynb"):
         raise FrameworkError(f"publish_notebook() needs an existing .qmd or .ipynb file: {source}")
     confirm_private_upload([source], include_private_arg(include_private, allow_private))
+    if to is not None:
+        if format != "html":
+            raise FrameworkError(f'GitHub Pages publishes HTML only (got format="{format}").')
+        return _publish_github(to, source, dest, connection, slug, self_contained)
     quarto = shutil.which("quarto")
     if quarto is None:
         raise FrameworkError(

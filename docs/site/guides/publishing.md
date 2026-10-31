@@ -8,12 +8,13 @@ position: 10
 
 ## Overview
 
-Framework publishes rendered notebooks, datasets, and other files so that colleagues can open them by URL. It publishes to two kinds of destination.
+Framework publishes rendered notebooks, datasets, and other files so that colleagues can open them by URL. It publishes to three kinds of destination.
 
 - **Storage buckets.** AWS S3 and S3-compatible services, such as MinIO and DigitalOcean Spaces, configured in the project's settings.
 - **Framework Cloud.** The framework.pub service or a self-hosted server, for projects created from or registered with it.
+- **GitHub Pages.** The project's own GitHub repository, with `to="github"`.
 
-Every publishing function refuses files inside a `private` folder of the project. The [Private Folders](#private-folders) section explains the rule.
+Every publishing function warns about files with `private` in their path and asks before it uploads them. The [Private Paths](#private-paths) section explains the rule.
 
 ## Choosing a Destination
 
@@ -22,6 +23,8 @@ Every publishing function refuses files inside a `private` folder of the project
 1. When you pass `connection`, or the settings define any storage bucket, they publish to a bucket.
 2. Otherwise, when the project has a Framework Cloud project token, they publish to Framework Cloud.
 3. Otherwise, they raise an error that shows how to add a bucket.
+
+`to="github"` overrides this order and publishes to GitHub Pages.
 
 [publish_data()](ref:publish_data), [publish_dir()](ref:publish_dir), [publish_list()](ref:publish_list), and [storage_test()](ref:storage_test) work with buckets only.
 
@@ -170,6 +173,31 @@ Framework Cloud accepts four kinds of source.
 Each publish adds a new version of the document. The `slug` argument names the document and turns on its readable URL. `slug=True` uses the name derived from the file, and `slug=False` turns the readable URL off. `publish_notebook()` publishes HTML only when the destination is Framework Cloud.
 
 Publishing sends only the document you name. The [Framework Cloud](guide:cloud) guide describes what else the cloud receives.
+
+## Publishing to GitHub Pages
+
+`to="github"` publishes a page to the project's GitHub Pages site. The documents go from your computer to GitHub and never pass through Framework Cloud.
+
+```python
+fw.publish("outputs/report.html", to="github")
+fw.publish_notebook("notebooks/analysis.qmd", to="github", slug="main-results")
+```
+
+GitHub Pages sites are public, even when the repository is private. Every run prints that notice, and an interactive session asks `Publish it? [y/N]` before it changes anything. A script goes ahead without asking, because the call itself is the explicit choice. The [private-path check](#private-paths) still applies.
+
+Before the first publish, turn on "Publish with GitHub Pages" for the project under Projects on Framework Cloud. That turns on Pages for the repository and commits a workflow that deploys the repository's `published/` folder from the default branch.
+
+Each publish takes these steps.
+
+1. Find the project's git repository and its GitHub remote: the branch's upstream remote, then `origin`, then any other GitHub remote. Without one, it raises an error that says to create the project on GitHub first.
+2. Copy the page to `published/<slug>/index.html` at the top of the repository, replacing that folder completely. An `.html` file's `<name>_files/` folder is copied beside it under the same name, so relative links keep working. A folder must have an `index.html` at its top. A `.qmd` or `.ipynb` file is rendered to HTML first.
+3. Commit only `published/<slug>/`, with the message `Publish <slug>`. Anything else you have staged stays staged and out of the commit. When nothing changed, it reports that and neither commits nor pushes.
+4. Push. A branch with no upstream is pushed with `git push -u <remote> HEAD`. On a branch other than the default branch, it warns that the page won't appear until the branch is merged.
+5. Return and report the URL.
+
+The slug defaults to the file name in lowercase, with each run of other characters replaced by `-`. `Final Report (v2).html` becomes `final-report-v2`. An explicit slug must start with a lowercase letter or digit and use only lowercase letters, digits, `.`, `_`, and `-`, because GitHub Pages URLs are case-sensitive. `dest`, `connection`, and `slug=True` or `slug=False` apply only to other destinations and raise an error with `to="github"`.
+
+A project with a Framework Cloud project token asks the cloud for the site's URL. When the cloud reports that Pages is off, publishing still commits and pushes, and it warns you to turn Pages on. Otherwise the URL comes from the remote: `https://<owner>.github.io/<repo>/<slug>/`, or `https://<owner>.github.io/<slug>/` for a repository named `<owner>.github.io`.
 
 ## Private Paths
 

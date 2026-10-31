@@ -1,5 +1,5 @@
 {
-  "commit": "7b49bdf3896e28f406e4d7d19b30aa130ba144f0",
+  "commit": "f9a16c0af72b7f0dbc80db0a8cfef47bdcb43f66",
   "files": {
     "docs/docs-site.md": {
       "sha256": "a1d525010bb582a2ae0e6872ed2ec8b466ec56193554468c51dc7fcc0bd2aafd",
@@ -78,6 +78,6 @@
       "source": "inst/conformance/merge/maps-and-null-removal.json"
     }
   },
-  "ref": "7b49bdf",
+  "ref": "f9a16c0",
   "source": "framework (R package)"
 }
