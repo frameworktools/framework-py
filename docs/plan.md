@@ -278,11 +278,8 @@ and Python refuses anything except `python`.
 
 A Python project gets `scaffold.py`, Quarto stubs with Python chunks, and a
 `pyproject.toml` that depends on `framework-py`. Python never writes or
-maintains R templates. A project that uses both languages works through the
-shared formats, and few people need it, so mixed-project support is low
-priority. `project_add_python()` adds Python to an existing R project by
-writing `pyproject.toml`, `scaffold.py`, and the Python stubs, and changes
-nothing R wrote.
+maintains R templates. Projects do not mix languages: each project has one
+`language`, and R and Python projects share data through the shared formats.
 
 ### Conformance and golden trees
 
@@ -540,7 +537,6 @@ three dot-prefixed helpers.
 
 | Python | Purpose |
 |--------|---------|
-| `project_add_python()` | Adds Python to an existing R project |
 | `python -m framework create --from-layers FILE --path DIR [--interactive]` | Command-line entry point for `fw new --from` and the GitHub Action |
 | `python -m framework create --name NAME --path DIR [--type T] [--interactive]` | Command-line entry point for `fw new`: runs `new()`, so the user's defaults apply |
 | `python -m framework hook pre-commit` | Runs the pre-commit checks for the shared hook |
@@ -560,7 +556,7 @@ Decided by Erik on 2026-10-30:
 5. The global config folder: each tool keeps its own folder, and
    `config_sync()` copies settings across (see "Global config folder").
 6. The shared pre-commit hook, agreed with framework-d4.
-7. Mixed R and Python projects are low priority.
+7. Projects do not mix languages. There is no mixed R and Python project.
 
 ## Phases
 
@@ -598,6 +594,5 @@ Decided by Erik on 2026-10-30:
    `stubs_*()`, `package_add()` and `packages_*()` through uv,
    `configure_global()`, the settings catalog, user templates, and
    `ai_skills_update()`. All R exports are now handled
-   (`check_parity.py --strict` passes). Still open:
-   `project_add_python()`, which is low priority.
+   (`check_parity.py --strict` passes).
 7. **First release** under the approved name.
