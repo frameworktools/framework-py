@@ -53,15 +53,6 @@ The stub files point back to it. `CLAUDE.md` is written only when Claude Code is
 
 `.github/copilot-instructions.md` asks Copilot to read `AGENTS.md` and not to duplicate its content. Keep instructions in `AGENTS.md`, so every assistant reads the same text.
 
-A project that uses only Claude Code can keep the guide in `CLAUDE.md` instead. Set `ai.context_file` to `"CLAUDE.md"` in the spec. Framework then writes the full guide to `CLAUDE.md`, writes no `AGENTS.md`, and records `canonical_file: CLAUDE.md` in the project's settings. The setting is an error when any other assistant is selected, even when `ai.agents_md` is `"none"`. With `"none"`, it writes nothing.
-
-```yaml
-ai:
-  enabled: true
-  assistants: {claude: true}
-  context_file: CLAUDE.md
-```
-
 ## Skills
 
 Skills are instruction files that an assistant loads when a task matches the skill's description. framework-py ships five.

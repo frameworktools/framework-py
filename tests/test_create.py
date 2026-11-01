@@ -372,28 +372,3 @@ def test_secrets_backstop_respects_negation(tmp_path: Path) -> None:
 def test_secrets_backstop_patterns(tmp_path: Path, text: str, added: bool) -> None:
     (tmp_path / ".gitignore").write_text(text, encoding="utf-8")
     assert ensure_secrets_ignored(tmp_path) is added
-
-
-def test_claude_only_projects_can_keep_the_guide_in_claude_md(tmp_path: Path) -> None:
-    ai = {"enabled": True, "assistants": {"claude": True}, "context_file": "CLAUDE.md"}
-    spec = fw.spec_resolve(python_layer(ai=ai), "Claude Only").spec
-    assert fw.spec_check(spec) == []
-    root = fw.project_create(spec, tmp_path / "p")
-    assert (root / "CLAUDE.md").read_text(encoding="utf-8").startswith("# Claude Only\n")
-    assert not (root / "AGENTS.md").exists()
-    assert (root / ".claude/skills").is_dir()
-    settings = fw.settings_read(root / "settings.yml")
-    assert settings["ai"]["canonical_file"] == "CLAUDE.md"
-
-
-def test_context_file_is_checked() -> None:
-    ai = {"enabled": True, "assistants": {"claude": True, "codex": True}}
-    with pytest.raises(fw.SpecError, match="only when claude is the one assistant"):
-        fw.spec_resolve(python_layer(ai={**ai, "context_file": "CLAUDE.md"}), "X")
-    # As in R, even when no guide is written
-    layer = python_layer(ai={**ai, "context_file": "CLAUDE.md", "agents_md": "none"})
-    with pytest.raises(fw.SpecError, match="only when claude is the one assistant"):
-        fw.spec_resolve(layer, "X")
-    spec = fw.spec_resolve(python_layer(ai=ai), "X").spec
-    spec["ai"]["context_file"] = "README.md"
-    assert "ai.context_file must be 'AGENTS.md' or 'CLAUDE.md'" in fw.spec_check(spec)

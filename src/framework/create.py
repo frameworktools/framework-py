@@ -22,7 +22,7 @@ from typing import Any
 
 from framework import _yaml, db
 from framework._log import inform, show_messages
-from framework.ai import context_file, write_ai_files
+from framework.ai import write_ai_files
 from framework.config_home import config_dir, global_settings, project_register
 from framework.errors import FrameworkError
 from framework.quarto import quarto_generate_all
@@ -128,7 +128,7 @@ def _sections(spec: Mapping[str, Any]) -> dict[str, Any]:
         },
         "ai": {
             "enabled": ai.get("enabled", False),
-            "canonical_file": context_file(spec),
+            "canonical_file": "AGENTS.md",
             "assistants": list(ai.get("assistants") or {}),
         },
         "scaffold": {
