@@ -81,6 +81,8 @@ fw.scaffold()
 from cleaning import standardize_names
 ```
 
+The folder goes first on the path, so a module there takes the place of any standard or installed module with the same name. `scaffold()` warns when that happens, for example when `functions/statistics.py` would hide Python's `statistics` module. Rename the file to fix it.
+
 The value can be a list, which adds several folders.
 
 ```yaml

@@ -178,3 +178,26 @@ def test_user_paths_expand_the_home_folder(project: Path, monkeypatch: pytest.Mo
     fw.quarto_regenerate(f"~/{project.name}", backup=False)
     assert not (project.parent / "~").exists()
     assert (project / "_quarto.yml").is_file()
+
+
+def test_scaffold_warns_about_modules_that_hide_others(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    functions = project / "functions"
+    (functions / "pandas").mkdir(parents=True)
+    (functions / "pandas" / "__init__.py").write_text("", encoding="utf-8")
+    (functions / "data").mkdir()
+    for name in ("statistics.py", "sys.py", "fw_helpers.py"):
+        (functions / name).write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "path", list(sys.path))
+
+    with pytest.warns(fw.FrameworkWarning) as caught:
+        fw.scaffold()
+    messages = [str(w.message) for w in caught]
+    assert messages == [
+        "functions/pandas hides the installed pandas module. "
+        "Rename it so imports of pandas get the installed one.",
+        "functions/statistics.py hides Python's statistics module. "
+        "Rename it so imports of statistics get the standard one.",
+    ]
+    assert caught[0].filename == __file__

@@ -9,7 +9,9 @@ import runpy
 import shutil
 import subprocess
 import sys
+import warnings
 from datetime import UTC, datetime
+from importlib.machinery import FrozenImporter, PathFinder
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,7 @@ import pandas as pd
 from framework import db, dotenv
 from framework._log import inform, show_messages
 from framework._paths import in_root
-from framework.errors import ProjectNotFoundError, SettingsError
+from framework.errors import FrameworkWarning, ProjectNotFoundError, SettingsError
 from framework.project import find_settings_file
 from framework.settings import settings_read
 
@@ -109,10 +111,54 @@ def _set_seed(config: dict[str, Any]) -> int | None:
     return value
 
 
+def _top_level_modules(folder: Path) -> list[tuple[str, str]]:
+    """The modules a folder provides, as (module name, entry name) pairs."""
+    found = []
+    for entry in sorted(folder.iterdir(), key=lambda e: e.name):
+        if entry.is_file() and entry.suffix == ".py":
+            name = entry.stem
+        elif (entry / "__init__.py").is_file():
+            # Folders without __init__.py are namespace packages, which never
+            # win over a module found anywhere on the path.
+            name = entry.name
+        else:
+            continue
+        if name.isidentifier() and name != "__init__":
+            found.append((name, entry.name))
+    return found
+
+
+def _warn_shadowed(path: Path, label: str) -> None:
+    """Warn when a module in a function folder would hide one Python already has.
+
+    Called before the folder goes on the import path. It checks names only and
+    imports nothing.
+    """
+    others = [p for p in sys.path if p != str(path)]
+    for name, entry in _top_level_modules(path):
+        shown = f"{label.rstrip('/')}/{entry}"
+        if name in sys.builtin_module_names or FrozenImporter.find_spec(name) is not None:
+            # Python finds these before it looks at the path
+            continue
+        if name in sys.stdlib_module_names:
+            message = (
+                f"{shown} hides Python's {name} module. "
+                f"Rename it so imports of {name} get the standard one."
+            )
+        elif PathFinder.find_spec(name, others) is not None:
+            message = (
+                f"{shown} hides the installed {name} module. "
+                f"Rename it so imports of {name} get the installed one."
+            )
+        else:
+            continue
+        warnings.warn(message, FrameworkWarning, stacklevel=4)
+
+
 def _add_function_folders(config: dict[str, Any], root: Path) -> list[Path]:
     """Put the project's function folders on the import path."""
-    # New projects write source_all_functions under scaffold:. R reads only
-    # options:, so it misses that setting; Python reads both, as for the seed.
+    # New projects write source_all_functions under scaffold:. Older ones
+    # have it under options:. R and Python read both, as for the seed.
     options = _section(config, "options")
     if _first(config, "source_all_functions") is False:
         return []
@@ -123,6 +169,7 @@ def _add_function_folders(config: dict[str, Any], root: Path) -> list[Path]:
     for folder in folders if isinstance(folders, list) else [folders]:
         path = in_root(str(folder), root).resolve()
         if path.is_dir() and str(path) not in sys.path:
+            _warn_shadowed(path, str(folder))
             sys.path.insert(0, str(path))
             added.append(path)
             inform(f"Added {folder} to the import path")
