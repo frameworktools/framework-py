@@ -38,6 +38,9 @@ ASSISTANTS: dict[str, tuple[str, str | None]] = {
     "copilot": (".agents/skills", ".github/copilot-instructions.md"),
 }
 
+# The file that holds the full guide. CLAUDE.md is for Claude-only projects.
+CONTEXT_FILES = ("AGENTS.md", "CLAUDE.md")
+
 _LABEL = re.compile(r"^[a-z][a-z0-9_]*$")
 _SOURCES = ("pypi", "github")
 _PACKAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -192,8 +195,14 @@ def spec_check(spec: dict[str, Any]) -> list[str]:
     for assistant in _dict(_get(spec, ("ai", "assistants"))):
         if assistant not in ASSISTANTS:
             add(f"ai.assistants: unknown assistant '{assistant}'")
-    if _get(spec, ("ai", "agents_md")) not in ("stub", "none"):
+    agents_md = _get(spec, ("ai", "agents_md"))
+    if agents_md not in ("stub", "none"):
         add("ai.agents_md must be 'stub' or 'none'")
+    context_file = _get(spec, ("ai", "context_file"))
+    if context_file is not None and context_file not in CONTEXT_FILES:
+        add("ai.context_file must be 'AGENTS.md' or 'CLAUDE.md'")
+    elif context_file == "CLAUDE.md" and set(_dict(_get(spec, ("ai", "assistants")))) != {"claude"}:
+        add("ai.context_file can be 'CLAUDE.md' only when claude is the one assistant")
 
     notebook_format = _get(spec, ("scaffold", "notebook_format"))
     if notebook_format is not None and notebook_format not in _NOTEBOOK_FORMATS:

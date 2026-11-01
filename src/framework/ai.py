@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -59,6 +60,14 @@ def restricted_notice(spec: dict[str, Any]) -> str | None:
     )
 
 
+def context_file(spec: Mapping[str, Any]) -> str:
+    """The file that holds the full guide: AGENTS.md, or CLAUDE.md for Claude-only projects."""
+    ai = spec.get("ai") or {}
+    if ai.get("agents_md") == "stub" and ai.get("context_file") == "CLAUDE.md":
+        return "CLAUDE.md"
+    return "AGENTS.md"
+
+
 def pointer_stub(name: str) -> str:
     return (
         f"# {name}\n\n"
@@ -86,12 +95,16 @@ def write_ai_files(root: Path, spec: dict[str, Any]) -> list[str]:
     folders, stubs = assistant_targets(spec)
     files = spec.get("files") or {}
 
-    if spec.get("ai", {}).get("agents_md") == "stub" and "AGENTS.md" not in files:
+    context = context_file(spec)
+    if spec.get("ai", {}).get("agents_md") == "stub" and context not in files:
         # The full guide, as R writes it; its skills table points at the first skills folder
         skills_dir = folders[0] if folders else ".agents/skills"
-        _write(root, "AGENTS.md", agents_md(spec, skills_dir, restricted_notice(spec)))
-        written.append("AGENTS.md")
+        _write(root, context, agents_md(spec, skills_dir, restricted_notice(spec)))
+        written.append(context)
     for stub in stubs:
+        if stub == context:
+            # CLAUDE.md holds the guide itself, so it needs no "@AGENTS.md" stub
+            continue
         _write(root, stub, "@AGENTS.md\n" if stub == "CLAUDE.md" else pointer_stub(spec["name"]))
         written.append(stub)
 
