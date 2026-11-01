@@ -1,9 +1,13 @@
 {
-  "commit": "ef856afbb28e98b55e13f740b30a9891f99ba6f5",
+  "commit": "f526b1dd8cd753ee9919190c34cb84b3772c006d",
   "files": {
     "docs/docs-site.md": {
       "sha256": "a1d525010bb582a2ae0e6872ed2ec8b466ec56193554468c51dc7fcc0bd2aafd",
       "source": "inst/schema/docs-site.md"
+    },
+    "src/framework/_assets/adopt/rules.json": {
+      "sha256": "6aeed84de1f33a2628b66fa54fc6a9de46f5b755a6380799784828ba621beffe",
+      "source": "inst/adopt/rules.json"
     },
     "src/framework/_assets/features/jupyter.json": {
       "sha256": "0653e047d3887e694c553b2dc2959b62b000e0c371eb542f2bd9726eb36d1a00",
@@ -46,15 +50,15 @@
       "source": "inst/schema/docs-reference.v1.json"
     },
     "src/framework/_assets/schema/layer.v1.json": {
-      "sha256": "89d098996158e9c229cd43f5eca524eda3a1480683acee7f1107c66d0eb51580",
+      "sha256": "10bc25ba31da0f19c8902a4c39b07221bda6adba78cbfa870e8d340cc80de48e",
       "source": "inst/schema/layer.v1.json"
     },
     "src/framework/_assets/schema/layers.v1.json": {
-      "sha256": "548453105811683072e2738597b5c0349b58ff9dacbea1cff4e338e5f8e08d67",
+      "sha256": "ed7223a59101ab54cf17afa81f80e41d579d86fa0e89c616da6fa513f21a6a46",
       "source": "inst/schema/layers.v1.json"
     },
     "src/framework/_assets/schema/spec.v1.json": {
-      "sha256": "dd0b269036dace8c158d4c3656f61bce0b96963362065e9e03bf73a5350e7ae6",
+      "sha256": "62d4071bbcd93a1fc9a6f78701f886011a22b1917a341354019200a6c6916d4b",
       "source": "inst/schema/spec.v1.json"
     },
     "src/framework/_assets/sets/packages/tidyverse-analysis.json": {
@@ -68,6 +72,18 @@
     "src/framework/_assets/sets/skills/ggplot2.json": {
       "sha256": "524bb5822139694f01e46e3c94e1f960b722ac2ae0438a97bee7b8e097f0c2be",
       "source": "inst/sets/skills/ggplot2.json"
+    },
+    "src/framework/_assets/workflows/jupyter.json": {
+      "sha256": "9e91741ab4f1e9f2d64475314bcdd6a3caea327b18538890b991b57c9fbfe5a3",
+      "source": "inst/workflows/jupyter.json"
+    },
+    "src/framework/_assets/workflows/quarto.json": {
+      "sha256": "69f6d2ae2e4b2eab65612ebe45b010311fa6f87e392f91a8ee3b127e47d2af03",
+      "source": "inst/workflows/quarto.json"
+    },
+    "src/framework/_assets/workflows/scripts.json": {
+      "sha256": "f8b7a9ee06f7930b38177b88802b5aaa952e2894443377ab6fe195fb5183015b",
+      "source": "inst/workflows/scripts.json"
     },
     "tests/integration/compose.yml": {
       "sha256": "b37fae50c03bbf6adcb04d3f4df7e32be0a3a450a48ccdc0673734de2fa3e7d8",
@@ -90,12 +106,112 @@
       "source": "tests/integration/sqlserver/init.sql"
     },
     "tests/shared/NAMESPACE": {
-      "sha256": "cd399420435fdfcdd3d6c08694fbfae9302b9b4bc5adf799c3016f2601df0864",
+      "sha256": "58427e9924d0e65b240366cb1e9db39809ee845bb77f03acfa1e5842b498822b",
       "source": "NAMESPACE"
     },
     "tests/shared/conformance/README.md": {
-      "sha256": "ed26d6c7182b4d8f6bd36d0cd059078c4d595e92e4c7634777b55c6a27bfae78",
+      "sha256": "6f2d8cf9a3f73fc90bca8802a1741421be6603f93658a0872900a574e3908611",
       "source": "inst/conformance/README.md"
+    },
+    "tests/shared/conformance/adopt/case-insensitive.json": {
+      "sha256": "0af7d0ed1362096a64918d68068bfc5b4fc34d0b7c997073c83f7a13da1e7198",
+      "source": "inst/conformance/adopt/case-insensitive.json"
+    },
+    "tests/shared/conformance/adopt/data-science-template.json": {
+      "sha256": "902ba71e4a54d00ddd4d7e4383460f5ed416df4ae6cfe09396a2535c6120614f",
+      "source": "inst/conformance/adopt/data-science-template.json"
+    },
+    "tests/shared/conformance/adopt/extra-keys.json": {
+      "sha256": "96a0f4f5d6aeaa24867037e0aa9ef0478f6d90dded5ea41ef4c5124844863266",
+      "source": "inst/conformance/adopt/extra-keys.json"
+    },
+    "tests/shared/conformance/adopt/nested-under-matched.json": {
+      "sha256": "d0909e68a82e24691c369feb7aeb688acda39204cb93e7e92d5616babdd82fe1",
+      "source": "inst/conformance/adopt/nested-under-matched.json"
+    },
+    "tests/shared/conformance/adopt/pattern-priority.json": {
+      "sha256": "d10a3a5e5ee596b0190fb720f0a8ad750c4477ea7bb244cfa63e9d0ae36f86bc",
+      "source": "inst/conformance/adopt/pattern-priority.json"
+    },
+    "tests/shared/conformance/adopt/private-paths.json": {
+      "sha256": "19fc85cb578040bcaeaf257ca3fbbe4316f39a00884ad308abd7361f5fd24995",
+      "source": "inst/conformance/adopt/private-paths.json"
+    },
+    "tests/shared/conformance/adopt/r-analysis.json": {
+      "sha256": "3173c6f45b44def6deb86698ba3a8c8fb8075894b51bffeb19609bfc9225e6e2",
+      "source": "inst/conformance/adopt/r-analysis.json"
+    },
+    "tests/shared/conformance/adopt/skip-and-depth.json": {
+      "sha256": "83ee8b31ac65fc40549483c78381144c7e70db9bfeee5bf6254407ba0cd695ae",
+      "source": "inst/conformance/adopt/skip-and-depth.json"
+    },
+    "tests/shared/conformance/adopt/stata-folders-in-r.json": {
+      "sha256": "1a92bc5dbc25525c1697e772ad7675d0e8a8e1d9d6811c3c3b261f9b9330c776",
+      "source": "inst/conformance/adopt/stata-folders-in-r.json"
+    },
+    "tests/shared/conformance/adopt/stata.json": {
+      "sha256": "a125211866360109e2e92c87efbbb015dd6096ac41104ed3d515552d40a4ab71",
+      "source": "inst/conformance/adopt/stata.json"
+    },
+    "tests/shared/conformance/create/python/bare-jupyter.json": {
+      "sha256": "871d54581afecc1faa0e405b193ae91435c280707fc0c36f6afca6ac30a7e5c4",
+      "source": "inst/conformance/create/python/bare-jupyter.json"
+    },
+    "tests/shared/conformance/create/python/bare-quarto.json": {
+      "sha256": "a16a8272552a45add7dcba06f37d1c2bbed3a3b840630581d5e1b27c9c965439",
+      "source": "inst/conformance/create/python/bare-quarto.json"
+    },
+    "tests/shared/conformance/create/python/bare-scripts.json": {
+      "sha256": "0056a338346320670c61005f9d8a526f539e8486b1594f3aab195c5d6c6d8f73",
+      "source": "inst/conformance/create/python/bare-scripts.json"
+    },
+    "tests/shared/conformance/create/python/course-quarto.json": {
+      "sha256": "a819be95a8c255a0f6ded9117deb619c3b62c03e9ff81d12c8eee55f20989f04",
+      "source": "inst/conformance/create/python/course-quarto.json"
+    },
+    "tests/shared/conformance/create/python/presentation-quarto.json": {
+      "sha256": "f3b0f14bb604f47223e1905eb3caa793656fc1bc04a7d07b1d9cd146fd86577a",
+      "source": "inst/conformance/create/python/presentation-quarto.json"
+    },
+    "tests/shared/conformance/create/python/project-jupyter-both.json": {
+      "sha256": "c527b445be8b603d292676afd49788a5e52483069bc022959bb6dba5eb62c54e",
+      "source": "inst/conformance/create/python/project-jupyter-both.json"
+    },
+    "tests/shared/conformance/create/python/project-jupyter-no-agents.json": {
+      "sha256": "8a9dea00a45084fae5dffbba0abaabcb4b32887a6ad667f9e629bdcaffbc6214",
+      "source": "inst/conformance/create/python/project-jupyter-no-agents.json"
+    },
+    "tests/shared/conformance/create/python/project-jupyter-none.json": {
+      "sha256": "cc87c1ca615c930648fa3a82062b45478d4336441a6505123d7a85c338dc2f81",
+      "source": "inst/conformance/create/python/project-jupyter-none.json"
+    },
+    "tests/shared/conformance/create/python/project-jupyter-rstudio.json": {
+      "sha256": "d4f77900c3cd495cc12886cf36cd339169bb5cb74e9f582c0389e671fbc7bb46",
+      "source": "inst/conformance/create/python/project-jupyter-rstudio.json"
+    },
+    "tests/shared/conformance/create/python/project-jupyter.json": {
+      "sha256": "e9212863435d0ada28d6c76c484b7337bf43e98fe051493f997842547041a4d2",
+      "source": "inst/conformance/create/python/project-jupyter.json"
+    },
+    "tests/shared/conformance/create/python/project-quarto.json": {
+      "sha256": "4eeebdc3204cccc7e5d025b3f6ea65a89d6a709737c24bfa811cccdb1dec7b1c",
+      "source": "inst/conformance/create/python/project-quarto.json"
+    },
+    "tests/shared/conformance/create/python/project-scripts.json": {
+      "sha256": "b00e29ef1530be217bfe2511aa0a168915011b4cf452a55409ec846365e50fdd",
+      "source": "inst/conformance/create/python/project-scripts.json"
+    },
+    "tests/shared/conformance/create/python/project_sensitive-jupyter.json": {
+      "sha256": "79ca00caceed026c74e64af65f5a9c8dc87555f30c5141d6ada5bca9cd7e1bc8",
+      "source": "inst/conformance/create/python/project_sensitive-jupyter.json"
+    },
+    "tests/shared/conformance/create/python/project_sensitive-quarto.json": {
+      "sha256": "acbc594faedb12b9455e47528b7b824366a71d8ba7fb19c8113bc8d0de4220a8",
+      "source": "inst/conformance/create/python/project_sensitive-quarto.json"
+    },
+    "tests/shared/conformance/create/python/project_sensitive-scripts.json": {
+      "sha256": "a39b93d974595022e6edd518d0eec64aa0b3f365fc039ebaa5d9e19c547c6c11",
+      "source": "inst/conformance/create/python/project_sensitive-scripts.json"
     },
     "tests/shared/conformance/merge/atomic-entries.json": {
       "sha256": "8a4733538243cf56aa8b3d9bb93aff5d08865d24551432482c6cc28b70b9c7c8",
@@ -122,6 +238,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "ef856af",
+  "ref": "f526b1d",
   "source": "framework (R package)"
 }

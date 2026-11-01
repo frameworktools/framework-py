@@ -116,3 +116,19 @@ def test_save_notebook_renders(project: Path) -> None:
     path = fw.save_notebook(notebook)
     assert path == project / "outputs/notebooks/analysis.html"
     assert "Hello." in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(shutil.which("quarto") is None, reason="quarto is not installed")
+def test_save_notebook_in_a_project_with_a_root_quarto_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = fw.new(
+        "Rendered", tmp_path / "rendered", "project", workflow="quarto", interactive=False
+    )
+    assert not (root / "notebooks/_quarto.yml").exists()
+    notebook = root / "notebooks/summary.qmd"
+    notebook.write_text("---\ntitle: Summary\n---\n\nHello.\n", encoding="utf-8")
+    monkeypatch.chdir(root)
+    path = fw.save_notebook(notebook)
+    assert path == root / "outputs/notebooks/summary.html"
+    assert "Hello." in path.read_text(encoding="utf-8")

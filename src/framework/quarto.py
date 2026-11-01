@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -85,6 +86,16 @@ def render_format(dir_key: str, project_type: str | None = None) -> str:
     return "html"
 
 
+def _shared_output_dir(pairs: list[tuple[str, str, str, str | None]]) -> str | None:
+    """The parent most render targets share, as R picks it. None means in place."""
+    counts = Counter(parent for *_, parent in pairs if parent is not None)
+    if not counts:
+        return None
+    # Ties go to the parent that sorts first, as in R
+    best = min(counts, key=lambda parent: (-counts[parent], parent))
+    return None if best == "." else best
+
+
 def quarto_generate_all(
     project_path: str | Path,
     project_type: str,
@@ -92,18 +103,24 @@ def quarto_generate_all(
     quarto_settings: dict[str, Any] | None = None,
     directories: dict[str, str] | None = None,
 ) -> list[Path]:
-    """Write the root ``_quarto.yml`` and one per render folder. Returns the files written.
+    """Write the project's Quarto configuration, as the R package does. Returns the files written.
 
-    Existing files are overwritten.
+    One root ``_quarto.yml`` holds the shared settings. Its ``output-dir`` is
+    the folder most render targets share, and Quarto keeps each file's folder
+    under it, so ``notebooks/x.ipynb`` renders to ``outputs/notebooks/x.html``.
+    A folder whose format differs from the root's, such as a course's
+    ``slides/``, gets a ``_metadata.yml`` with only its format, which inherits
+    the rest from the root. A render target outside the shared folder keeps
+    its own ``_quarto.yml`` with a relative ``output-dir``. Existing files are
+    overwritten.
 
     Args:
         project_path: The project's root folder.
         project_type: The project type. "presentation" renders the root as revealjs. Any other
             type renders it as HTML.
         render_dirs: Maps a directory key to the folder its output goes to, relative to the
-            project root. Each source folder gets a ``_quarto.yml`` whose ``output-dir`` points
-            there. Keys with an empty target are skipped. Keys containing "slide" or "slides"
-            render as revealjs. Default: no render folders.
+            project root. Keys with an empty target are skipped. Keys containing "slide" or
+            "slides" render as revealjs. Default: no render folders.
         quarto_settings: Format options under ``html`` and ``revealjs`` keys, such as
             ``{"html": {"toc": False}}``. They override Framework's defaults, and only options
             that have a default are written.
@@ -120,29 +137,46 @@ def quarto_generate_all(
     root = Path(project_path).expanduser()
     if not root.is_dir():
         raise FrameworkError(f"Project path does not exist: {root}")
+    pairs: list[tuple[str, str, str, str | None]] = []
+    for key, target in (render_dirs or {}).items():
+        source = (directories or {}).get(key, key)
+        if not target or not source:
+            continue
+        if target == source:
+            parent: str | None = "."
+        elif target.endswith(f"/{source}"):
+            parent = target[: -len(source) - 1]
+        else:
+            parent = None
+        pairs.append((key, source, target, parent))
+    output_dir = _shared_output_dir(pairs)
+
     written = []
     root_format = "revealjs" if project_type == "presentation" else "html"
     root_file = root / "_quarto.yml"
     root_file.write_text(
-        quarto_yml(quarto_settings, root_format, project_root=True), encoding="utf-8"
+        quarto_yml(quarto_settings, root_format, project_root=True, output_dir=output_dir),
+        encoding="utf-8",
     )
     written.append(root_file)
 
-    for key, target in (render_dirs or {}).items():
-        if not target:
-            continue
-        source = (directories or {}).get(key, key)
-        if not source:
-            continue
+    for key, source, target, parent in pairs:
         source_path = root / source
         source_path.mkdir(parents=True, exist_ok=True)
-        output_dir = Path(os.path.relpath(root / target, source_path)).as_posix()
-        path = source_path / "_quarto.yml"
-        path.write_text(
-            quarto_yml(quarto_settings, render_format(key, project_type), output_dir=output_dir),
-            encoding="utf-8",
-        )
-        written.append(path)
+        format = render_format(key, project_type)
+        if parent != (output_dir or "."):
+            # Outside the shared output folder: its own Quarto project, since
+            # output-dir is a project setting
+            relative = Path(os.path.relpath(root / target, source_path)).as_posix()
+            path = source_path / "_quarto.yml"
+            path.write_text(
+                quarto_yml(quarto_settings, format, output_dir=relative), encoding="utf-8"
+            )
+            written.append(path)
+        elif format != root_format:
+            path = source_path / "_metadata.yml"
+            path.write_text(quarto_yml(quarto_settings, format), encoding="utf-8")
+            written.append(path)
     return written
 
 
@@ -154,15 +188,17 @@ class RegenerateResult:
 
 
 def quarto_regenerate(project_path: str | Path, backup: bool = True) -> RegenerateResult:
-    """Rewrite every ``_quarto.yml`` from the project's settings, backing up the old ones.
+    """Rewrite the project's Quarto configuration from its settings, backing up the old files.
 
     The files are generated by ``quarto_generate_all()`` from ``project_type``,
-    ``render_dirs``, ``quarto``, and ``directories`` in the settings.
+    ``render_dirs``, ``quarto``, and ``directories`` in the settings. The
+    ``_quarto.yml`` and ``_metadata.yml`` files in the render folders are
+    removed first, so an older project's per-folder files don't linger.
 
     Args:
         project_path: The project's root folder, which must hold settings.yml or config.yml.
-        backup: Copy every existing ``_quarto.yml`` into a timestamped folder under
-            ``.quarto_backups/`` first.
+        backup: Copy every existing ``_quarto.yml`` and ``_metadata.yml`` into a timestamped
+            folder under ``.quarto_backups/`` first.
 
     Returns:
         The files written, the backed-up files' paths relative to the project root, and the
@@ -191,7 +227,8 @@ def quarto_regenerate(project_path: str | Path, backup: bool = True) -> Regenera
     location = None
     if backup:
         location = root / ".quarto_backups" / f"{datetime.now():%Y%m%d_%H%M%S}"
-        for existing in root.rglob("_quarto.yml"):
+        found = [*root.rglob("_quarto.yml"), *root.rglob("_metadata.yml")]
+        for existing in sorted(found):
             if ".quarto_backups" in existing.parts:
                 continue
             relative = existing.relative_to(root)
@@ -199,6 +236,13 @@ def quarto_regenerate(project_path: str | Path, backup: bool = True) -> Regenera
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(existing, target)
             backed_up.append(relative.as_posix())
+
+    directories = config.get("directories") or {}
+    for key in config.get("render_dirs") or {}:
+        source = directories.get(key, key) if isinstance(directories, dict) else key
+        if source:
+            for name in ("_quarto.yml", "_metadata.yml"):
+                (root / str(source) / name).unlink(missing_ok=True)
 
     quarto = config.get("quarto") if isinstance(config.get("quarto"), dict) else None
     written = quarto_generate_all(

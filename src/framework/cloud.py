@@ -301,6 +301,13 @@ def _client() -> httpx.Client:
     )
 
 
+class CloudOfflineError(CloudError):
+    """The server couldn't be reached: a network error, a timeout, or a 5xx reply.
+
+    401 and 403 are authentication errors, never offline.
+    """
+
+
 class _MissingEndpointError(CloudError):
     """HTTP 404 or 405: an older server without this endpoint."""
 
@@ -323,9 +330,11 @@ def _error(response: httpx.Response, what: str) -> CloudError:
         ]
         if details:
             message = "\n".join([str(message), *details])
-    return (_MissingEndpointError if response.status_code in (404, 405) else CloudError)(
-        str(message)
-    )
+    if response.status_code in (404, 405):
+        return _MissingEndpointError(str(message))
+    if response.status_code >= 500:
+        return CloudOfflineError(str(message))
+    return CloudError(str(message))
 
 
 def api(
@@ -336,6 +345,16 @@ def api(
     body: Mapping[str, Any] | None = None,
 ) -> Any:
     """Call the cloud API and return the decoded JSON."""
+    return _request(path, token, url, method, body).json()
+
+
+def _request(
+    path: str,
+    token: str,
+    url: str,
+    method: str = "GET",
+    body: Mapping[str, Any] | None = None,
+) -> httpx.Response:
     try:
         with _client() as client:
             response = client.request(
@@ -345,10 +364,26 @@ def api(
                 headers={"Authorization": f"Bearer {token}"},
             )
     except httpx.HTTPError as error:
-        raise CloudError(f"Could not reach {host(url)}: {error}") from error
+        raise CloudOfflineError(f"Could not reach {host(url)}: {error}") from error
     if response.is_error:
         raise _error(response, "Cloud request")
-    return response.json()
+    return response
+
+
+def resolve_choices(
+    body: Mapping[str, Any], token: str, url: str
+) -> tuple[dict[str, Any], str | None]:
+    """Resolve project choices on the cloud: the envelope and the defaults revision.
+
+    Each Framework-Notice header is shown as a message.
+    """
+    response = _request("/api/v2/resolve", token, url, method="POST", body=body)
+    for notice in response.headers.get_list("Framework-Notice"):
+        inform(notice)
+    envelope = response.json()
+    if not isinstance(envelope, dict):
+        raise CloudError("The server returned an unexpected project definition.")
+    return envelope, response.headers.get("Framework-Defaults-Revision")
 
 
 # Logging in ---------------------------------------------------------------------------
@@ -942,7 +977,12 @@ def cloud_publish(
 
 
 def write_project_token(project_dir: Path, token: str, url: str) -> list[str]:
-    """Add the project's key and server to its ``.env`` (never to the settings)."""
+    """Add the project's key and server to its ``.env`` (never to the settings).
+
+    Git is made to ignore ``.env`` first, so the token can't be committed.
+    """
+    from framework.create import keep_env_out_of_git
+
     env = project_dir / ".env"
     present = dotenv.read(env)
     missing = {
@@ -950,6 +990,7 @@ def write_project_token(project_dir: Path, token: str, url: str) -> list[str]:
     }
     if not missing:
         return []
+    keep_env_out_of_git(project_dir)
     text = env.read_text(encoding="utf-8") if env.exists() else ""
     if text and not text.endswith("\n"):
         text += "\n"

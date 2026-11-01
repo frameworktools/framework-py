@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 from importlib import resources
 from pathlib import Path
@@ -38,6 +38,9 @@ from framework.spec.resolve import (
 )
 
 CHECKOUT_ALLOWLIST = frozenset({".git", ".github", ".framework", "README.md", "LICENSE"})
+# Python's built-in workflow for these structures. Course and presentation
+# are Quarto structures, and bare has no notebooks.
+DEFAULT_JUPYTER = frozenset({"project", "project_sensitive"})
 # "both" is RStudio plus VS Code. Python never writes an .Rproj.
 WORKSPACE_IDES = frozenset({"vscode", "positron", "both"})
 FILE_LIKE = re.compile(r"\.(qmd|Rmd|R|md|py|ipynb)$")
@@ -196,7 +199,7 @@ def _env_rule(line: str) -> bool | None:
     return None if match is None else not match.group(1)
 
 
-def ensure_secrets_ignored(root: Path) -> bool:
+def ensure_secrets_ignored(root: Path, message: str = "  Added .env to .gitignore") -> bool:
     """Make sure ``.gitignore`` ignores ``.env``. Returns whether a rule was added.
 
     The last rule that mentions ``.env`` decides, as in git, so a layer's
@@ -207,11 +210,54 @@ def ensure_secrets_ignored(root: Path) -> bool:
     rules = [rule for line in text.splitlines() if (rule := _env_rule(line)) is not None]
     if rules and rules[-1]:
         return False
+    _add_env_rule(path, text, message)
+    return True
+
+
+def keep_env_out_of_git(root: Path) -> bool:
+    """Make sure git ignores ``.env`` before a secret goes in. Returns whether a rule was added.
+
+    In a git repository, git itself decides (``git check-ignore``), so global
+    and nested ignore files count. Without git, or outside a repository,
+    ``.gitignore`` is still created or extended, so a later ``git init`` picks
+    it up.
+
+    Raises:
+        FrameworkError: When git already tracks ``.env``.
+    """
+    message = "Added .env to .gitignore so the project token stays out of git"
+    if shutil.which("git") is not None:
+        tracked = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "--error-unmatch", ".env"],
+            capture_output=True,
+            check=False,
+        )
+        if tracked.returncode == 0:
+            raise FrameworkError(
+                "git already tracks .env, so a project token written there would be "
+                "committed. Stop tracking it first:\n"
+                "  git rm --cached .env\n  git commit -m 'Stop tracking .env'"
+            )
+        result = subprocess.run(
+            ["git", "-C", str(root), "check-ignore", "-q", ".env"],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return False
+        if result.returncode == 1:
+            # A repository that doesn't ignore .env
+            path = root / ".gitignore"
+            _add_env_rule(path, path.read_text(encoding="utf-8") if path.exists() else "", message)
+            return True
+    return ensure_secrets_ignored(root, message)
+
+
+def _add_env_rule(path: Path, text: str, message: str) -> None:
     if text and not text.endswith("\n"):
         text += "\n"
     path.write_text(text + "\n# Secrets (added by Framework)\n.env\n", encoding="utf-8")
-    inform("  Added .env to .gitignore")
-    return True
+    inform(message)
 
 
 def _scaffold_py(spec: Mapping[str, Any]) -> str:
@@ -524,6 +570,7 @@ def new(
     location: str | Path | None = None,
     type: str | None = None,
     *,
+    workflow: str | None = None,
     tools: Mapping[str, bool] | Sequence[str] | None = None,
     package_sets: Sequence[str] = (),
     skill_sets: Sequence[str] = (),
@@ -535,6 +582,7 @@ def new(
     git: bool | None = None,
     key: str | None = None,
     interactive: bool | None = None,
+    offline: bool = False,
 ) -> Path:
     """Create a new Python project with your defaults.
 
@@ -542,10 +590,15 @@ def new(
         name: Project name. Asked for when interactive.
         location: The project folder to create. Asked for when interactive.
         type: project, project_sensitive, course, presentation, or bare. When
-            left out, it is asked for interactively and is ``bare`` otherwise,
-            as in R's ``new()``. When you are logged in to Framework Cloud and
-            pass no type, blueprint, structure, tools, or sets, the project
-            starts from your defaults there instead.
+            you are logged in to Framework Cloud, every choice is resolved there:
+            a type is its system blueprint (``framework/<type>``), and with no
+            choices at all the project starts from your defaults. When not logged
+            in, a missing type is asked for interactively and is ``bare``
+            otherwise, as in R's ``new()``.
+        workflow: How notebooks are written: ``"jupyter"`` (``.ipynb``, with Quarto kept
+            for rendering and publishing), ``"quarto"`` (``.qmd``), or ``"scripts"`` (no
+            notebooks). Default: ``"jupyter"`` for project and project_sensitive, and the
+            structure's own setup for the others (Quarto for course and presentation).
         tools: Tools to turn on, as a list of ids such as ``["jupyter"]``, or a map of id to
             true or false, which can also turn off a default such as Quarto. A tool another
             one needs is turned on too, with a message. Default: the type's tools (uv, and
@@ -573,6 +626,11 @@ def new(
             layers) is fetched from the cloud, and the token is saved in the
             new project's ``.env`` for publishing and the ledger.
         interactive: Whether to prompt. Default: whether stdin is a terminal.
+        offline: Build from Framework's built-in defaults without contacting Framework Cloud.
+            When you are logged in and pass no choices, ``new()`` resolves your defaults on
+            the cloud and caches them. If the cloud can't be reached, it builds from that
+            cache and says so. With no cache it asks first, or, when not interactive, stops
+            unless ``offline`` is True. It never falls back silently.
 
     Returns:
         The project folder.
@@ -610,31 +668,63 @@ def new(
             raise FrameworkError("Project location is required in non-interactive mode")
         suggested = Path("~") / "projects" / kebab_case(name)
         location = input(f"Project location [{suggested}]: ").strip() or suggested
-    if not cloud_choices and type is None and not (tools or package_sets or skill_sets):
-        # Logged in with no choices given: start from your defaults on the cloud
-        defaults = _user_defaults()
-        if defaults is not None:
-            blueprint = str(defaults["blueprint"])
-            if interactive:
-                answer = input(f"Project type or blueprint [{blueprint}]: ").strip()
-                if answer in TYPES:
-                    type = answer
-                elif answer:
-                    blueprint = answer
-            if type is None:
-                cloud_choices = True
-                tools = _python_tools(defaults.get("tools"))
-                package_sets = list(defaults.get("package_sets") or [])
-                skill_sets = list(defaults.get("skill_sets") or [])
-                settings = defaults.get("settings") or {}
-                sensitive, git, ai = (settings.get(k) for k in ("sensitive", "git", "ai"))
-            else:
-                blueprint = None
+
+    def local(register: bool = True) -> Path:
+        return _new_local(
+            name, location, type, workflow, tools, package_sets, skill_sets, interactive, register
+        )
+
     if cloud_choices:
         body = _choices_body(
-            name, blueprint, structure, tools, package_sets, skill_sets, skills, sensitive, ai, git
+            name,
+            blueprint,
+            structure,
+            workflow,
+            tools,
+            package_sets,
+            skill_sets,
+            skills,
+            sensitive,
+            ai,
+            git,
         )
         return _new_from_choices(name, location, body)
+    if offline:
+        return local(register=False)
+    signed_in = _signed_in()
+    if signed_in is None:
+        return local()
+    # Logged in: the cloud resolves every choice. A Framework type is its system blueprint.
+    if type is not None and type not in TYPES:
+        raise FrameworkError(f"Invalid project type. Must be one of: {', '.join(TYPES)}")
+    body = _choices_body(
+        name,
+        f"framework/{type}" if type else None,
+        None,
+        workflow,
+        tools,
+        package_sets,
+        skill_sets,
+        (),
+        None,
+        None,
+        None,
+    )
+    return _resolve_and_build(name, location, body, *signed_in, interactive, local)
+
+
+def _new_local(
+    name: str,
+    location: str | Path,
+    type: str | None,
+    workflow: str | None,
+    tools: Mapping[str, bool] | Sequence[str] | None,
+    package_sets: Sequence[str],
+    skill_sets: Sequence[str],
+    interactive: bool,
+    register: bool = True,
+) -> Path:
+    """Build from Framework's built-in defaults and your local settings."""
     if type is None:
         if interactive:
             choices = ", ".join(TYPES)
@@ -644,9 +734,13 @@ def new(
     if type not in TYPES:
         raise FrameworkError(f"Invalid project type. Must be one of: {', '.join(TYPES)}")
 
-    from framework.features import definition_layers
+    from framework.features import definition_layers, workflow_layers
 
+    if workflow is None and type in DEFAULT_JUPYTER:
+        workflow = "jupyter"
     layers: Sequence[Any] = [
+        # The workflow first, so tools chosen here win
+        *(workflow_layers(workflow) if workflow else []),
         *definition_layers(tools or (), package_sets, skill_sets),
         {"kind": "user", "key": "settings-catalog", "layer": catalog_layer(type)},
         {"kind": "user", "layer": user_layer(type)},
@@ -658,51 +752,96 @@ def new(
     spec["source"] = {"origin": "python"}
     inform(f"Creating {type} project: {name}")
     root = project_create(spec, location)
-    if type != "bare":
+    if register and type != "bare":
         from framework.cloud import register_project
 
         register_project(root, name, type, spec, package_sets=package_sets, skill_sets=skill_sets)
     return root
 
 
-def _user_defaults() -> dict[str, Any] | None:
-    """Your defaults on Framework Cloud, or None when not logged in or unreachable."""
-    from framework.cloud import CloudError, api, cloud_server, cloud_token, host
+def _signed_in() -> tuple[str, str] | None:
+    """The cloud server and your token, or None when you are not logged in."""
+    from framework.cloud import CloudError, cloud_server, cloud_token
 
     try:
         server = cloud_server().url
     except CloudError:
         return None
     token = cloud_token(server)
-    if token is None:
-        return None
+    return None if token is None else (server, token)
+
+
+def _resolve_and_build(
+    name: str,
+    location: str | Path,
+    body: dict[str, Any],
+    server: str,
+    token: str,
+    interactive: bool,
+    local: Callable[[], Path],
+) -> Path:
+    """Resolve the choices on the cloud and build the project.
+
+    With no choices, the result is your defaults, which are cached for offline
+    use. Offline, the cache is used for those. Anything else asks, or stops
+    when not interactive, before building from the built-ins.
+    """
+    from framework._defaults_cache import read_cached_defaults, write_cached_defaults
+    from framework.cloud import CloudOfflineError, _MissingEndpointError, host, resolve_choices
+
+    if Path(location).expanduser().exists():
+        raise FrameworkError(f"Project directory already exists: {Path(location).expanduser()}")
+    defaults_only = set(body) <= {"name", "language"}
     try:
-        defaults = api("/api/v2/defaults", token, server)
-    except CloudError:
-        return None
-    if not isinstance(defaults, dict) or not defaults.get("blueprint"):
-        return None
-    inform(f"Starting from your defaults on {host(server)}")
-    return defaults
+        envelope, revision = resolve_choices(body, token, server)
+    except _MissingEndpointError:
+        problem = (
+            f"{host(server)} doesn't resolve projects yet, so this project would use "
+            "Framework's built-in defaults."
+        )
+        _confirm_built_ins(problem, interactive)
+        return local()
+    except CloudOfflineError as error:
+        cached = read_cached_defaults(server, "python") if defaults_only else None
+        if cached is None:
+            what = (
+                "your Framework Cloud defaults aren't cached yet"
+                if defaults_only
+                else "these choices need Framework Cloud to resolve them"
+            )
+            _confirm_built_ins(f"Can't reach {host(server)}, and {what}.\n{error}", interactive)
+            return local()
+        inform(f"Using your Framework Cloud defaults from {str(cached['fetched_at'])[:10]}")
+        envelope = cached["envelope"]
+    else:
+        if defaults_only:
+            inform(f"Starting from your defaults on {host(server)}")
+            write_cached_defaults(server, "python", envelope, revision)
+    return _build_and_register(name, location, envelope, body, server, token)
 
 
-def _python_tools(tools: Any) -> dict[str, bool]:
-    """Default tools that apply to Python: Framework's R-only tools are left out."""
-    from framework.features import _tools
+def _confirm_built_ins(problem: str, interactive: bool) -> None:
+    """Ask before building from the built-ins instead of what the cloud would resolve.
 
-    definitions = _tools()
-    return {
-        tool: on
-        for tool, on in (tools if isinstance(tools, dict) else {}).items()
-        if isinstance(on, bool)
-        and (tool not in definitions or "python" in (definitions[tool].get("language") or []))
-    }
+    Raises:
+        FrameworkError: When the answer is no, or when not interactive.
+    """
+    if not interactive:
+        raise FrameworkError(
+            f"{problem}\nPass offline=True to build from Framework's built-in defaults instead."
+        )
+    print(problem, file=sys.stderr)
+    answer = input("Build from Framework's built-in defaults instead? [y/N] ").strip().lower()
+    if answer not in ("y", "yes"):
+        raise FrameworkError("Cancelled. Nothing was created.")
+    inform("Building from Framework's built-in defaults")
 
 
 def _choices_body(
     name: str,
     blueprint: str | None,
     structure: str | None,
+    workflow: str | None,
     tools: Mapping[str, bool] | Sequence[str] | None,
     package_sets: Sequence[str],
     skill_sets: Sequence[str],
@@ -728,6 +867,8 @@ def _choices_body(
         body["blueprint"] = blueprint
     if structure is not None:
         body["structure"] = structure
+    if workflow is not None:
+        body["workflow"] = workflow
     if choices:
         body["tools"] = choices
     for field, values in (
@@ -736,7 +877,8 @@ def _choices_body(
         ("skills", skills),
     ):
         if values:
-            body[field] = list(values)
+            # A bare id names one of Framework's own, as offline
+            body[field] = [v if "/" in v or field == "skills" else f"framework/{v}" for v in values]
     settings = {
         k: v for k, v in (("sensitive", sensitive), ("git", git), ("ai", ai)) if v is not None
     }
@@ -747,23 +889,28 @@ def _choices_body(
 
 def _new_from_choices(name: str, location: str | Path, body: dict[str, Any]) -> Path:
     """Resolve choices on the cloud, build the project, then register it there."""
-    from framework.cloud import (
-        CloudError,
-        _require_token,
-        api,
-        cloud_server,
-        host,
-        write_project_token,
-    )
+    from framework.cloud import _require_token, cloud_server, host, resolve_choices
 
     server = cloud_server().url
     token = _require_token(server)
     if Path(location).expanduser().exists():
         raise FrameworkError(f"Project directory already exists: {Path(location).expanduser()}")
     inform(f"Resolving the project's pieces on {host(server)}")
-    envelope = api("/api/v2/resolve", token, server, method="POST", body=body)
-    if not isinstance(envelope, dict):
-        raise FrameworkError("The server returned an unexpected project definition.")
+    envelope, _ = resolve_choices(body, token, server)
+    return _build_and_register(name, location, envelope, body, server, token)
+
+
+def _build_and_register(
+    name: str,
+    location: str | Path,
+    envelope: Mapping[str, Any],
+    body: Mapping[str, Any],
+    server: str,
+    token: str,
+) -> Path:
+    """Build from a resolved envelope, then register the project on the cloud."""
+    from framework.cloud import CloudError, api, host, write_project_token
+
     spec = spec_resolve(envelope.get("layers") or [], name, envelope.get("author")).spec
     spec["source"] = envelope.get("source") or {"origin": "cloud"}
     root = project_create(spec, location)

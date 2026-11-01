@@ -4,7 +4,7 @@ The definitions are canonical in the R package (``inst/features/`` and
 ``inst/sets/``) and copied here by ``scripts/sync_assets.py``. Each holds a
 layer in the spec layer format, so an offline ``new()`` and framework.pub build
 the same projects. A tool's ``layer`` applies first, then its layer for the
-project's language.
+project's language. Workflows (``inst/workflows/``) are defined the same way.
 """
 
 from __future__ import annotations
@@ -44,6 +44,34 @@ def _sets(kind: str) -> dict[str, dict[str, Any]]:
 
 def _for_python(definition: Mapping[str, Any]) -> bool:
     return LANGUAGE in (definition.get("language") or [])
+
+
+def _workflows() -> dict[str, dict[str, Any]]:
+    return _definitions("workflows")
+
+
+def workflow_layers(workflow: str) -> list[dict[str, Any]]:
+    """Layer envelopes for a workflow: its required tools, then its own layer, as in R.
+
+    Raises:
+        FrameworkError: For an unknown workflow or one that isn't for Python.
+    """
+    definitions = _workflows()
+    definition = definitions.get(workflow)
+    if definition is None:
+        available = ", ".join(i for i, d in definitions.items() if _for_python(d))
+        raise FrameworkError(f"Unknown workflow: {workflow}. Available: {available}")
+    if not _for_python(definition):
+        raise FrameworkError(f"The {definition['name']} workflow isn't available for Python.")
+    entries = definition_layers(list(definition.get("requires") or []))
+    entries.append(
+        {"kind": "facet", "key": f"framework/workflow-{workflow}", "layer": definition["layer"]}
+    )
+    extra = (definition.get("language_layers") or {}).get(LANGUAGE)
+    if extra:
+        key = f"framework/workflow-{workflow}-{LANGUAGE}"
+        entries.append({"kind": "facet", "key": key, "layer": extra})
+    return entries
 
 
 def tools_available() -> pd.DataFrame:

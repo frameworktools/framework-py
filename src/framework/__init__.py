@@ -10,6 +10,7 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 from framework._time import now
+from framework.adopt import adopt, structure_import
 from framework.ai import ai_skills_update
 from framework.bootstrap import BootstrapResult, bootstrap
 from framework.cache import (
@@ -156,6 +157,7 @@ __all__ = [
     "SpecError",
     "UnsupportedFormatError",
     "__version__",
+    "adopt",
     "ai_skills_update",
     "bootstrap",
     "cache",
@@ -244,6 +246,7 @@ __all__ = [
     "spec_resolve",
     "status",
     "storage_test",
+    "structure_import",
     "stubs_list",
     "stubs_path",
     "stubs_publish",

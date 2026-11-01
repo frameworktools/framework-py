@@ -44,7 +44,7 @@ Every type except bare includes these files.
 - `scaffold.py`, which [scaffold()](ref:scaffold) runs.
 - `.env` with empty credential placeholders, ignored by git.
 - `framework.db`, ignored by git.
-- `_quarto.yml` files for rendering.
+- A root `_quarto.yml` for rendering.
 - `AGENTS.md`, the Framework skills, and `CLAUDE.md` when Claude Code is selected.
 - A `.code-workspace` file for VS Code and Positron.
 

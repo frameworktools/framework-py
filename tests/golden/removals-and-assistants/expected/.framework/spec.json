@@ -58,7 +58,8 @@
     "seed": "123",
     "source_all_functions": true,
     "notebook_format": "quarto",
-    "ide": "vscode"
+    "ide": "vscode",
+    "workflow": "quarto"
   },
   "quarto": {
     "html": {

@@ -28,13 +28,29 @@ In an interactive session, `new()` asks for any value you leave out. It suggests
 
 The folder must not exist yet. `new()` returns the path of the new project.
 
+### Workflows
+
+The workflow decides how notebooks are written. Pass it as `workflow`.
+
+| Workflow | Tools it turns on | `make_notebook()` writes |
+|----------|-------------------|--------------------------|
+| `jupyter` | `jupyter` and `quarto` | Jupyter notebooks (`.ipynb`), with Quarto kept for rendering and publishing |
+| `quarto` | `quarto` | Quarto documents (`.qmd`) |
+| `scripts` | none (it turns `quarto` and `jupyter` off) | Python scripts (`.py`) |
+
+Python projects of type `project` and `project_sensitive` use the Jupyter workflow unless you choose another. Course and presentation projects use Quarto, and bare projects have no workflow. A Scripts-only project gets no notebook files; any starter scripts come from its blueprint. The workflow and the notebook format are recorded under `scaffold:` in the project's settings.
+
+```python
+fw.new("Pipeline", "~/projects/pipeline", type="project", workflow="scripts")
+```
+
 ### Tools and Sets
 
 Tools are switches for what a project uses beyond its folders. Each tool adds only its own files, folders, and packages. [tools_available()](ref:tools_available) lists the tools for Python projects.
 
 - `uv` manages the project's dependencies in `pyproject.toml` and `uv.lock`. It is on for every project.
-- `quarto` writes the `_quarto.yml` files and render settings. It is on for every type except `bare`.
-- `jupyter` adds the `ipykernel` package for Jupyter notebooks. It is off unless you turn it on.
+- `quarto` writes the root `_quarto.yml` and render settings. It is on for every type except `bare`.
+- `jupyter` adds the `ipykernel` package for Jupyter notebooks. The Jupyter workflow turns it on.
 - `quarto_slides` adds a `slides/` folder that renders as RevealJS.
 - `quarto_manuscript` adds a `manuscript/` folder with a Quarto manuscript to start from.
 
@@ -119,7 +135,13 @@ A structure replaces the blueprint's structure. `tools`, `package_sets`, `skill_
 
 `new()` sends the choices to the server, which resolves them into layers. It builds the project from those layers, then registers it on the server, which records the choices and returns a project token that `new()` saves in `.env`. If registration fails, the project is still created and `new()` reports why. Only the choices you pass are sent. Data and code stay on your computer.
 
-When you are logged in and pass no type, blueprint, structure, tools, or sets, `new()` starts from your defaults on Framework Cloud: your preferred blueprint, tools, sets, and settings. Interactively, it shows your default blueprint and accepts a Framework type or another blueprint instead. When the server can't be reached, `new()` uses the local defaults described above.
+When you are logged in, Framework Cloud resolves every choice, as it does for R and `fw`. A type is sent as Framework's blueprint of that name, such as `framework/project`, together with any workflow, tools, and sets. With no choices at all, the cloud resolves your defaults. `new()` saves that result in Framework's config folder, under `cache/defaults/`, one file per server and language, in the format R and `fw` share.
+
+When the server can't be reached, `new()` builds your defaults from that cache and says so: "Using your Framework Cloud defaults from 2026-11-01". Otherwise, including any explicit choice and a server too old to resolve projects, an interactive session asks before building from the built-in defaults described above. A script stops with an error unless you pass `offline=True`. `new()` never switches to a different configuration silently. A rejected token is reported as an error, never treated as offline. When you are not logged in, `new()` uses the built-in defaults without asking.
+
+```python
+fw.new("Field Notes", "~/projects/field-notes", offline=True)
+```
 
 ## What Gets Created
 
@@ -132,7 +154,7 @@ A new project contains these files, depending on its type.
 - `.env`, with empty placeholders for PostgreSQL and S3 credentials.
 - `.gitignore` for the project type. Framework makes sure it ignores `.env`.
 - `framework.db`, the project database.
-- `_quarto.yml` in the root and in each source folder that renders.
+- `_quarto.yml` in the root, and `_metadata.yml` in a folder that renders in another format, such as a course's `slides/`.
 - `AGENTS.md`, the AI assistants' skills, and `CLAUDE.md` when Claude Code is selected.
 - A `.code-workspace` file for VS Code and Positron.
 - `presentation.qmd` in presentation projects.
@@ -151,6 +173,24 @@ Install the packages before you start work.
 ```sh
 cd ~/projects/vaccine-study
 uv sync
+```
+
+## Adopt an Existing Project
+
+[adopt()](ref:adopt) turns a folder you already have into a Framework project, in place. It lists the folder's subfolders, at most three levels deep, and proposes a role for each: a Framework directory key such as `inputs_raw`, or a folder of its own under `extra_directories`. It reads folder names only, never files or their contents. Hidden folders, version control, environments such as `.venv` and `renv`, and caches are left out.
+
+```python
+fw.adopt("~/projects/old-study")
+```
+
+You review the proposal before anything is written. Press Enter to accept it, type a folder's number to change its role, or type `-` and the number to leave it out. Then `adopt()` writes `settings.yml` and `.framework/spec.json`. It moves nothing and creates nothing else, and it refuses a folder that is already a Framework project. The project is `bare`, with flat settings and no tools.
+
+A folder whose path contains "private" gets a warning: "'data/private' looks private. Keep it out of git and away from AI assistants." The review then asks whether to turn on the sensitive-data setting. In a script, pass `yes=True` to accept the proposal; the sensitive setting stays off. From a shell, run `python -m framework adopt --path DIR`, with `--yes` to skip the review. The R package and `fw` map folders with the same shared rules.
+
+When you are logged in, `adopt()` finishes by offering to register the project on Framework Cloud and to save the folder layout as a structure. [structure_import()](ref:structure_import) does the second step on its own. It sends only the folder paths, and the structure is private to you.
+
+```python
+fw.structure_import("~/projects/old-study", name="Lab layout")
 ```
 
 ## Prepare a Cloned Project

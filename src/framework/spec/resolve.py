@@ -117,6 +117,7 @@ def package_defaults(type: str) -> dict[str, Any]:
         if type == "project_sensitive":
             names += defaults["sensitive_skills"]
         skills = {name: {"package": True} for name in names}
+    quarto_on = known and core_files
     quarto = dict(defaults["quarto"])
     if type_config.get("render_dir") is not None:
         quarto["render_dir"] = type_config["render_dir"]
@@ -125,7 +126,7 @@ def package_defaults(type: str) -> dict[str, Any]:
         "settings_layout": default_settings_layout(label),
         # Framework's structures other than bare include Quarto; uv manages every
         # Python project's dependencies
-        "tools": {"quarto": known and core_files, "uv": True},
+        "tools": {"quarto": quarto_on, "uv": True},
         "author": dict(defaults["author"]),
         "directories": dict(type_config["directories"]),
         "extra_directories": {},
@@ -133,7 +134,8 @@ def package_defaults(type: str) -> dict[str, Any]:
         "packages": defaults["packages"],
         "git": defaults["git"],
         "ai": defaults["ai"],
-        "scaffold": defaults["scaffold"],
+        # The workflow decides the notebook format, as in R's built-ins
+        "scaffold": {**defaults["scaffold"], **({"workflow": "quarto"} if quarto_on else {})},
         "quarto": quarto,
         "connections": defaults["connections"],
         "security": {"sensitive": type == "project_sensitive"},

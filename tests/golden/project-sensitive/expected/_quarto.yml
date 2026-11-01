@@ -4,6 +4,7 @@
 
 project:
   type: default
+  output-dir: outputs/private
 
 format:
   html:

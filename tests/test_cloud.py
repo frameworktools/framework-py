@@ -445,30 +445,6 @@ def test_new_from_a_cloud_key_refuses_r_projects(tmp_path: Path, server: FakeClo
         fw.new(key="fwp_project0123", location=tmp_path / "x", interactive=False)
 
 
-def test_new_registers_when_logged_in(tmp_path: Path, server: FakeCloud) -> None:
-    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
-
-    def create(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
-        assert body == {"name": "Registered", "project_type": "project", "language": "python"}
-        return httpx.Response(
-            201, json={"project": {"slug": "registered"}, "pull_token": "fwp_new0123456"}
-        )
-
-    server.route("POST", "/api/v1/projects", create)
-    root = fw.new("Registered", tmp_path / "registered", "project", interactive=False)
-    assert dotenv.read(root / ".env")["FW_PROJECT_TOKEN"] == "fwp_new0123456"
-
-
-def test_new_registration_failure_is_quiet(tmp_path: Path, server: FakeCloud) -> None:
-    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
-    server.route(
-        "POST", "/api/v1/projects", lambda r: httpx.Response(422, json={"message": "Name taken"})
-    )
-    root = fw.new("Taken", tmp_path / "taken", "project", interactive=False)
-    assert "FW_PROJECT_TOKEN" not in dotenv.read(root / ".env")
-
-
 def choices_envelope() -> dict[str, Any]:
     return {
         "spec_version": 1,
@@ -552,67 +528,180 @@ def test_cloud_only_choices_need_a_blueprint(tmp_path: Path) -> None:
         fw.new("X", tmp_path / "x", "project", blueprint="framework/project", interactive=False)
 
 
-def test_new_registers_its_pieces_with_v2(tmp_path: Path, server: FakeCloud) -> None:
-    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
-    sent: dict[str, Any] = {}
-
-    def create(request: httpx.Request) -> httpx.Response:
-        sent.update(json.loads(request.content))
-        return httpx.Response(201, json={"slug": "pieces", "token": "fwp_pieces0123"})
-
-    server.route("POST", "/api/v2/projects", create)
-    root = fw.new(
-        "Pieces",
-        tmp_path / "pieces",
-        "project_sensitive",
-        tools=["jupyter"],
-        skill_sets=["framework"],
-        interactive=False,
-    )
-    assert sent["structure"] == "framework/project_sensitive"
-    assert sent["tools"] == {"quarto": True, "uv": True, "jupyter": True}
-    assert sent["skill_sets"] == ["framework/framework"]
-    assert sent["settings"]["sensitive"] is True
-    assert sent["settings"]["ai"]["enabled"] is True
-    assert dotenv.read(root / ".env")["FW_PROJECT_TOKEN"] == "fwp_pieces0123"
-
-
-def test_new_starts_from_your_cloud_defaults(
-    tmp_path: Path, server: FakeCloud, monkeypatch: pytest.MonkeyPatch
+def test_new_resolves_your_defaults_and_caches_them(
+    tmp_path: Path, server: FakeCloud, caplog: pytest.LogCaptureFixture
 ) -> None:
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
-    defaults = {
-        "blueprint": "framework/course",
-        "package_sets": [],
-        "skill_sets": ["framework/framework"],
-        "tools": {"renv": False, "targets": True, "quarto": True, "jupyter": True},
-        "settings": {"sensitive": False, "git": True, "ai": True},
-    }
-    server.route("GET", "/api/v2/defaults", lambda r: httpx.Response(200, json=defaults))
     sent: list[dict[str, Any]] = []
 
     def resolve(request: httpx.Request) -> httpx.Response:
         sent.append(json.loads(request.content))
-        return httpx.Response(200, json=choices_envelope())
+        headers = [
+            ("Framework-Defaults-Revision", "rev-7"),
+            ("Framework-Notice", "Your default blueprint doesn't support Python."),
+        ]
+        return httpx.Response(200, json=choices_envelope(), headers=headers)
 
     server.route("POST", "/api/v2/resolve", resolve)
     server.route(
         "POST", "/api/v2/projects", lambda r: httpx.Response(201, json={"token": "fwp_d0123456"})
     )
-    fw.new("Lab", tmp_path / "lab", interactive=False)
-    assert sent[0]["blueprint"] == "framework/course"
-    # R-only tools are left out; Python's stay
-    assert sent[0]["tools"] == {"quarto": True, "jupyter": True}
-    assert sent[0]["settings"] == {"sensitive": False, "git": True, "ai": True}
+    caplog.set_level("INFO", logger="framework")
+    root = fw.new("Lab", tmp_path / "lab", interactive=False)
+    assert sent == [{"name": "Lab", "language": "python"}]
+    assert _yaml.read(root / "settings.yml")["default"]["project_type"] == "course"
+    assert "Your default blueprint doesn't support Python." in caplog.text
 
-    # Interactively, a Framework type answers the prompt and skips the cloud's defaults
-    monkeypatch.setattr("builtins.input", lambda prompt: "bare")
-    root = fw.new("Local", tmp_path / "local", interactive=True)
-    assert _yaml.read(root / "settings.yml")["default"]["project_type"] == "bare"
-    assert len(sent) == 1
+    path = fw.config_dir() / "cache/defaults/framework.pub/python.json"
+    cached = json.loads(path.read_text(encoding="utf-8"))
+    assert cached["defaults_revision"] == "rev-7"
+    assert cached["envelope"] == choices_envelope()
+    assert cached["fetched_at"].endswith("Z")
 
 
-def test_new_without_cloud_defaults_stays_local(tmp_path: Path, server: FakeCloud) -> None:
+def offline(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("Connection refused", request=request)
+
+
+@pytest.mark.parametrize("failure", ["network", "503"])
+def test_new_offline_uses_the_cached_defaults(
+    tmp_path: Path, server: FakeCloud, caplog: pytest.LogCaptureFixture, failure: str
+) -> None:
+    from framework._defaults_cache import write_cached_defaults
+
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
-    root = fw.new("Plain", tmp_path / "plain", interactive=False)
+    write_cached_defaults(cloud.cloud_server().url, "python", choices_envelope(), "rev-7")
+    server.route(
+        "POST",
+        "/api/v2/resolve",
+        offline if failure == "network" else (lambda r: httpx.Response(503)),
+    )
+    caplog.set_level("INFO", logger="framework")
+    root = fw.new("Lab", tmp_path / "lab", interactive=False)
+    assert _yaml.read(root / "settings.yml")["default"]["project_type"] == "course"
+    assert "Using your Framework Cloud defaults from 20" in caplog.text
+
+
+def test_new_offline_without_a_cache_never_falls_back_silently(
+    tmp_path: Path, server: FakeCloud, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    server.route("POST", "/api/v2/resolve", offline)
+    with pytest.raises(fw.FrameworkError, match=r"Pass offline=True"):
+        fw.new("Lab", tmp_path / "lab", interactive=False)
+    assert not (tmp_path / "lab").exists()
+
+    monkeypatch.setattr("builtins.input", lambda prompt: "n")
+    with pytest.raises(fw.FrameworkError, match="Cancelled"):
+        fw.new("Lab", tmp_path / "lab", interactive=True)
+
+    answers = iter(["y", "bare"])
+    monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
+    root = fw.new("Lab", tmp_path / "lab", interactive=True)
     assert _yaml.read(root / "settings.yml")["default"]["project_type"] == "bare"
+
+    # offline=True skips the cloud
+    requests = len(server.requests)
+    fw.new("Offline", tmp_path / "offline", interactive=False, offline=True)
+    assert len(server.requests) == requests
+
+
+def test_new_reports_auth_errors_instead_of_going_offline(
+    tmp_path: Path, server: FakeCloud
+) -> None:
+    from framework._defaults_cache import write_cached_defaults
+
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    write_cached_defaults(cloud.cloud_server().url, "python", choices_envelope(), "rev-7")
+    server.route(
+        "POST", "/api/v2/resolve", lambda r: httpx.Response(401, json={"message": "Bad token"})
+    )
+    with pytest.raises(fw.CloudError, match="Bad token"):
+        fw.new("Lab", tmp_path / "lab", interactive=False)
+
+
+def test_defaults_cache_folders_replace_colons() -> None:
+    from framework._defaults_cache import cache_path
+
+    path = cache_path("http://localhost:8000", "python")
+    assert path == fw.config_dir() / "cache/defaults/localhost_8000/python.json"
+
+
+def test_older_servers_ask_before_using_the_built_ins(
+    tmp_path: Path, server: FakeCloud, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without /api/v2/resolve, Python builds from the built-ins only after saying so."""
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    with pytest.raises(fw.FrameworkError, match="doesn't resolve projects yet"):
+        fw.new("Plain", tmp_path / "plain", "project", interactive=False)
+
+    def create(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body == {"name": "Registered", "project_type": "project", "language": "python"}
+        return httpx.Response(
+            201, json={"project": {"slug": "registered"}, "pull_token": "fwp_new0123456"}
+        )
+
+    server.route("POST", "/api/v1/projects", create)
+    monkeypatch.setattr("builtins.input", lambda prompt: "y")
+    root = fw.new("Registered", tmp_path / "registered", "project", interactive=True)
+    assert dotenv.read(root / ".env")["FW_PROJECT_TOKEN"] == "fwp_new0123456"
+
+    # A failed registration is quiet
+    server.route(
+        "POST", "/api/v1/projects", lambda r: httpx.Response(422, json={"message": "Name taken"})
+    )
+    root = fw.new("Taken", tmp_path / "taken", "project", interactive=True)
+    assert "FW_PROJECT_TOKEN" not in dotenv.read(root / ".env")
+
+    # offline=True neither asks nor contacts the cloud
+    requests = len(server.requests)
+    fw.new("Away", tmp_path / "away", "project", interactive=False, offline=True)
+    assert len(server.requests) == requests
+
+
+def test_a_type_resolves_as_its_system_blueprint(tmp_path: Path, server: FakeCloud) -> None:
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    sent: dict[str, Any] = {}
+
+    def resolve(request: httpx.Request) -> httpx.Response:
+        sent["resolve"] = json.loads(request.content)
+        return httpx.Response(200, json=choices_envelope())
+
+    def create(request: httpx.Request) -> httpx.Response:
+        sent["create"] = json.loads(request.content)
+        return httpx.Response(201, json={"slug": "pieces", "token": "fwp_pieces0123"})
+
+    server.route("POST", "/api/v2/resolve", resolve)
+    server.route("POST", "/api/v2/projects", create)
+    root = fw.new(
+        "Pieces",
+        tmp_path / "pieces",
+        "project_sensitive",
+        workflow="scripts",
+        tools=["jupyter"],
+        skill_sets=["framework"],
+        interactive=False,
+    )
+    assert sent["resolve"] == {
+        "name": "Pieces",
+        "language": "python",
+        "blueprint": "framework/project_sensitive",
+        "workflow": "scripts",
+        "tools": {"jupyter": True},
+        "skill_sets": ["framework/framework"],
+    }
+    assert sent["create"] == sent["resolve"]
+    assert dotenv.read(root / ".env")["FW_PROJECT_TOKEN"] == "fwp_pieces0123"
+    # Explicit choices aren't your defaults, so nothing is cached
+    assert not (fw.config_dir() / "cache").exists()
+
+
+def test_explicit_choices_offline_ask_first(tmp_path: Path, server: FakeCloud) -> None:
+    from framework._defaults_cache import write_cached_defaults
+
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    write_cached_defaults(cloud.cloud_server().url, "python", choices_envelope(), "rev-7")
+    server.route("POST", "/api/v2/resolve", offline)
+    with pytest.raises(fw.FrameworkError, match="these choices need Framework Cloud"):
+        fw.new("Lab", tmp_path / "lab", "project", interactive=False)

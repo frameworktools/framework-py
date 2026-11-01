@@ -36,8 +36,14 @@ ASSETS: dict[str, str] = {
     "inst/features/*.json": "src/framework/_assets/features",
     "inst/sets/skills/*.json": "src/framework/_assets/sets/skills",
     "inst/sets/packages/*.json": "src/framework/_assets/sets/packages",
+    # Workflows: how notebooks are written (quarto, jupyter, or scripts).
+    "inst/workflows/*.json": "src/framework/_assets/workflows",
+    # How adopt() maps an existing project's folders to directory keys.
+    "inst/adopt/rules.json": "src/framework/_assets/adopt",
     "inst/conformance/README.md": "tests/shared/conformance",
     "inst/conformance/merge/*.json": "tests/shared/conformance/merge",
+    "inst/conformance/create/python/*.json": "tests/shared/conformance/create/python",
+    "inst/conformance/adopt/*.json": "tests/shared/conformance/adopt",
     "NAMESPACE": "tests/shared",
     # The servers for tests/integration, with the seed script for each.
     "tests/integration/compose.yml": "tests/integration",

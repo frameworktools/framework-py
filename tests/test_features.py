@@ -70,10 +70,18 @@ def test_new_with_jupyter_and_without_quarto(tmp_path: Path) -> None:
 
 
 def test_new_adds_slides_to_a_project(tmp_path: Path) -> None:
-    root = fw.new("Talk", tmp_path / "talk", "project", tools=["quarto_slides"], interactive=False)
+    root = fw.new(
+        "Talk",
+        tmp_path / "talk",
+        "project",
+        workflow="quarto",
+        tools=["quarto_slides"],
+        interactive=False,
+    )
     assert settings(root)["tools"] == {"quarto": True, "uv": True, "quarto_slides": True}
     assert (root / "slides").is_dir()
-    assert (root / "slides/_quarto.yml").is_file()
+    # Slides render as revealjs, set in the folder's own metadata
+    assert "revealjs:" in (root / "slides/_metadata.yml").read_text(encoding="utf-8")
 
 
 def test_a_free_type_label_starts_like_bare_with_core_files() -> None:
@@ -125,7 +133,8 @@ def test_cli_tools_and_sets(tmp_path: Path) -> None:
     from framework.__main__ import main
 
     argv = ["create", "--name", "Cli", "--path", str(tmp_path / "cli"), "--type", "project"]
-    argv += ["--tool", "jupyter", "--tool", "quarto=false", "--skill-set", "framework"]
+    argv += ["--workflow", "quarto", "--tool", "jupyter", "--tool", "quarto=false"]
+    argv += ["--skill-set", "framework"]
     assert main(argv) == 0
     assert settings(tmp_path / "cli")["tools"] == {"quarto": False, "uv": True, "jupyter": True}
     with pytest.raises(SystemExit):
@@ -188,12 +197,25 @@ def test_scripts_only_projects_make_scripts(
     assert made.parent.name == "scripts"
 
 
-def test_jupyter_workflow_keeps_quarto(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    root = fw.new("Nb", tmp_path / "nb", "project", tools=["jupyter"], interactive=False)
-    settings_path = root / "settings/scaffold.yml"
-    data = _yaml.read(settings_path)
-    data["scaffold"].update(workflow="jupyter", notebook_format="jupyter")
-    _yaml.write(settings_path, data)
-    assert settings(root)["tools"]["quarto"] is True
+def test_python_projects_default_to_the_jupyter_workflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = fw.new("Nb", tmp_path / "nb", "project", interactive=False)
+    assert settings(root)["tools"] == {"quarto": True, "uv": True, "jupyter": True}
+    scaffold = _yaml.read(root / "settings/scaffold.yml")["scaffold"]
+    assert (scaffold["workflow"], scaffold["notebook_format"]) == ("jupyter", "jupyter")
+    assert '"ipykernel"' in (root / "pyproject.toml").read_text(encoding="utf-8")
+    # Quarto stays for rendering and publishing
+    assert (root / "_quarto.yml").is_file()
     monkeypatch.chdir(root)
     assert fw.make_notebook("first").suffix == ".ipynb"
+
+
+def test_course_keeps_quarto_and_workflows_can_be_chosen(tmp_path: Path) -> None:
+    course = fw.new("Course", tmp_path / "course", "course", interactive=False)
+    assert settings(course)["scaffold"]["workflow"] == "quarto"
+    scripts = fw.new("S", tmp_path / "s", "project", workflow="scripts", interactive=False)
+    assert settings(scripts)["tools"] == {"quarto": False, "uv": True, "jupyter": False}
+    assert not list(scripts.rglob("_quarto.yml"))
+    with pytest.raises(fw.FrameworkError, match="Unknown workflow: notebooks"):
+        fw.new("X", tmp_path / "x", "project", workflow="notebooks", interactive=False)

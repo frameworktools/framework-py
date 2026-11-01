@@ -27,6 +27,10 @@ note = "R exports it only so S3 methods dispatch"
 python = "project_register"
 status = "renamed"
 
+[functions.adopt]
+python = "adopt"
+status = "ported"
+
 [functions.ai_generate_context]
 status = "deprecated"
 note = "Replaced by the AGENTS.md stub in 2.0"
@@ -520,6 +524,10 @@ status = "ported"
 
 [functions.storage_test]
 python = "storage_test"
+status = "ported"
+
+[functions.structure_import]
+python = "structure_import"
 status = "ported"
 
 [functions.stubs_list]

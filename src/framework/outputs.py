@@ -281,7 +281,12 @@ def save_notebook(
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise FrameworkError(f"Quarto render failed\n{result.stdout}{result.stderr}")
-        outputs = sorted(Path(temp).glob(f"*{_NOTEBOOK_FORMATS[format]}"))
+        # Inside a Quarto project, the output keeps the file's folder under
+        # --output-dir (notebooks/x.qmd -> <temp>/notebooks/x.html)
+        extension = _NOTEBOOK_FORMATS[format]
+        outputs = sorted(Path(temp).rglob(f"{source.stem}{extension}")) or sorted(
+            Path(temp).rglob(f"*{extension}")
+        )
         if not outputs:
             raise FrameworkError(f"No {format} output found after rendering")
         shutil.copyfile(outputs[0], destination)
