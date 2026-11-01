@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -61,6 +62,7 @@ def test_enable_list_disable(repo: Path) -> None:
     assert dict(zip(listed["hook"], listed["enabled"], strict=True)) == {
         "data_security": True,
         "check_sensitive_dirs": False,
+        "check_notebook_outputs": False,
     }
 
     assert fw.git_hooks_disable("data_security") is False
@@ -76,7 +78,7 @@ def test_split_git_settings_file(repo: Path) -> None:
     fw.git_hooks_enable("warn_unignored_sensitive")
     split = _yaml.read(repo / "settings/git.yml")
     assert split == {"git": {"enabled": True, "hooks": {"check_sensitive_dirs": True}}}
-    assert fw.git_hooks_list()["enabled"].tolist() == [False, True]
+    assert fw.git_hooks_list()["enabled"].tolist() == [False, True, False]
 
 
 def test_r_alias_counts_as_enabled(repo: Path) -> None:
@@ -147,6 +149,37 @@ def test_hook_run_warns_about_sensitive_folders(
     assert "data/private" not in err
     monkeypatch.setattr("framework.hooks._confirm", lambda question: False)
     assert hook_run("pre-commit") == 1
+
+
+def notebook(outputs: list[object], count: int | None) -> str:
+    cell = {"cell_type": "code", "source": "df", "metadata": {}}
+    return json.dumps({"cells": [{**cell, "outputs": outputs, "execution_count": count}]})
+
+
+def test_hook_run_blocks_notebooks_with_outputs(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fw.git_hooks_enable("check_notebook_outputs")
+    (repo / "clean.ipynb").write_text(notebook([], None), encoding="utf-8")
+    git(repo, "add", "clean.ipynb")
+    assert hook_run("pre-commit") == 0
+
+    printed = [{"output_type": "stream", "name": "stdout", "text": "id 1\n"}]
+    (repo / "analysis.ipynb").write_text(notebook(printed, 1), encoding="utf-8")
+    (repo / "counted.ipynb").write_text(notebook([], 3), encoding="utf-8")
+    git(repo, "add", "analysis.ipynb", "counted.ipynb")
+    assert hook_run("pre-commit") == 1
+    err = capsys.readouterr().err
+    assert "  - analysis.ipynb\n  - counted.ipynb\n" in err
+    assert "clean.ipynb" not in err
+    assert "jupyter nbconvert --clear-output --inplace 'counted.ipynb'\n" in err
+
+    # The staged version counts, so clearing the file on disk is not enough
+    (repo / "analysis.ipynb").write_text(notebook([], None), encoding="utf-8")
+    (repo / "counted.ipynb").write_text(notebook([], None), encoding="utf-8")
+    assert hook_run("pre-commit") == 1
+    git(repo, "add", "analysis.ipynb", "counted.ipynb")
+    assert hook_run("pre-commit") == 0
 
 
 def test_hook_run_outside_a_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

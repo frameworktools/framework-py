@@ -173,7 +173,7 @@ def test_user_paths_expand_the_home_folder(project: Path, monkeypatch: pytest.Mo
     assert fw.scaffold(settings_file) == project.resolve()
     assert fw.settings_read(settings_file)["project_name"] == "Test"
     assert not fw.git_security_audit(settings_file, verbose=False).summary.empty
-    assert list(fw.git_hooks_list(settings_file)["enabled"]) == [False, False]
+    assert list(fw.git_hooks_list(settings_file)["enabled"]) == [False, False, False]
     fw.ai_skills_update(f"~/{project.name}")
     fw.quarto_regenerate(f"~/{project.name}", backup=False)
     assert not (project.parent / "~").exists()

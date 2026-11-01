@@ -9,6 +9,8 @@ settings:
 - ``check_sensitive_dirs`` (formerly ``warn_unignored_sensitive``): warn about
   folders named like private, confidential, sensitive, cache, or scratch that
   git does not ignore, and ask before committing when a terminal is attached.
+- ``check_notebook_outputs``: block the commit when a staged ``.ipynb`` has
+  cell outputs or execution counts, which can hold printed data.
 - ``ai_sync`` is gone: projects keep AI instructions in AGENTS.md and skills,
   so there is nothing to regenerate. An ``ai_sync`` setting in an older
   project is ignored.
@@ -17,6 +19,7 @@ settings:
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
 import shutil
 import stat
@@ -33,11 +36,12 @@ from framework.errors import FrameworkError
 from framework.project import find_settings_file
 from framework.settings import _has_environment_sections, settings_read
 
-HOOKS = ("data_security", "check_sensitive_dirs")
+HOOKS = ("data_security", "check_sensitive_dirs", "check_notebook_outputs")
 _ALIASES = {"warn_unignored_sensitive": "check_sensitive_dirs"}
 _DESCRIPTIONS = {
     "data_security": "Check for private data and secrets in git",
     "check_sensitive_dirs": "Warn about unignored sensitive directories",
+    "check_notebook_outputs": "Block Jupyter notebooks committed with cell outputs",
 }
 # Headers of the shared hook and of R 1.x's generated hook.
 _MARKERS = ("Framework pre-commit hook", "Framework Git Hooks")
@@ -224,8 +228,9 @@ def git_hooks_enable(
     """Turn on one hook check in the settings and (re)install the hook.
 
     Args:
-        hook_name: The check. One of "data_security" or "check_sensitive_dirs". The older
-            name "warn_unignored_sensitive" is accepted for "check_sensitive_dirs".
+        hook_name: The check. One of "data_security", "check_sensitive_dirs", or
+            "check_notebook_outputs". The older name "warn_unignored_sensitive" is accepted
+            for "check_sensitive_dirs".
         settings_file: The project's settings file. Default: the settings.yml or config.yml
             found from the current directory.
         verbose: Print what was done.
@@ -254,10 +259,10 @@ def git_hooks_disable(
     to false.
 
     Args:
-        hook_name: The check. One of "data_security", "check_sensitive_dirs", or
-            "ai_sync". The older name "warn_unignored_sensitive" is accepted for
-            "check_sensitive_dirs", and turning that check off also turns off the older
-            setting.
+        hook_name: The check. One of "data_security", "check_sensitive_dirs",
+            "check_notebook_outputs", or "ai_sync". The older name "warn_unignored_sensitive"
+            is accepted for "check_sensitive_dirs", and turning that check off also turns off
+            the older setting.
         settings_file: The project's settings file. Default: the settings.yml or config.yml
             found from the current directory.
         verbose: Print what was done.
@@ -380,6 +385,61 @@ def _check_sensitive_dirs(root: Path) -> bool:
     return answer
 
 
+def _has_outputs(text: str) -> bool:
+    try:
+        notebook = json.loads(text)
+    except ValueError:
+        return False
+    cells = notebook.get("cells") if isinstance(notebook, dict) else None
+    return any(
+        isinstance(cell, dict)
+        and cell.get("cell_type") == "code"
+        and (cell.get("outputs") or cell.get("execution_count") is not None)
+        for cell in cells or []
+    )
+
+
+def _notebooks_with_outputs(root: Path) -> list[str]:
+    """Staged notebooks whose staged version has outputs, as paths from the repository root."""
+    staged = _git(root, "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z")
+    found = []
+    for path in staged.stdout.split("\0"):
+        if path.lower().endswith(".ipynb"):
+            # The staged version, which may differ from the file on disk
+            shown = subprocess.run(
+                ["git", "-C", str(root), "show", f":{path}"],
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            if shown.returncode == 0 and _has_outputs(shown.stdout):
+                found.append(path)
+    return found
+
+
+def _quote(path: str) -> str:
+    """Single-quote a path for a POSIX shell, as R's shQuote() does."""
+    return "'" + path.replace("'", "'\\''") + "'"
+
+
+def _check_notebook_outputs(root: Path) -> bool:
+    notebooks = _notebooks_with_outputs(root)
+    if not notebooks:
+        return True
+    # The same wording as R's hook
+    lines = ["✗ These notebooks have saved outputs, which can contain data:"]
+    lines += [f"  - {path}" for path in notebooks]
+    lines += [
+        "",
+        "Clear the outputs, then stage the notebooks again. In Jupyter, use",
+        "Edit > Clear All Outputs, or run:",
+    ]
+    lines += [f"  jupyter nbconvert --clear-output --inplace {_quote(path)}" for path in notebooks]
+    print("\n".join(lines), file=sys.stderr)
+    return False
+
+
 def hook_run(name: str, settings_file: str | Path | None = None) -> int:
     """Run the checks for one git hook. Returns the exit status for git.
 
@@ -397,6 +457,8 @@ def hook_run(name: str, settings_file: str | Path | None = None) -> int:
     enabled = _hook_settings(path)
 
     if enabled["check_sensitive_dirs"] and not _check_sensitive_dirs(root):
+        return 1
+    if enabled["check_notebook_outputs"] and not _check_notebook_outputs(root):
         return 1
     if enabled["data_security"]:
         from framework.security import _report, git_security_audit

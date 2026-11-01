@@ -53,14 +53,16 @@ git:
   hooks:
     data_security: true
     check_sensitive_dirs: true
+    check_notebook_outputs: true
 ```
 
 | Check | Effect |
 |-------|--------|
 | `data_security` | Runs [git_security_audit()](ref:git_security_audit) and fails the commit when a check fails. |
 | `check_sensitive_dirs` | Warns about folders whose names contain `private`, `confidential`, `sensitive`, `cache`, or `scratch` and that git does not ignore. At a terminal, it asks before committing. |
+| `check_notebook_outputs` | Fails the commit when a staged Jupyter notebook (`.ipynb`) has cell outputs or execution counts, since printed tables and previews are saved in the file. The message names each notebook and how to clear its outputs. |
 
-Both checks are off by default. The older name `warn_unignored_sensitive` is accepted for `check_sensitive_dirs`. The R package's `ai_sync` check was removed, because projects keep AI instructions in `AGENTS.md` and skills, and an `ai_sync` setting is ignored.
+All three checks are off by default. The older name `warn_unignored_sensitive` is accepted for `check_sensitive_dirs`. The R package's `ai_sync` check was removed, because projects keep AI instructions in `AGENTS.md` and skills, and an `ai_sync` setting is ignored.
 
 ### Managing the Hook
 
