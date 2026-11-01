@@ -154,3 +154,46 @@ def test_projects_without_quarto_make_jupyter_notebooks(
     assert _yaml.read(root / "settings/scaffold.yml")["scaffold"]["notebook_format"] == "jupyter"
     monkeypatch.chdir(root)
     assert fw.make_notebook("first").suffix == ".ipynb"
+
+
+@pytest.mark.parametrize(
+    ("scaffold", "message"),
+    [
+        ({"workflow": "notebooks"}, "scaffold.workflow must be quarto, jupyter, or scripts"),
+        ({"notebook_format": "rmarkdown"}, "must be quarto, jupyter, or script"),
+        (
+            {"workflow": "scripts", "notebook_format": "jupyter"},
+            "'jupyter' doesn't fit the scripts workflow, which uses 'script'",
+        ),
+    ],
+)
+def test_workflow_and_notebook_format_must_pair(scaffold: dict[str, str], message: str) -> None:
+    spec = fw.spec_resolve([{"language": "python"}], name="X").spec
+    spec["scaffold"].update(scaffold)
+    assert any(message in problem for problem in fw.spec_check(spec))
+
+
+def test_scripts_only_projects_make_scripts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    layer = {"language": "python", "tools": {"quarto": False}, "scaffold": {"workflow": "scripts"}}
+    spec = fw.spec_resolve([layer], name="Scripts").spec
+    root = fw.project_create(spec, tmp_path / "scripts")
+    scaffold = _yaml.read(root / "settings/scaffold.yml")["scaffold"]
+    assert (scaffold["workflow"], scaffold["notebook_format"]) == ("scripts", "script")
+    assert not list(root.rglob("*.qmd")) and not list(root.rglob("*.ipynb"))
+    monkeypatch.chdir(root)
+    made = fw.make_notebook("clean")
+    assert made.suffix == ".py"
+    assert made.parent.name == "scripts"
+
+
+def test_jupyter_workflow_keeps_quarto(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = fw.new("Nb", tmp_path / "nb", "project", tools=["jupyter"], interactive=False)
+    settings_path = root / "settings/scaffold.yml"
+    data = _yaml.read(settings_path)
+    data["scaffold"].update(workflow="jupyter", notebook_format="jupyter")
+    _yaml.write(settings_path, data)
+    assert settings(root)["tools"]["quarto"] is True
+    monkeypatch.chdir(root)
+    assert fw.make_notebook("first").suffix == ".ipynb"

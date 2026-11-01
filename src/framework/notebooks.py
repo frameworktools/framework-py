@@ -186,6 +186,9 @@ def _default_type(config: dict[str, Any]) -> NotebookType:
     )
     if value in ("jupyter", "ipynb"):
         return "jupyter"
+    if value == "script":
+        # Scripts-only projects
+        return "script"
     # A project that turned the Quarto tool off gets Jupyter notebooks, as in R
     tools = config.get("tools")
     if isinstance(tools, dict) and tools.get("quarto") is False:
@@ -212,7 +215,8 @@ def make_notebook(
             ``data-cleaning.qmd``. An extension (``.qmd``, ``.ipynb``, or
             ``.py``) sets the type.
         type: ``"quarto"`` (the default), ``"jupyter"``, or ``"script"``.
-            Without it, ``scaffold: notebook_format`` in the settings decides.
+            Without it, ``scaffold: notebook_format`` in the settings decides, so a
+            Scripts-only project (``script``) gets a ``.py`` script.
         dir: The folder. Defaults to ``directories: notebooks`` in the
             settings, relative to the project root.
         stub: The stub to start from, such as ``"default"`` or ``"minimal"``.

@@ -135,10 +135,9 @@ def _sections(spec: Mapping[str, Any]) -> dict[str, Any]:
             "seed_on_scaffold": scaffold.get("seed_on_scaffold", False),
             "seed": scaffold.get("seed", ""),
             "source_all_functions": scaffold.get("source_all_functions", True),
-            # Without the Quarto tool, notebooks are Jupyter notebooks
-            "notebook_format": scaffold.get("notebook_format", "quarto")
-            if spec_tool_on(spec, "quarto")
-            else "jupyter",
+            **({"workflow": scaffold["workflow"]} if scaffold.get("workflow") else {}),
+            "notebook_format": scaffold.get("notebook_format")
+            or ("quarto" if spec_tool_on(spec, "quarto") else "jupyter"),
         },
         "quarto": spec.get("quarto") or {},
         "connections": spec.get("connections") or {},

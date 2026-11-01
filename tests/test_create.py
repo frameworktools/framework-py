@@ -90,7 +90,7 @@ def test_author_argument_overrides_non_empty_fields() -> None:
             {"packages": {"default_packages": {"dplyr": {"source": "cran", "auto_attach": True}}}},
             "source must be pypi or github",
         ),
-        ({"scaffold": {"notebook_format": "rmarkdown"}}, "quarto or jupyter"),
+        ({"scaffold": {"notebook_format": "rmarkdown"}}, "quarto, jupyter, or script"),
         ({"skills": {"unknown-skill": {"package": True}}}, "not shipped"),
         (
             {"skills": {"mine": {"content": "---\nname: other\n---\n"}}},

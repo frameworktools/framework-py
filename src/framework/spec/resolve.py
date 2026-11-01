@@ -9,7 +9,7 @@ from importlib import resources
 from typing import Any
 
 from framework import _yaml
-from framework.spec.check import spec_check
+from framework.spec.check import WORKFLOW_FORMATS, spec_check
 from framework.spec.merge import (
     MAP_PATHS,
     PACKAGE_DEFAULTS,
@@ -234,6 +234,27 @@ def _mark_maps(spec: dict[str, Any]) -> None:
             node[path[-1]] = {}
 
 
+def _derive_notebook_format(scaffold: dict[str, Any], spec: Mapping[str, Any]) -> None:
+    """Fill in the notebook format from the workflow, or from the tools without one.
+
+    The format follows the workflow, so a package default never contradicts it.
+    """
+    if scaffold.get("notebook_format"):
+        return
+    workflow = scaffold.get("workflow")
+    if workflow in WORKFLOW_FORMATS:
+        derived = WORKFLOW_FORMATS[workflow]
+    else:
+        # Without the Quarto tool, notebooks are Jupyter notebooks
+        derived = "quarto" if spec_tool_on(spec, "quarto") else "jupyter"
+    # Keep the key where the package defaults used to put it
+    items = list(scaffold.items())
+    at = next((i for i, (k, _) in enumerate(items) if k == "ide"), len(items))
+    items.insert(at, ("notebook_format", derived))
+    scaffold.clear()
+    scaffold.update(items)
+
+
 def _finalize(spec: dict[str, Any], blocks: Sequence[GitignoreBlock]) -> dict[str, Any]:
     spec["spec_version"] = 1
     security = spec.setdefault("security", {})
@@ -245,6 +266,8 @@ def _finalize(spec: dict[str, Any], blocks: Sequence[GitignoreBlock]) -> dict[st
         and "framework-sensitive-data" not in skills
     ):
         skills["framework-sensitive-data"] = {"package": True}
+
+    _derive_notebook_format(spec.setdefault("scaffold", {}), spec)
 
     ai = spec.setdefault("ai", {})
     ai["assistants"] = {k: True for k, v in (ai.get("assistants") or {}).items() if v is True}

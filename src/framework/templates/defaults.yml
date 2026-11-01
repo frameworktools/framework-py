@@ -21,7 +21,6 @@ scaffold:
   seed_on_scaffold: false
   seed: "123"
   source_all_functions: true
-  notebook_format: quarto
   ide: vscode
 
 quarto:

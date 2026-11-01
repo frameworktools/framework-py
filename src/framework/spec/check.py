@@ -72,7 +72,9 @@ def secret_env_values(raw: str | None = None, variables: Any = None) -> list[str
 
 
 _HOOK = re.compile(r"^[^:]+\.py::[A-Za-z_][A-Za-z0-9_.]*$")
-_NOTEBOOK_FORMATS = ("quarto", "jupyter")
+# Workflow -> the notebook format it allows. R Markdown is R only.
+WORKFLOW_FORMATS = {"quarto": "quarto", "jupyter": "jupyter", "scripts": "script"}
+_NOTEBOOK_FORMATS = tuple(WORKFLOW_FORMATS.values())
 
 
 def is_safe_path(path: Any) -> bool:
@@ -198,8 +200,20 @@ def spec_check(spec: dict[str, Any]) -> list[str]:
     notebook_format = _get(spec, ("scaffold", "notebook_format"))
     if notebook_format is not None and notebook_format not in _NOTEBOOK_FORMATS:
         add(
-            "scaffold.notebook_format must be quarto or jupyter for a Python project, "
-            f"not '{notebook_format}'"
+            "scaffold.notebook_format must be quarto, jupyter, or script for a Python "
+            f"project, not '{notebook_format}'"
+        )
+    workflow = _get(spec, ("scaffold", "workflow"))
+    if workflow is not None and workflow not in WORKFLOW_FORMATS:
+        add(f"scaffold.workflow must be quarto, jupyter, or scripts, not '{workflow}'")
+    elif (
+        workflow is not None
+        and notebook_format is not None
+        and notebook_format != WORKFLOW_FORMATS[workflow]
+    ):
+        add(
+            f"scaffold.notebook_format '{notebook_format}' doesn't fit the {workflow} "
+            f"workflow, which uses '{WORKFLOW_FORMATS[workflow]}'"
         )
 
     for name, entry in _dict(spec.get("skills")).items():

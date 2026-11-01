@@ -51,7 +51,8 @@ def test_configure_global_refuses_secrets_and_bad_values() -> None:
 
 def test_load_settings_catalog() -> None:
     catalog = fw.load_settings_catalog()
-    assert catalog["defaults"]["scaffold"]["notebook_format"] == "quarto"
+    # The notebook format follows the workflow or the tools, so the defaults leave it out
+    assert "notebook_format" not in catalog["defaults"]["scaffold"]
     assert "/inputs/private/" in catalog["project_types"]["project_sensitive"]["gitignore"]
     (fw.config_dir()).mkdir(parents=True, exist_ok=True)
     (fw.config_dir() / "settings-catalog.yml").write_text(
@@ -59,8 +60,8 @@ def test_load_settings_catalog() -> None:
     )
     assert fw.load_settings_catalog()["defaults"]["scaffold"]["notebook_format"] == "jupyter"
     assert (
-        fw.load_settings_catalog(include_user=False)["defaults"]["scaffold"]["notebook_format"]
-        == "quarto"
+        "notebook_format"
+        not in (fw.load_settings_catalog(include_user=False)["defaults"]["scaffold"])
     )
 
 
