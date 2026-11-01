@@ -38,6 +38,8 @@ from framework.spec.resolve import (
 )
 
 CHECKOUT_ALLOWLIST = frozenset({".git", ".github", ".framework", "README.md", "LICENSE"})
+# "both" is RStudio plus VS Code. Python never writes an .Rproj.
+WORKSPACE_IDES = frozenset({"vscode", "positron", "both"})
 FILE_LIKE = re.compile(r"\.(qmd|Rmd|R|md|py|ipynb)$")
 _TEMPLATE_VARS = ("project_name", "author", "author_email", "affiliation", "date")
 # Lines that ignore .env (or re-include it with a leading "!"), as in R.
@@ -374,8 +376,8 @@ def project_create(
     if not bare:
         _write(root, "scaffold.py", _scaffold_py(spec))
     _write(root, "pyproject.toml", _pyproject(spec))
-    ide = str((spec.get("scaffold") or {}).get("ide") or "")
-    if not bare and re.search("vscode|positron", ide, re.IGNORECASE):
+    ide = str((spec.get("scaffold") or {}).get("ide") or "").lower()
+    if not bare and ide in WORKSPACE_IDES:
         _write(root, f"{kebab_case(spec['name'])}.code-workspace", _code_workspace())
     if spec["type"] == "presentation":
         _write(root, "presentation.qmd", _presentation(spec))

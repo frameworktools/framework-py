@@ -135,6 +135,17 @@ def test_existing_folder_is_refused(tmp_path: Path) -> None:
         fw.project_create(spec, tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("ide", "written"),
+    [("vscode", True), ("positron", True), ("both", True), ("rstudio", False), ("none", False)],
+)
+def test_editor_files_follow_scaffold_ide(tmp_path: Path, ide: str, written: bool) -> None:
+    spec = fw.spec_resolve(python_layer(scaffold={"ide": ide}), "My Lab").spec
+    root = fw.project_create(spec, tmp_path / "p")
+    assert (root / "my-lab.code-workspace").is_file() is written
+    assert not list(root.glob("*.Rproj"))
+
+
 def test_headless_needs_a_fresh_checkout(tmp_path: Path) -> None:
     layers = tmp_path / "layers.json"
     layers.write_text(

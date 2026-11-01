@@ -67,7 +67,7 @@ Nested mappings merge by key. Each project type's `directories` are replaced who
 | Key | Effect on new projects |
 |-----|------------------------|
 | `author` | `name`, `email`, `affiliation`, `orcid`, `url`, and `affiliations` fill the project's author section and notebook front matter. |
-| `defaults.scaffold` | `seed_on_scaffold`, `seed`, `source_all_functions`, and `ide`. An `ide` value containing `vscode` or `positron` adds a `.code-workspace` file. |
+| `defaults.scaffold` | `seed_on_scaffold`, `seed`, `source_all_functions`, and `ide`. An `ide` of `vscode`, `positron`, or `both` adds a `.code-workspace` file. |
 | `defaults.ai` | `enabled` turns AI assistant files on or off. `assistants` lists assistants (`claude`, `codex`, or `copilot`). |
 | `defaults.git` | `initialize` decides whether the project becomes a git repository. `hooks` turns on pre-commit checks. |
 | `project_types.<type>.directories` | Folder names for one project type, such as `notebooks: analysis`. |
