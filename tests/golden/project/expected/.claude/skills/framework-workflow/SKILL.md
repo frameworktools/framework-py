@@ -1,6 +1,9 @@
 ---
 name: framework-workflow
 description: Use when writing or editing any Python notebook or script in this Framework project. Every notebook and script starts with fw.scaffold(). Covers project setup, the analysis workflow, and creating notebooks and scripts with make_notebook() and make_script().
+metadata:
+  title: Notebooks and scripts
+  summary: Start every notebook and script with scaffold(), and create new ones through Framework.
 ---
 
 # Framework Workflow

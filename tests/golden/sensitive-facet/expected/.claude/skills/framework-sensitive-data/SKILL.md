@@ -1,6 +1,9 @@
 ---
 name: framework-sensitive-data
 description: Use before any data operation, commit, output, or publish step in this privacy-sensitive Framework project. Covers private and public folders and the handling of identifiable data.
+metadata:
+  title: Handling sensitive data
+  summary: Keep private data in private folders, out of Git and published work.
 ---
 
 # Sensitive Data

@@ -1,6 +1,9 @@
 ---
 name: framework-packages
 description: Use when adding, installing, or managing Python packages in this Framework project. Dependencies are recorded in pyproject.toml; add them with fw.package_add() or uv add instead of a bare pip install.
+metadata:
+  title: Managing packages
+  summary: Add packages through Framework so the project records them.
 ---
 
 # Framework Packages

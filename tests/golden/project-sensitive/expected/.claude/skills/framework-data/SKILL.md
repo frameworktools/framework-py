@@ -1,6 +1,9 @@
 ---
 name: framework-data
 description: Use whenever reading or writing data files (CSV, Parquet, Excel, Stata, SPSS, SAS) in this Framework project. Read with fw.data_read() and write with fw.data_save(), which record a hash of each file in framework.db.
+metadata:
+  title: Reading and saving data
+  summary: Read and save data files through Framework, which records each file's hash.
 ---
 
 # Framework Data
