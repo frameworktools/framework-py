@@ -51,6 +51,19 @@ After cloning a project, prepare it with:
 uv run python -m framework bootstrap
 ```
 
+## Skill sync
+
+Sync a local skill and its companion files with your Framework Cloud account:
+
+```python
+fw.skills_sync(".agents/skills/my-skill", dry_run=True)
+fw.skills_sync(".agents/skills/my-skill")
+```
+
+Local edits create account versions. Edited Framework skills become private
+forks with an exact source version. Concurrent edits stop for reconciliation.
+[Skill sync guide](https://framework.pub/docs/skill-sync).
+
 ## Development
 
 ```sh

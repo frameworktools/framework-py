@@ -68,13 +68,12 @@ def test_load_settings_catalog() -> None:
 def test_ai_skills_update(tmp_path: Path) -> None:
     root = fw.new("Skills", tmp_path / "skills", "project_sensitive")
     skill = root / ".claude/skills/framework-data/SKILL.md"
-    original = skill.read_text(encoding="utf-8")
     skill.write_text("stale\n", encoding="utf-8")
     (root / ".claude/skills/mine").mkdir()
     (root / ".claude/skills/mine/SKILL.md").write_text("custom\n", encoding="utf-8")
     updated = fw.ai_skills_update(root)
     assert ".claude/skills/framework-sensitive-data" in updated
-    assert skill.read_text(encoding="utf-8") == original
+    assert skill.read_text(encoding="utf-8") == "stale\n"
     assert (root / ".claude/skills/mine/SKILL.md").read_text(encoding="utf-8") == "custom\n"
 
 

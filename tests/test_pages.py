@@ -126,7 +126,7 @@ def test_folder_needs_an_index(repo: Path) -> None:
         ({"dest": "x"}, 'Not used with to="github": dest'),
         ({"slug": True}, "slug=True/False"),
         ({"slug": "Bad Slug"}, "must start with a lowercase letter"),
-        ({"to": "gitlab"}, 'to must be "github"'),
+        ({"to": "gitlab"}, 'to must be "cloud", "bucket", "github", or None'),
     ],
 )
 def test_bad_arguments(repo: Path, kwargs: dict[str, Any], message: str) -> None:

@@ -120,6 +120,7 @@ from framework.scaffold import project_info, scaffold, status
 from framework.scratch import scratch_capture, scratch_clean
 from framework.security import AuditResult, git_security_audit
 from framework.settings import settings, settings_read, settings_write
+from framework.skill_sync import skills_sync
 from framework.spec.check import spec_check
 from framework.spec.merge import SpecError
 from framework.spec.resolve import ResolvedSpec, spec_resolve
@@ -242,6 +243,7 @@ __all__ = [
     "settings",
     "settings_read",
     "settings_write",
+    "skills_sync",
     "spec_check",
     "spec_resolve",
     "status",

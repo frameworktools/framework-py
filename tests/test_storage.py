@@ -132,13 +132,13 @@ def test_bucket_errors(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fw.storage_test("other")
 
 
-def test_nowhere_to_publish(project: Path) -> None:
+def test_nowhere_to_publish(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (project / "a.txt").write_text("a", encoding="utf-8")
     with pytest.raises(fw.FrameworkError, match="Nowhere to publish"):
         fw.publish(project / "a.txt")
     (project / ".env").write_text("FW_PROJECT_TOKEN=fwp_abc\n", encoding="utf-8")
-    with pytest.raises(fw.FrameworkError, match="Framework Cloud publishing takes rendered HTML"):
-        fw.publish(project / "a.txt")
+    monkeypatch.setattr("framework.cloud.cloud_publish", lambda *a, **k: "https://x/d/text")
+    assert fw.publish(project / "a.txt") == "https://x/d/text"
 
 
 @pytest.mark.skipif(shutil.which("quarto") is None, reason="quarto is not installed")
@@ -169,3 +169,155 @@ def test_override_with_include_private_or_allow_private(
     with pytest.raises(fw.FrameworkError, match="include_private=True"):
         fw.publish_dir(elsewhere, dest="d")
     assert fw.publish_dir(elsewhere, dest="d", include_private=True)
+
+
+def test_explicit_destinations(project: Path, s3: FakeS3, monkeypatch: pytest.MonkeyPatch) -> None:
+    file = project / "plot.png"
+    file.write_bytes(b"plot")
+    monkeypatch.setattr("framework.cloud.cloud_publish", lambda *a, **k: "https://x/d/plot")
+    assert fw.publish(file, to="cloud") == "https://x/d/plot"
+    assert fw.publish(file, to="bucket").endswith("plot.png")
+    with pytest.raises(fw.FrameworkError, match="connection"):
+        fw.publish(file, to="cloud", connection="minio")
+    with pytest.raises(fw.FrameworkError, match="to must"):
+        fw.publish(file, to="wrong")
+
+
+def test_object_exports(tmp_path: Path) -> None:
+    table = storage._artifact_file(pd.DataFrame({"estimate": [1.5]}), tmp_path)
+    assert table.name == "table.csv"
+    assert table.read_text() == "estimate\n1.5\n"
+    matplotlib = pytest.importorskip("matplotlib.figure")
+    figure = matplotlib.Figure()
+    figure.subplots().plot([1, 2], [3, 4])
+    path = storage._artifact_file(figure, tmp_path)
+    assert path.read_bytes().startswith(b"\x89PNG")
+    with pytest.raises(fw.FrameworkError, match="accepts"):
+        storage._artifact_file(object(), tmp_path)
+
+
+def test_structured_table_types_and_missing_values(tmp_path: Path) -> None:
+    import json
+    from datetime import date
+
+    frame = pd.DataFrame(
+        {
+            "estimate": pd.Series([1.5, pd.NA], dtype="Float64"),
+            "included": pd.Series([True, pd.NA], dtype="boolean"),
+            "count": pd.Series([2, pd.NA], dtype="Int64"),
+            "label": ["<estimate>", None],
+            "date": [date(2026, 1, 2), None],
+            "time": pd.to_datetime(["2026-01-02T03:04:05Z", None]),
+        }
+    )
+    path = storage._artifact_file(frame, tmp_path, cloud=True)
+    document = json.loads(path.read_text())
+    assert path.name == "table.json"
+    assert document["schema"] == "framework.artifact/v1"
+    assert document["source"]["language"] == "python"
+    table = document["tables"][0]
+    assert [c["type"] for c in table["columns"]] == [
+        "number",
+        "boolean",
+        "number",
+        "string",
+        "date",
+        "datetime",
+    ]
+    assert table["rows"] == [
+        [1.5, True, 2, "<estimate>", "2026-01-02", "2026-01-02T03:04:05+00:00"],
+        [None] * 6,
+    ]
+    assert table["row_count"] == 2
+    # A default RangeIndex is not exported; a meaningful one becomes the first column.
+    assert table["columns"][0]["name"] == "estimate"
+    frame.index = pd.Index(["row-a", "row-b"], name="id")
+    labeled = json.loads(storage._artifact_file(frame, tmp_path, cloud=True).read_text())
+    assert labeled["tables"][0]["columns"][0]["name"] == "id"
+    assert [row[0] for row in labeled["tables"][0]["rows"]] == ["row-a", "row-b"]
+
+
+def test_structured_statsmodels_results(tmp_path: Path) -> None:
+    import json
+
+    sm = pytest.importorskip("statsmodels.api")
+    x = sm.add_constant([0, 1, 2, 3, 4, 5, 6, 7])
+    for fit in [
+        sm.OLS([1, 2, 2, 4, 4, 5, 6, 6], x).fit(),
+        sm.GLM([0, 0, 1, 0, 1, 1, 0, 1], x, family=sm.families.Binomial()).fit(),
+    ]:
+        path = storage._artifact_file(fit, tmp_path, cloud=True)
+        document = json.loads(path.read_text())
+        assert path.name == "model.json"
+        assert document["kind"] == "model"
+        coefficients = document["tables"][0]
+        assert coefficients["row_count"] == 2
+        assert coefficients["rows"][1][1] == pytest.approx(fit.params[1])
+        assert coefficients["rows"][1][4] == pytest.approx(fit.pvalues[1])
+        assert {m["name"]: m["value"] for m in document["metrics"]}["nobs"] == 8
+        assert "endog" not in document and "resid" not in document
+
+
+def test_seaborn_and_axes_exports(tmp_path: Path) -> None:
+    sns = pytest.importorskip("seaborn")
+    import matplotlib.pyplot as plt
+
+    frame = pd.DataFrame({"x": [1, 2, 3], "y": [2, 1, 4]})
+    axes = sns.scatterplot(data=frame, x="x", y="y")
+    grid = sns.relplot(data=frame, x="x", y="y")
+    try:
+        for value in [axes, grid]:
+            path = storage._artifact_file(value, tmp_path, cloud=True)
+            assert path.name == "figure.svg"
+            assert b"<svg" in path.read_bytes()[:2000]
+    finally:
+        plt.close("all")
+
+
+def test_large_integer_identifiers_remain_exact(tmp_path: Path) -> None:
+    import json
+
+    frame = pd.DataFrame(
+        {
+            "id": pd.Series([2**63 - 1, pd.NA], dtype="Int64"),
+            "ordinary": pd.Series([42, pd.NA], dtype="Int64"),
+        }
+    )
+    document = json.loads(storage._artifact_file(frame, tmp_path, cloud=True).read_text())
+    table = document["tables"][0]
+    assert [(c["name"], c["type"]) for c in table["columns"]] == [
+        ("id", "string"),
+        ("ordinary", "number"),
+    ]
+    assert table["rows"] == [["9223372036854775807", 42], [None, None]]
+
+
+def test_formula_model_keeps_formula_without_training_rows(tmp_path: Path) -> None:
+    import json
+
+    smf = pytest.importorskip("statsmodels.formula.api")
+    frame = pd.DataFrame(
+        {"response": [1, 2, 2, 4, 4, 5, 6, 6], "predictor": [0, 1, 2, 3, 4, 5, 6, 7]}
+    )
+    frame.index = [f"private-observation-{i}" for i in range(len(frame))]
+    model = smf.ols("response ~ predictor", data=frame).fit()
+    path = storage._artifact_file(model, tmp_path, cloud=True)
+    document = json.loads(path.read_text())
+    assert document["formula"] == "response ~ predictor"
+    assert "private-observation" not in path.read_text()
+    assert document["tables"][0]["row_count"] == 2
+
+
+def test_statsmodels_interval_method_metadata(tmp_path: Path) -> None:
+    import json
+
+    sm = pytest.importorskip("statsmodels.api")
+    x = sm.add_constant([0, 1, 2, 3, 4, 5, 6, 7])
+    for use_t in (True, False):
+        model = sm.OLS([1, 2, 2, 4, 4, 5, 6, 6], x).fit(use_t=use_t)
+        document = json.loads(storage._artifact_file(model, tmp_path, cloud=True).read_text())
+        metrics = {m["name"]: m["value"] for m in document["metrics"]}
+        assert metrics["confidence_level"] == 0.95
+        assert metrics["interval_method"] == ("wald-t" if use_t else "wald-normal")
+        assert document["tables"][0]["rows"][1][5:] == pytest.approx(model.conf_int()[1])
+        assert set(document) == {"schema", "kind", "source", "model", "tables", "metrics"}

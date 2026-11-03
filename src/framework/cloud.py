@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import mimetypes
 import os
 import platform
 import re
@@ -29,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import warnings
 import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -852,6 +854,31 @@ def _zip(folder: Path, target: Path) -> int:
     return len(files)
 
 
+def _publish_collection(
+    collection: str | int,
+    token: str,
+    url: str,
+    public: bool | None,
+    share_unlisted: bool,
+) -> dict[str, Any]:
+    if isinstance(collection, bool) or not isinstance(collection, (str, int)):
+        raise CloudError("collection must be a collection ID or slug.")
+    rows = api("/api/v2/collections", token, url)["collections"]
+    matches = [
+        row for row in rows if str(row["id"]) == str(collection) or row["slug"] == str(collection)
+    ]
+    if len(matches) != 1:
+        raise CloudError(f"Collection {collection!r} is missing or ambiguous in this project.")
+    selected: dict[str, Any] = matches[0]
+    if selected["visibility"] == "public" and public is False:
+        raise CloudError("Public collections require public artifacts. Set visibility='public'.")
+    if selected["visibility"] == "unlisted" and public is False and not share_unlisted:
+        raise CloudError(
+            "Pass share_unlisted=True to share an unlisted artifact with collection readers."
+        )
+    return selected
+
+
 def cloud_publish(
     source: Path,
     dest: str | None = None,
@@ -859,8 +886,14 @@ def cloud_publish(
     slug: str | bool | None = None,
     title: str | None = None,
     include_private: bool = False,
+    description: str | None = None,
+    kind: str | None = None,
+    password: str | None = None,
+    visibility: str | None = None,
+    collection: str | int | None = None,
+    share_unlisted: bool = False,
 ) -> str:
-    """Publish rendered HTML (or a .qmd or .ipynb to render) to the project's cloud server.
+    """Publish a file, rendered HTML folder, or notebook to the project cloud server.
 
     Accepts a self-contained ``.html``, an ``.html`` with a sibling
     ``<name>_files/`` folder, a render output folder, or a ``.qmd`` or ``.ipynb``. Each
@@ -876,6 +909,18 @@ def cloud_publish(
         sources += sorted(p for p in assets.rglob("*") if p.is_file())
     confirm_private_upload(sources, include_private)
     token = _require_project_token()
+    url = cloud_server(scope="project").url
+    readable = None if slug is None else slug is not False
+    public = (
+        readable
+        if readable is not None
+        else (visibility == "public" if visibility is not None else None)
+    )
+    selected = (
+        None
+        if collection is None
+        else _publish_collection(collection, token, url, public, share_unlisted)
+    )
     with tempfile.TemporaryDirectory(prefix="fw_publish_") as temp:
         stage = Path(temp)
         html: Path | None = None
@@ -927,18 +972,22 @@ def cloud_publish(
             else:
                 html = source
         else:
-            raise CloudError(
-                "Framework Cloud publishing takes rendered HTML, a render folder, or a .qmd or "
-                f".ipynb to render. Got: {suffix or source.name}"
-            )
+            html = source
 
         readable = None if slug is None else slug is not False
         name = slug if isinstance(slug, str) else (dest or source.stem)
         data: dict[str, str] = {"slug": re.sub(r"\.html?$", "", name)}
         if readable is not None:
             data["readable"] = "1" if readable else "0"
-        if title is not None:
-            data["title"] = title
+        for key, value in (
+            ("title", title),
+            ("description", description),
+            ("kind", kind),
+            ("password", password),
+            ("visibility", visibility),
+        ):
+            if value is not None:
+                data[key] = value
         if bundle is not None:
             archive = stage / "bundle.zip"
             count = _zip(bundle, archive)
@@ -947,7 +996,11 @@ def cloud_publish(
             upload = ("bundle", archive, "application/zip")
         else:
             assert html is not None
-            upload = ("file", html, "text/html")
+            upload = (
+                "file",
+                html,
+                mimetypes.guess_type(html.name)[0] or "application/octet-stream",
+            )
 
         url = cloud_server(scope="project").url
         field, path, content_type = upload
@@ -970,6 +1023,26 @@ def cloud_publish(
         inform(f"Published: {result.get('url')}")
     if result.get("notice"):
         inform(str(result["notice"]))
+    if selected is not None:
+        try:
+            if not result.get("id"):
+                raise CloudError("The server did not return an artifact ID.")
+            api(
+                f"/api/v2/collections/{selected['id']}/items",
+                token,
+                url,
+                method="POST",
+                body={"document_id": result["id"], "share_unlisted": share_unlisted},
+            )
+            inform(f"Added to collection: {selected['title']}")
+        except Exception as error:
+            warnings.warn(
+                f"Artifact published at {result.get('url')}, but collection "
+                f"attachment failed: {error}. Attach it from the project Outputs page; "
+                "publishing again creates another version.",
+                FrameworkWarning,
+                stacklevel=2,
+            )
     return str(result.get("url"))
 
 

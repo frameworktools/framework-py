@@ -57,7 +57,7 @@
   description: Framework Cloud login, settings sync, and the integrity ledger
   common: [cloud_login, cloud_status]
   names: [cloud_login, cloud_logout, cloud_status, cloud_settings, cloud_sync, ledger_push,
-          ledger_list, data_verify]
+          ledger_list, data_verify, skills_sync]
 
 - id: git
   title: Git

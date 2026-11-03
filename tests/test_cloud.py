@@ -705,3 +705,130 @@ def test_explicit_choices_offline_ask_first(tmp_path: Path, server: FakeCloud) -
     server.route("POST", "/api/v2/resolve", offline)
     with pytest.raises(fw.FrameworkError, match="these choices need Framework Cloud"):
         fw.new("Lab", tmp_path / "lab", "project", interactive=False)
+
+
+@pytest.mark.parametrize(
+    "name,mime",
+    [
+        ("plot.png", "image/png"),
+        ("table.csv", "text/csv"),
+        ("model.bin", "application/octet-stream"),
+    ],
+)
+def test_cloud_file_artifact(cloud_project: Path, server: FakeCloud, name: str, mime: str) -> None:
+    server.route(
+        "POST",
+        "/api/v1/documents",
+        lambda r: httpx.Response(201, json={"url": "https://x/d/artifact", "version": 1}),
+    )
+    path = cloud_project / name
+    path.write_bytes(b"original bytes")
+    assert (
+        fw.publish(
+            path,
+            to="cloud",
+            title="Result",
+            description="An estimate",
+            password="test-password",
+            kind="file",
+        )
+        == "https://x/d/artifact"
+    )
+    body = server.requests[-1].content
+    assert f'filename="{name}"'.encode() in body
+    assert f"Content-Type: {mime}".encode() in body
+    assert b"original bytes" in body
+    assert b'name="password"\r\n\r\ntest-password' in body
+
+
+@pytest.mark.parametrize("attach_ok", [True, False])
+def test_publish_collection_attachment(
+    cloud_project: Path, server: FakeCloud, attach_ok: bool
+) -> None:
+    server.route(
+        "GET",
+        "/api/v2/collections",
+        lambda r: httpx.Response(
+            200,
+            json={
+                "collections": [
+                    {"id": 7, "slug": "findings", "title": "Findings", "visibility": "unlisted"}
+                ]
+            },
+        ),
+    )
+    server.route(
+        "POST",
+        "/api/v1/documents",
+        lambda r: httpx.Response(201, json={"id": 14, "url": "https://x/d/artifact", "version": 2}),
+    )
+    attached = []
+
+    def attach(request: httpx.Request) -> httpx.Response:
+        attached.append(json.loads(request.content))
+        return httpx.Response(201 if attach_ok else 422, json={"message": "Attachment denied"})
+
+    server.route("POST", "/api/v2/collections/7/items", attach)
+    path = cloud_project / "figure.png"
+    path.write_bytes(b"png")
+    kwargs = {"to": "cloud", "slug": False, "collection": "findings", "share_unlisted": True}
+    if attach_ok:
+        assert fw.publish(path, **kwargs) == "https://x/d/artifact"
+    else:
+        with pytest.warns(fw.FrameworkWarning, match="Artifact published at https://x/d/artifact"):
+            assert fw.publish(path, **kwargs) == "https://x/d/artifact"
+    assert attached == [{"document_id": 14, "share_unlisted": True}]
+    assert sum(r.url.path == "/api/v1/documents" for r in server.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "collection,rows,visibility,share",
+    [
+        ("missing", [], None, False),
+        (
+            "7",
+            [
+                {"id": 7, "slug": "a", "visibility": "private"},
+                {"id": 8, "slug": "7", "visibility": "private"},
+            ],
+            None,
+            False,
+        ),
+        ("findings", [{"id": 7, "slug": "findings", "visibility": "public"}], "unlisted", True),
+        ("findings", [{"id": 7, "slug": "findings", "visibility": "unlisted"}], "unlisted", False),
+    ],
+)
+def test_collection_preflight_before_upload(
+    cloud_project: Path,
+    server: FakeCloud,
+    collection: str,
+    rows: list[dict[str, Any]],
+    visibility: str | None,
+    share: bool,
+) -> None:
+    server.route(
+        "GET", "/api/v2/collections", lambda r: httpx.Response(200, json={"collections": rows})
+    )
+    path = cloud_project / "figure.png"
+    path.write_bytes(b"png")
+    with pytest.raises(fw.CloudError):
+        fw.publish(
+            path, to="cloud", collection=collection, visibility=visibility, share_unlisted=share
+        )
+    assert all(r.method == "GET" for r in server.requests)
+
+
+def test_cloud_dataframe_uses_structured_schema(cloud_project: Path, server: FakeCloud) -> None:
+    import pandas as pd
+
+    server.route(
+        "POST",
+        "/api/v1/documents",
+        lambda r: httpx.Response(201, json={"id": 14, "url": "https://x/d/table", "version": 1}),
+    )
+    assert fw.publish(pd.DataFrame({"estimate": [1.2]}), to="cloud") == "https://x/d/table"
+    body = server.requests[-1].content
+    assert b'filename="table.json"' in body
+    assert b'name="slug"\r\n\r\ntable' in body
+    assert b'name="kind"\r\n\r\ntable' in body
+    assert b'"schema": "framework.artifact/v1"' in body

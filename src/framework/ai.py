@@ -99,7 +99,13 @@ def write_ai_files(root: Path, spec: dict[str, Any]) -> list[str]:
         for folder in folders:
             target = f"{folder}/{name}"
             if entry.get("package") is True:
-                _copy_tree(_shipped(name), root, target)
+                from framework.skill_sync import install_package
+
+                install_package(_shipped(name), root, target, name)
+            elif entry.get("sync") and entry.get("bundle"):
+                from framework.skill_sync import install_cloud
+
+                install_cloud(root, target, entry)
             else:
                 _write(root, f"{target}/SKILL.md", entry["content"])
                 for relative, content in (entry.get("files") or {}).items():
@@ -165,7 +171,7 @@ def _installed_spec(root: Path) -> dict[str, Any]:
 
 
 def ai_skills_update(project_path: str | Path = ".") -> list[str]:
-    """Replace the project's Framework skills with the versions in this package.
+    """Refresh clean Framework skills. Preserve local edits and account forks.
 
     Only skills that ship with Framework are updated. Skills from a blueprint
     or facet, and skills you wrote, are left alone. The skills and assistants
@@ -191,8 +197,10 @@ def ai_skills_update(project_path: str | Path = ".") -> list[str]:
         if not _shipped(name).is_dir():
             continue
         for folder in folders:
-            _copy_tree(_shipped(name), root, f"{folder}/{name}")
-            updated.append(f"{folder}/{name}")
+            from framework.skill_sync import install_package
+
+            if install_package(_shipped(name), root, f"{folder}/{name}", name):
+                updated.append(f"{folder}/{name}")
     if updated:
         inform(f"✓ Updated {len(updated)} Framework skill(s)")
     else:

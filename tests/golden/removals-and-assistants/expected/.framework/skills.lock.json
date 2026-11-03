@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "skills": {
+    "package:framework-workflow": {
+      "paths": [
+        ".agents/skills/framework-workflow"
+      ],
+      "variant": "python",
+      "hash": "40494d0a6696b6ae9abd1499b6d195f65f6c5c92151c763fe7a8ac1865faa1fa",
+      "origin": {
+        "skill_id": "framework:framework-workflow",
+        "hash": "40494d0a6696b6ae9abd1499b6d195f65f6c5c92151c763fe7a8ac1865faa1fa"
+      }
+    },
+    "package:framework-data": {
+      "paths": [
+        ".agents/skills/framework-data"
+      ],
+      "variant": "python",
+      "hash": "cd79a0e67fed6a3b49da10432dc5446ef8857dc154d953e6364da16038358eda",
+      "origin": {
+        "skill_id": "framework:framework-data",
+        "hash": "cd79a0e67fed6a3b49da10432dc5446ef8857dc154d953e6364da16038358eda"
+      }
+    },
+    "package:framework-packages": {
+      "paths": [
+        ".agents/skills/framework-packages"
+      ],
+      "variant": "python",
+      "hash": "1ed8d71791717ae4c978796f601508dc033151e4e92e396311b32065f3b99186",
+      "origin": {
+        "skill_id": "framework:framework-packages",
+        "hash": "1ed8d71791717ae4c978796f601508dc033151e4e92e396311b32065f3b99186"
+      }
+    },
+    "package:framework-outputs": {
+      "paths": [
+        ".agents/skills/framework-outputs"
+      ],
+      "variant": "python",
+      "hash": "b5c2f50171c33c480046fd1bf2686f37652f97a1f1d81aa740f66489077ccc93",
+      "origin": {
+        "skill_id": "framework:framework-outputs",
+        "hash": "b5c2f50171c33c480046fd1bf2686f37652f97a1f1d81aa740f66489077ccc93"
+      }
+    }
+  }
+}

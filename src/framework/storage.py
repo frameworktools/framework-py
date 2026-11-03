@@ -20,6 +20,7 @@ terminal raises an error unless ``include_private=True`` is passed.
 from __future__ import annotations
 
 import gzip
+import json
 import mimetypes
 import os
 import re
@@ -261,7 +262,15 @@ def _has_project_token() -> bool:
     return bool(settings_file and value(settings_file.parent / ".env", "FW_PROJECT_TOKEN"))
 
 
-def _target(connection: str | None) -> str:
+def _target(connection: str | None, to: str | None = None) -> str:
+    if to == "cloud":
+        if connection is not None:
+            raise FrameworkError('connection cannot be used with to="cloud".')
+        return "cloud"
+    if to == "bucket":
+        return "s3"
+    if to is not None:
+        raise FrameworkError('to must be "cloud", "bucket", "github", or None.')
     if connection is not None or bucket_configs():
         return "s3"
     if _has_project_token():
@@ -318,8 +327,59 @@ def _slug_ignored(slug: str | bool | None) -> None:
         )
 
 
+_ACCEPTED = (
+    "publish() accepts a file or rendered folder; a pandas or polars DataFrame or Series; a "
+    "numpy array; a pandas Styler; a scipy.stats test result; a statsmodels results object; "
+    "a fitted scikit-learn, xgboost, or lightgbm model; a matplotlib Figure or Axes or a "
+    "seaborn plot; a plotly Figure; or an altair chart."
+)
+
+
+def _artifact_file(source: Any, directory: Path, cloud: bool = False) -> Path:
+    """Export a supported object to one file without serializing model internals.
+
+    Cloud receives typed JSON documents (``table.json``, ``model.json``, ``test.json``) and
+    SVG figures. Buckets receive CSV tables, PNG figures, and HTML model summaries. Both
+    receive Styler tables as HTML, plotly figures as HTML, and altair charts as Vega-Lite.
+    """
+    from framework import _artifacts
+
+    path = _artifacts.rendered(source, directory, cloud)
+    if path is not None:
+        return path
+    if cloud:
+        document = _artifacts.structured(source)
+        if document is not None:
+            path = directory / f"{document['kind']}.json"
+            path.write_text(json.dumps(document, allow_nan=False), encoding="utf-8")
+            return path
+        raise FrameworkError(_ACCEPTED)
+    frame = _artifacts.as_frame(source)
+    if frame is not None:
+        path = directory / "table.csv"
+        _artifacts.frame_for_export(frame).to_csv(path, index=False)
+        return path
+    if type(source).__module__.startswith("statsmodels") and callable(
+        getattr(source, "summary", None)
+    ):
+        path = directory / "model.html"
+        summary = source.summary().as_html()
+        path.write_text(
+            '<!doctype html><html><head><meta charset="utf-8"><title>Model results</title>'
+            "</head><body>" + summary + "</body></html>",
+            encoding="utf-8",
+        )
+        return path
+    document = _artifacts.structured(source)
+    if document is not None:
+        path = directory / f"{document['kind']}.json"
+        path.write_text(json.dumps(document, allow_nan=False), encoding="utf-8")
+        return path
+    raise FrameworkError(_ACCEPTED)
+
+
 def publish(
-    source: str | Path,
+    source: Any,
     dest: str | None = None,
     connection: str | None = None,
     overwrite: bool = True,
@@ -329,11 +389,28 @@ def publish(
     *,
     to: str | None = None,
     allow_private: bool | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    kind: str | None = None,
+    password: str | None = None,
+    visibility: str | None = None,
+    collection: str | int | None = None,
+    share_unlisted: bool = False,
 ) -> str | list[str]:
     """Upload a file or folder to the project's storage bucket.
 
     Args:
-        source: A file or folder.
+        source: A file, a rendered folder, or an object. Accepted objects are pandas and
+            polars DataFrames and Series, numpy arrays with one or two dimensions, pandas
+            Styler tables, scipy.stats test results, statsmodels results, fitted
+            scikit-learn, xgboost, and lightgbm models, matplotlib Figures and Axes, seaborn
+            plots and grids, plotly Figures, and altair charts. On Framework Cloud, tables
+            become typed tables with column summaries (every row is kept), tests and models
+            become structured summaries, and static plots become SVG. Model exports carry
+            coefficients, importance, and fit statistics, never observations, residuals, or
+            serialized models. Buckets receive CSV tables, PNG figures, and HTML model
+            summaries; Styler tables, plotly figures, and altair charts keep their HTML or
+            Vega-Lite form everywhere.
         dest: Where to put it in the bucket. Default: the source's name.
         connection: A storage bucket name. Default: the project's default bucket.
         overwrite: Accepted for parity with R; uploads always replace.
@@ -341,28 +418,77 @@ def publish(
         slug: For Framework Cloud publishing.
         include_private: Upload files with "private" in their path without asking. Only a
             person who has reviewed the files should set this.
-        to: "github" publishes to the project's GitHub Pages site: the page is copied to
+        to: "cloud" explicitly publishes to Framework Cloud and "bucket" selects storage.
+            "github" publishes to the project's GitHub Pages site: the page is copied to
             ``published/<slug>/`` at the top of the repository, only that folder is
             committed, and the commit is pushed. Pages sites are public, even from a private
             repository. Default: a storage bucket or Framework Cloud.
+        title: Artifact title on Framework Cloud.
+        description: Artifact description on Framework Cloud.
+        kind: Optional artifact kind override on Framework Cloud.
+        password: Password required to view an artifact on Framework Cloud.
+        visibility: "public" or "unlisted" on Framework Cloud.
+        collection: Existing project collection ID or slug; follows the latest artifact version.
+        share_unlisted: Explicitly allow collection readers to access an unlisted artifact.
         allow_private: Deprecated name for ``include_private``.
 
     Returns:
         The public URL, or a list of URLs for a folder.
     """
+    if share_unlisted and collection is None:
+        raise FrameworkError("share_unlisted requires a collection.")
+    if not isinstance(source, (str, Path)):
+        with tempfile.TemporaryDirectory(prefix="fw_artifact_") as temp:
+            is_cloud = to != "github" and _target(connection, to) == "cloud"
+            path = _artifact_file(source, Path(temp), cloud=is_cloud)
+            if kind is None and is_cloud and path.name in ("table.json", "model.json"):
+                kind = path.stem
+            return publish(
+                path,
+                dest=dest,
+                connection=connection,
+                overwrite=overwrite,
+                self_contained=self_contained,
+                slug=slug,
+                include_private=include_private,
+                to=to,
+                allow_private=allow_private,
+                title=title,
+                description=description,
+                kind=kind,
+                password=password,
+                visibility=visibility,
+                collection=collection,
+                share_unlisted=share_unlisted,
+            )
     path = Path(source)
     if not path.exists():
         raise FrameworkError(f"Source not found: {path}")
     include = include_private_arg(include_private, allow_private)
     confirm_private_upload(_files(path, True, None) if path.is_dir() else [path], include)
-    if to is not None:
+    if to == "github":
+        if any(v is not None for v in (title, description, kind, password, visibility, collection)):
+            raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
         return _publish_github(to, path, dest, connection, slug, self_contained)
-    if _target(connection) == "cloud":
+    if _target(connection, to) == "cloud":
         from framework.cloud import cloud_publish
 
         return cloud_publish(
-            path, dest=dest, self_contained=self_contained, slug=slug, include_private=True
+            path,
+            dest=dest,
+            self_contained=self_contained,
+            slug=slug,
+            include_private=True,
+            title=title,
+            description=description,
+            kind=kind,
+            password=password,
+            visibility=visibility,
+            collection=collection,
+            share_unlisted=share_unlisted,
         )
+    if any(v is not None for v in (title, description, kind, password, visibility, collection)):
+        raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
     _slug_ignored(slug)
     bucket = resolve_bucket(connection)
     dest = dest or path.name
@@ -386,6 +512,8 @@ def publish_notebook(
     *,
     to: str | None = None,
     allow_private: bool | None = None,
+    collection: str | int | None = None,
+    share_unlisted: bool = False,
 ) -> str:
     """Render a Quarto notebook with the ``quarto`` command and upload the result.
 
@@ -413,10 +541,13 @@ def publish_notebook(
             ignores it with a warning.
         include_private: Upload files with "private" in their path without asking. Only a
             person who has reviewed the files should set this.
-        to: "github" publishes to the project's GitHub Pages site: the page is copied to
+        to: "cloud" explicitly publishes to Framework Cloud and "bucket" selects storage.
+            "github" publishes to the project's GitHub Pages site: the page is copied to
             ``published/<slug>/`` at the top of the repository, only that folder is
             committed, and the commit is pushed. Pages sites are public, even from a private
             repository. Default: a storage bucket or Framework Cloud.
+        collection: Existing project collection ID or slug on Framework Cloud.
+        share_unlisted: Explicitly allow collection readers to access an unlisted artifact.
         allow_private: Deprecated name for ``include_private``.
 
     Returns:
@@ -427,11 +558,15 @@ def publish_notebook(
             and is not confirmed, Quarto is not installed, rendering fails, or there is nowhere
             to publish.
     """
+    if share_unlisted and collection is None:
+        raise FrameworkError("share_unlisted requires a collection.")
+    if collection is not None and to == "github":
+        raise FrameworkError("Collections require publishing to Framework Cloud.")
     source = Path(file)
     if not source.is_file() or source.suffix.lower() not in (".qmd", ".ipynb"):
         raise FrameworkError(f"publish_notebook() needs an existing .qmd or .ipynb file: {source}")
     confirm_private_upload([source], include_private_arg(include_private, allow_private))
-    if to is not None:
+    if to == "github":
         if format != "html":
             raise FrameworkError(f'GitHub Pages publishes HTML only (got format="{format}").')
         return _publish_github(to, source, dest, connection, slug, self_contained)
@@ -440,14 +575,22 @@ def publish_notebook(
         raise FrameworkError(
             "Quarto not found. Install it from https://quarto.org/docs/get-started/"
         )
-    if _target(connection) == "cloud":
+    if _target(connection, to) == "cloud":
         if format != "html":
             raise FrameworkError(f'Framework Cloud publishes HTML only (got format="{format}").')
         from framework.cloud import cloud_publish
 
         return cloud_publish(
-            source, dest=dest, self_contained=self_contained, slug=slug, include_private=True
+            source,
+            dest=dest,
+            self_contained=self_contained,
+            slug=slug,
+            include_private=True,
+            collection=collection,
+            share_unlisted=share_unlisted,
         )
+    if collection is not None:
+        raise FrameworkError("Collections require publishing to Framework Cloud.")
     _slug_ignored(slug)
     bucket = resolve_bucket(connection)
     self_contained = self_contained or not bucket.static_hosting

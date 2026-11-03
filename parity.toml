@@ -558,3 +558,7 @@ status = "folded"
 # Python functions with no R counterpart.
 [python_only]
 names = ["framework_template_path", "tools_available"]
+
+[functions.skills_sync]
+python = "skills_sync"
+status = "ported"

@@ -225,7 +225,7 @@ def spec_check(spec: dict[str, Any]) -> list[str]:
                 add(f"skills.{name}: not shipped with this version of framework-py")
         elif isinstance(entry.get("content"), str):
             declared = skill_name(entry["content"])
-            if declared != name:
+            if declared != name and not entry.get("sync"):
                 add(f"skills.{name}: SKILL.md frontmatter name is '{declared or 'missing'}'")
             for path in _dict(entry.get("files")):
                 check_path(path, f"skills.{name}.files")

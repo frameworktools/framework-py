@@ -24,7 +24,8 @@ Every publishing function warns about files with `private` in their path and ask
 2. Otherwise, when the project has a Framework Cloud project token, they publish to Framework Cloud.
 3. Otherwise, they raise an error that shows how to add a bucket.
 
-`to="github"` overrides this order and publishes to GitHub Pages.
+`to="cloud"` explicitly selects Framework Cloud, including when a bucket is configured.
+`to="bucket"` explicitly selects storage, and `to="github"` selects GitHub Pages.
 
 [publish_data()](ref:publish_data), [publish_dir()](ref:publish_dir), [publish_list()](ref:publish_list), and [storage_test()](ref:storage_test) work with buckets only.
 
@@ -163,14 +164,57 @@ fw.publish_notebook("notebooks/exploration.qmd")
 fw.publish("outputs/notebooks/exploration.html")
 ```
 
-Framework Cloud accepts four kinds of source.
+Framework Cloud accepts the following sources.
 
+- An image, PDF, CSV, JSON, text, binary, or other file.
 - A self-contained `.html` file.
 - An `.html` file with its sibling `<name>_files/` folder, uploaded together.
 - A folder of rendered output, whose `index.html` or first HTML file is the entry page.
 - A `.qmd` file, which Framework renders to HTML first.
 
 Each publish adds a new version of the document. The `slug` argument names the document and turns on its readable URL. `slug=True` uses the name derived from the file, and `slug=False` turns the readable URL off. `publish_notebook()` publishes HTML only when the destination is Framework Cloud.
+
+You can also publish an object from your Python session. On Framework Cloud,
+each one becomes a file that Cloud can show well.
+
+- pandas and polars DataFrames and Series, and numpy arrays with one or two
+  dimensions, become tables. Every row is kept, along with a summary of each
+  column (missing values, distinct values, numeric statistics with a histogram,
+  and the most common values), computed over all rows. An index other than the
+  default becomes the first column. `pandas.crosstab()` output and
+  `statsmodels` `anova_lm()` tables publish the same way.
+- A pandas `Styler` publishes as a formatted HTML table.
+- scipy.stats test results (`ttest_ind()`, `pearsonr()`, `chi2_contingency()`,
+  `mannwhitneyu()`, `shapiro()`, and others) become a test summary with the
+  method, statistic, degrees of freedom, p-value, and confidence interval when
+  the result has one.
+- statsmodels results (OLS, WLS, GLM, Logit, Probit, Poisson, NegativeBinomial,
+  MixedLM, QuantReg, MNLogit, and others) become model summaries: coefficients
+  with standard errors, p-values, and 95% Wald intervals, fit statistics, the
+  formula, and the model family and link. Mixed models add their variance
+  components.
+- Fitted scikit-learn linear models publish their coefficients. Tree models,
+  xgboost, and lightgbm models publish feature importance and their main
+  settings.
+- matplotlib Figures and Axes and seaborn plots and grids publish as SVG, or as
+  PNG when the SVG would be larger than 5 MB. plotly Figures publish as HTML,
+  and altair charts as Vega-Lite with their data included.
+
+Model exports never include the observations a model was fit on, residuals,
+fitted values, or the serialized model. Integer columns with values outside the
+browser-safe range (±9,007,199,254,740,991) are exported as text to keep
+identifiers exact. When the destination is a bucket, tables upload as CSV,
+figures as PNG, and statsmodels results as an HTML summary.
+
+```python
+fw.publish(figure, to="cloud", slug="treatment-effect", title="Treatment effect")
+fw.publish(results_table, to="cloud", slug="estimates")
+fw.publish(fitted_model, to="cloud", slug="adjusted-model", password="reviewer-password")
+```
+
+`title`, `description`, `kind`, `password`, and `visibility` set artifact metadata.
+Passwords require at least eight characters. Visibility can be `"public"` or `"unlisted"`.
+Anyone with an unlisted link can open it unless it is password protected.
 
 Publishing sends only the document you name. The [Framework Cloud](guide:cloud) guide describes what else the cloud receives.
 
@@ -237,3 +281,21 @@ Dates or versions in destination names keep earlier releases available.
 ```python
 fw.publish_notebook("notebooks/exploration.qmd", dest="reports/exploration-2026-10-31")
 ```
+
+
+## Adding an artifact to a collection
+
+Select an existing collection in the current project by its ID or slug. The
+client resolves the collection before uploading and does not create collections.
+The collection follows the artifact's latest version.
+
+```python
+fw.publish("outputs/effect.png", to="cloud", collection="main-findings", share_unlisted=True)
+```
+
+Public collections require public artifacts. Sharing an unlisted artifact with
+readers of an unlisted collection requires explicit consent through
+`share_unlisted`.
+If attachment fails after the artifact uploads, publishing returns its URL and
+warns that collection attachment failed. Attach the artifact from the project
+Outputs page; publishing again creates another version.
