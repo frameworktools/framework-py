@@ -91,6 +91,12 @@ def scan(path: Path) -> list[dict[str, Any]]:
     if path.is_symlink():
         raise ValueError("Skill symlinks are unsupported")
     files = []
+    mode_file = path / ".framework-skill.json"
+    executable_paths = (
+        set(json.loads(mode_file.read_text(encoding="utf-8")).get("executable_paths", []))
+        if os.name == "nt" and mode_file.is_file()
+        else set()
+    )
     for directory, dirs, names in os.walk(path, followlinks=False):
         for name in dirs + names:
             if (Path(directory) / name).is_symlink():
@@ -108,7 +114,11 @@ def scan(path: Path) -> list[dict[str, Any]]:
                 {
                     "path": file.relative_to(path).as_posix(),
                     "content": base64.b64encode(file.read_bytes()).decode("ascii"),
-                    "executable": bool(file.stat().st_mode & 0o111),
+                    "executable": (
+                        file.relative_to(path).as_posix() in executable_paths
+                        if os.name == "nt"
+                        else bool(file.stat().st_mode & 0o111)
+                    ),
                 }
             )
     return validate(files)
@@ -199,6 +209,15 @@ def _install(
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(base64.b64decode(file["content"]))
                 dest.chmod(0o755 if file["executable"] else 0o644)
+            if os.name == "nt":
+                mode_file = stage / ".framework-skill.json"
+                executable_paths = [file["path"] for file in files if file["executable"]]
+                if executable_paths:
+                    mode_file.write_text(
+                        json.dumps({"executable_paths": executable_paths}), encoding="utf-8"
+                    )
+                elif mode_file.is_file():
+                    mode_file.unlink()
             if bundle_hash(scan(stage)) != bundle_hash(files):
                 raise ValueError("Staged skill verification failed")
         for target, stage, backup, existed in swaps:

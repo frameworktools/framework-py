@@ -134,3 +134,17 @@ def test_initial_pull_and_atomic_binary_deletion(tmp_path, cloud):
     skills_sync(".agents/skills/new", tmp_path)
     assert not (target / "scripts/run.bin").exists()
     assert (target / ".env").read_text() == "local secret"
+
+
+def test_canonical_package_bytes_match_shipped_identity(tmp_path):
+    from importlib import resources
+
+    folder = resources.files("framework").joinpath("templates/skills")
+    for source in folder.iterdir():
+        metadata = source.joinpath(".framework-skill.json")
+        if not metadata.is_file():
+            continue
+        expected = json.loads(metadata.read_text(encoding="utf-8"))["hash"]
+        relative = ".agents/skills/" + source.name
+        assert install_package(source, tmp_path, relative, source.name)
+        assert bundle_hash(scan(tmp_path / relative)) == expected

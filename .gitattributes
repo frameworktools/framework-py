@@ -6,3 +6,6 @@ tests/fixtures/** -text
 tests/integration/compose.yml -text
 tests/integration/*/init.sql -text
 docs/docs-site.md -text
+
+# Canonical skill hashes include exact file bytes.
+src/framework/templates/skills/** text eol=lf
