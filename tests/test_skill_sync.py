@@ -1,6 +1,7 @@
 import base64
 import copy
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -127,7 +128,9 @@ def test_initial_pull_and_atomic_binary_deletion(tmp_path, cloud):
     assert skills_sync(".agents/skills/new", tmp_path, skill_id="private-id")["action"] == "pull"
     target = tmp_path / ".agents/skills/new"
     assert (target / "scripts/run.bin").read_bytes() == b"\x00\xff\x01\r\n"
-    assert (target / "scripts/run.bin").stat().st_mode & 0o111
+    assert next(file for file in scan(target) if file["path"] == "scripts/run.bin")["executable"]
+    if os.name != "nt":
+        assert (target / "scripts/run.bin").stat().st_mode & 0o111
     (target / ".env").write_text("local secret")
     files = [f for f in fixture["bundle"] if f["path"] != "scripts/run.bin"]
     cloud.head.update(bundle=files, hash=bundle_hash(files), version=2)
