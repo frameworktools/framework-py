@@ -77,7 +77,9 @@ def test_r_reads_what_python_saved(r_project: Path) -> None:
         "type": "parquet",
         "locked": True,
     }
-    assert set(seen["results"]) == {"r_summary.csv", "py_summary.csv"}
+    # Both languages now record results by the path from the project root. The
+    # fixture's R row predates that and keeps its file name until it is saved again.
+    assert set(seen["results"]) == {"r_summary.csv", "outputs/tables/py_summary.csv"}
 
 
 SETTINGS_SCRIPT = """

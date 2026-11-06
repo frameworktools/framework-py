@@ -1,6 +1,6 @@
 ---
 id: ai-assistants
-title: AI Assistants
+title: AI assistants
 description: AGENTS.md, assistant stubs, Framework skills, and the guards for privacy-sensitive projects
 section: features
 position: 13
@@ -10,7 +10,7 @@ position: 13
 
 Framework prepares each project for AI coding assistants. It writes `AGENTS.md` as the canonical instruction file, installs skills that teach assistants the Framework functions, and adds a small pointer file for assistants that look for their own file name. In privacy-sensitive projects, it also tells assistants which folders they must not read and, for Claude Code, enforces that rule in the assistant's settings.
 
-## Supported Assistants
+## Supported assistants
 
 The `ai` section of the settings lists the assistants a project supports.
 
@@ -77,9 +77,9 @@ Every project except a bare one gets the first four. Privacy-sensitive projects 
 
 Projects created from a framework.pub blueprint can carry additional skills. You can also add your own skill folders beside Framework's.
 
-### Updating Skills
+### Updating skills
 
-New releases of framework-py can improve the skills. [ai_skills_update()](ref:ai_skills_update) replaces a project's Framework skills with the versions in the installed package and returns the folders it wrote.
+New releases of framework-py can include updated skills. [ai_skills_update()](ref:ai_skills_update) replaces a project's Framework skills with the versions in the installed package and returns the folders it wrote.
 
 ```python
 import framework as fw
@@ -91,7 +91,7 @@ The `project_path` argument names another project folder. The default is the cur
 
 Only skills that ship with framework-py are replaced. Skills from a blueprint and skills you wrote are left alone. The function reads the project's skills and assistants from `.framework/spec.json`, or from the settings when that file is missing.
 
-## Privacy-Sensitive Projects
+## Privacy-sensitive projects
 
 Privacy-sensitive projects add two protections for restricted data.
 

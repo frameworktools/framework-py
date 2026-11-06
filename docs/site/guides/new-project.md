@@ -1,32 +1,32 @@
 ---
 id: new-project
-title: Making a New Project
-description: Creating a project with fw.new() or the command line, and preparing a cloned project with bootstrap()
+title: New projects
+description: Project creation with fw.new_project() or the command line, and cloned-project setup with bootstrap()
 section: getting_started
 position: 5
 ---
 
-## Create a Project from Python
+## Projects from Python
 
-[new()](ref:new) creates a Python project from your global defaults. It takes a name, the folder to create, and a project type.
+[new_project()](ref:new_project) creates a Python project from your global defaults. It takes a name, the folder to create, and a project type.
 
 ```python
 import framework as fw
 
-fw.new("Vaccine Study", "~/projects/vaccine-study", type="project")
+fw.new_project("Vaccine Study", "~/projects/vaccine-study", type="project")
 ```
 
-The type is one of `project`, `project_sensitive`, `course`, `presentation`, or `bare`. The [Project Types](guide:project-types) guide describes each one.
+The type is one of `project`, `project_sensitive`, `course`, `presentation`, or `bare`. The [Project types](guide:project-types) guide describes each one.
 
 ```python
-fw.new("Patient Outcomes", "~/projects/patient-outcomes", type="project_sensitive")
-fw.new("Stats 101", "~/teaching/stats-101", type="course")
-fw.new("Q4 Review", "~/talks/q4-review", type="presentation")
+fw.new_project("Patient Outcomes", "~/projects/patient-outcomes", type="project_sensitive")
+fw.new_project("Stats 101", "~/teaching/stats-101", type="course")
+fw.new_project("Q4 Review", "~/talks/q4-review", type="presentation")
 ```
 
-In an interactive session, `new()` asks for any value you leave out. It suggests `~/projects/<name>` as the location and `bare` as the type. In a script or notebook, where standard input is not a terminal, a missing name or location is an error and a missing type means `bare`. Pass `interactive=True` or `interactive=False` to choose the behavior yourself.
+In an interactive session, `new_project()` asks for any value you leave out. It suggests `~/projects/<name>` as the location and `project`, the Standard Project, as the type. In a script or notebook, where standard input is not a terminal, a missing name or location is an error and a missing type means `project`. Pass `type="bare"` for a bare project. Pass `interactive=True` or `interactive=False` to choose the behavior yourself.
 
-The folder must not exist yet. `new()` returns the path of the new project.
+The folder must not exist yet. `new_project()` returns the path of the new project.
 
 ### Workflows
 
@@ -38,15 +38,15 @@ The workflow decides how notebooks are written. Pass it as `workflow`.
 | `quarto` | `quarto` | Quarto documents (`.qmd`) |
 | `scripts` | none (it turns `quarto` and `jupyter` off) | Python scripts (`.py`) |
 
-Python projects of type `project` and `project_sensitive` use the Jupyter workflow unless you choose another. Course and presentation projects use Quarto, and bare projects have no workflow. A Scripts-only project gets no notebook files; any starter scripts come from its blueprint. The workflow and the notebook format are recorded under `scaffold:` in the project's settings.
+Python projects of type `project` and `project_sensitive` use the Jupyter workflow unless you choose another. Course and presentation projects use Quarto, and bare projects have no workflow. A scripts-only project gets no notebook files. Any starter scripts come from its blueprint. The workflow and the notebook format are recorded under `scaffold:` in the project's settings.
 
 ```python
-fw.new("Pipeline", "~/projects/pipeline", type="project", workflow="scripts")
+fw.new_project("Pipeline", "~/projects/pipeline", type="project", workflow="scripts")
 ```
 
-### Tools and Sets
+### Tools and sets
 
-Tools are switches for what a project uses beyond its folders. Each tool adds only its own files, folders, and packages. [tools_available()](ref:tools_available) lists the tools for Python projects.
+Tools are optional parts of a project beyond its folders. Each tool adds only its own files, folders, and packages. [tools_available()](ref:tools_available) lists the tools for Python projects.
 
 - `uv` manages the project's dependencies in `pyproject.toml` and `uv.lock`. It is on for every project.
 - `quarto` writes the root `_quarto.yml` and render settings. It is on for every type except `bare`.
@@ -57,10 +57,10 @@ Tools are switches for what a project uses beyond its folders. Each tool adds on
 Pass `tools` as a list of tools to turn on, or as a map that can also turn a default off.
 
 ```python
-fw.new(
+fw.new_project(
     "Lab Notes", "~/projects/lab-notes", type="project", tools={"quarto": False, "jupyter": True}
 )
-fw.new("Q4 Review", "~/talks/q4-review", type="project", tools=["quarto_slides"])
+fw.new_project("Q4 Review", "~/talks/q4-review", type="project", tools=["quarto_slides"])
 ```
 
 A tool that another tool needs is turned on too, with a message. `quarto_slides` and `quarto_manuscript` turn on `quarto`. Turning off a tool that another one needs is an error. The project's tools are recorded under `tools` in `settings.yml`. A project without a `tools` section predates it and keeps using Quarto.
@@ -69,15 +69,15 @@ A tool that another tool needs is turned on too, with a message. `quarto_slides`
 
 With the command line, `--tool ID` turns a tool on and `--tool ID=false` turns it off. `--skill-set` and `--package-set` add sets. Each option can be repeated.
 
-## Create a Project from the Command Line
+## Projects from the command line
 
-The package's command-line entry point runs `new()` with the same defaults.
+The package's command-line entry point runs `new_project()` with the same defaults.
 
 ```sh
 python -m framework create --name "Vaccine Study" --path ~/projects/vaccine-study --type project
 ```
 
-Without `--type`, the project is `bare`. With `--interactive`, the command asks for missing answers. The command prints the project folder on success and exits with status 1 and a message on failure.
+Without `--type`, the project is a Standard Project (`project`). Pass `--type bare` for a bare project. With `--interactive`, the command asks for missing answers. The command prints the project folder on success and exits with status 1 and a message on failure.
 
 When framework-py is not installed in any environment yet, uv can run the command with a temporary copy of the package.
 
@@ -85,7 +85,7 @@ When framework-py is not installed in any environment yet, uv can run the comman
 uv run --with framework-py python -m framework create --name "Vaccine Study" --path ~/projects/vaccine-study --type project
 ```
 
-### With fw
+### The fw command
 
 The `fw` command-line tool creates projects in every Framework language. For a Python project, it finds a Python runtime with framework-py and runs the command above.
 
@@ -95,7 +95,7 @@ fw new vaccine-study --lang python --type project
 
 `fw` creates the project in `./<name>` unless `--dir` names another folder.
 
-### From a Layers File
+### Layers files
 
 framework.pub describes a project as a layers file. `--from-layers` creates a project from one.
 
@@ -105,23 +105,24 @@ python -m framework create --from-layers layers.json --path .
 
 This form runs headless unless you pass `--interactive`. A headless run asks no questions, initializes no git repository, writes nothing under `.github/workflows/`, and does not register the project. It works in a fresh checkout that holds only `.git`, `.github`, `.framework`, `README.md`, and `LICENSE`, which is how the framework.pub GitHub Action uses it. [project_create_from_layers()](ref:project_create_from_layers) does the same from Python.
 
-## Create a Project from Framework Cloud
+## Projects from Framework Cloud
 
 A project defined on Framework Cloud is created from its project token.
 
 ```python
-fw.new(key="fw_...")
+fw.new_project(key="fw_...")
+fw.new(key="fw_...", url="https://cloud.example.edu")
 ```
 
-`new()` fetches the project's definition from the server and saves the token and server in the new project's `.env` as `FW_PROJECT_TOKEN` and `FW_CLOUD_URL`. The project then publishes to that server and uses its integrity ledger. The [Framework Cloud](guide:cloud) guide describes what the server receives.
+`url` names a self-hosted server that issued the token, so no login is needed first. Without it, the server is `FW_CLOUD_URL`, then the one you last logged in to, then framework.pub. `new_project()` fetches the project's definition from the server and saves the token and server in the new project's `.env` as `FW_PROJECT_TOKEN` and `FW_CLOUD_URL`. The project then publishes to that server and uses its integrity ledger. The [Framework Cloud](guide:cloud) guide describes what the server receives.
 
-### From Blueprints and Structures
+### Blueprints and structures
 
 Blueprints, structures, and sets saved on Framework Cloud can be used directly. Log in first with [cloud_login()](ref:cloud_login), then pass a `blueprint` or a `structure` handle.
 
 ```python
-fw.new("Lab Notes", "~/projects/lab-notes", blueprint="ada/lab")
-fw.new(
+fw.new_project("Lab Notes", "~/projects/lab-notes", blueprint="ada/lab")
+fw.new_project(
     "Stats 101",
     "~/teaching/stats-101",
     structure="framework/course",
@@ -133,17 +134,17 @@ fw.new(
 
 A structure replaces the blueprint's structure. `tools`, `package_sets`, `skill_sets`, and `skills` take handles, where a bare id such as `quarto` means Framework's. `sensitive`, `ai`, and `git` set those settings. Tools that Framework's tools require are added before the choices are sent.
 
-`new()` sends the choices to the server, which resolves them into layers. It builds the project from those layers, then registers it on the server, which records the choices and returns a project token that `new()` saves in `.env`. If registration fails, the project is still created and `new()` reports why. Only the choices you pass are sent. Data and code stay on your computer.
+`new_project()` sends the choices to the server, which resolves them into layers. It builds the project from those layers, then registers it on the server, which records the choices and returns a project token that `new_project()` saves in `.env`. If registration fails, the project is still created and `new_project()` reports why. Only the choices you pass are sent. Data and code stay on your computer.
 
-When you are logged in, Framework Cloud resolves every choice, as it does for R and `fw`. A type is sent as Framework's blueprint of that name, such as `framework/project`, together with any workflow, tools, and sets. With no choices at all, the cloud resolves your defaults. `new()` saves that result in Framework's config folder, under `cache/defaults/`, one file per server and language, in the format R and `fw` share.
+When you are logged in, Framework Cloud resolves every choice, as it does for R and `fw`. A type is sent as Framework's blueprint of that name, such as `framework/project`, together with any workflow, tools, and sets. With no choices at all, the cloud resolves your defaults. `new_project()` saves that result in Framework's config folder, under `cache/defaults/`, one file per server and language, in the format R and `fw` share.
 
-When the server can't be reached, `new()` builds your defaults from that cache and says so: "Using your Framework Cloud defaults from 2026-11-01". Otherwise, including any explicit choice and a server too old to resolve projects, an interactive session asks before building from the built-in defaults described above. A script stops with an error unless you pass `offline=True`. `new()` never switches to a different configuration silently. A rejected token is reported as an error, never treated as offline. When you are not logged in, `new()` uses the built-in defaults without asking.
+When the server cannot be reached, `new_project()` builds your defaults from that cache and says so: "Using your Framework Cloud defaults from 2026-11-01". Otherwise, including any explicit choice and a server too old to resolve projects, an interactive session asks before building from the built-in defaults described above. A script stops with an error unless you pass `offline=True`. `new_project()` never switches to a different configuration silently. A rejected token is reported as an error, never treated as offline. When you are not logged in, `new_project()` uses the built-in defaults without asking.
 
 ```python
-fw.new("Field Notes", "~/projects/field-notes", offline=True)
+fw.new_project("Field Notes", "~/projects/field-notes", offline=True)
 ```
 
-## What Gets Created
+## Project contents
 
 A new project contains these files, depending on its type.
 
@@ -162,7 +163,7 @@ A new project contains these files, depending on its type.
 
 A `bare` project gets only `settings.yml`, `pyproject.toml`, `.gitignore`, and `.framework/spec.json`.
 
-After creation, `new()` does three more things.
+After creation, `new_project()` does three more things.
 
 1. It initializes a git repository when git is installed and your defaults allow it. It installs the pre-commit hook when a hook check is enabled. It makes the first commit when git's `user.name` and `user.email` are set, and skips the commit with a note otherwise.
 2. It records the project in the registry in your global settings, unless the folder is in the system's temporary folder.
@@ -175,7 +176,7 @@ cd ~/projects/vaccine-study
 uv sync
 ```
 
-## Adopt an Existing Project
+## Adopting an existing project
 
 [adopt()](ref:adopt) turns a folder you already have into a Framework project, in place. It lists the folder's subfolders, at most three levels deep, and proposes a role for each: a Framework directory key such as `inputs_raw`, or a folder of its own under `extra_directories`. It reads folder names only, never files or their contents. Hidden folders, version control, environments such as `.venv` and `renv`, and caches are left out.
 
@@ -185,7 +186,7 @@ fw.adopt("~/projects/old-study")
 
 You review the proposal before anything is written. Press Enter to accept it, type a folder's number to change its role, or type `-` and the number to leave it out. Then `adopt()` writes `settings.yml` and `.framework/spec.json`. It moves nothing and creates nothing else, and it refuses a folder that is already a Framework project. The project is `bare`, with flat settings and no tools.
 
-A folder whose path contains "private" gets a warning: "'data/private' looks private. Keep it out of git and away from AI assistants." The review then asks whether to turn on the sensitive-data setting. In a script, pass `yes=True` to accept the proposal; the sensitive setting stays off. From a shell, run `python -m framework adopt --path DIR`, with `--yes` to skip the review. The R package and `fw` map folders with the same shared rules.
+A folder whose path contains "private" gets a warning: "'data/private' looks private. Keep it out of git and away from AI assistants." The review then asks whether to turn on the sensitive-data setting. In a script, pass `yes=True` to accept the proposal. The sensitive setting stays off. From a shell, run `python -m framework adopt --path DIR`, with `--yes` to skip the review. The R package and `fw` map folders with the same shared rules.
 
 When you are logged in, `adopt()` finishes by offering to register the project on Framework Cloud and to save the folder layout as a structure. [structure_import()](ref:structure_import) does the second step on its own. It sends only the folder paths, and the structure is private to you.
 
@@ -193,7 +194,7 @@ When you are logged in, `adopt()` finishes by offering to register the project o
 fw.structure_import("~/projects/old-study", name="Lab layout")
 ```
 
-## Prepare a Cloned Project
+## Preparing a cloned project
 
 A clone lacks the files git does not carry: `.env`, `framework.db`, ignored and empty folders, and the virtual environment. [bootstrap()](ref:bootstrap) restores them. Every step is safe to repeat, and none contacts Framework Cloud.
 
@@ -223,9 +224,9 @@ result.todo
 
 To share the names of the variables a project needs, commit a `.env.example` file with empty values. `bootstrap()` refuses projects whose `language` is not `python`.
 
-## Building from a Spec
+## Building from a spec
 
-[new()](ref:new) builds a project spec from three layers: the package defaults, your global settings, and the type you chose. Tools that need finer control can use the same steps directly.
+[new_project()](ref:new_project) builds a project spec from three layers: the package defaults, your global settings, and the type you chose. Tools that need finer control can use the same steps directly.
 
 - [spec_resolve()](ref:spec_resolve) merges layers into a complete spec and reports keys that more than one layer set.
 - [spec_check()](ref:spec_check) lists the problems that would stop creation.
@@ -240,3 +241,5 @@ fw.project_create(resolved.spec, "~/teaching/stats-101")
 ```
 
 A layer that sets a language other than `python` is refused, because framework-py builds Python projects only.
+
+`new_project()` is the canonical project creation function. `new()` remains a compatible alias.

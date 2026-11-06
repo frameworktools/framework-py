@@ -74,7 +74,8 @@ def test_is_idempotent(clone: Path) -> None:
     (clone / ".env").write_text("DB_PASSWORD=kept\n", encoding="utf-8")
     again = fw.bootstrap(clone, packages=False)
     assert (clone / ".env").read_text(encoding="utf-8") == "DB_PASSWORD=kept\n"
-    assert again.done == ["Updated framework.db"]
+    # Audit 2026-11-05: an unchanged framework.db was listed as a step taken
+    assert again.done == []
     assert again.todo == []
 
 
@@ -137,7 +138,11 @@ def test_refusals(tmp_path: Path, clone: Path) -> None:
     r_project = tmp_path / "r"
     r_project.mkdir()
     (r_project / "settings.yml").write_text("default:\n  project_name: R\n", encoding="utf-8")
-    with pytest.raises(fw.FrameworkError, match=r"r project.*framework::bootstrap"):
+    # Audit 2026-11-05: a project with no language was called "a r project"
+    with pytest.raises(fw.FrameworkError, match=r"name no language.*framework::bootstrap"):
+        fw.bootstrap(r_project)
+    (r_project / "settings.yml").write_text("default:\n  language: r\n", encoding="utf-8")
+    with pytest.raises(fw.FrameworkError, match=r"This is a r project.*framework::bootstrap"):
         fw.bootstrap(r_project)
     (clone / ".framework").mkdir()
     (clone / ".framework/spec.json").write_text(json.dumps({"type": "nope"}), encoding="utf-8")
@@ -172,3 +177,14 @@ def test_create_help_describes_interactive(
     text = " ".join(capsys.readouterr().out.split())
     assert "with --name, ask for the type when --type is missing" in text
     assert "with --from-layers, initialize git and register the project" in text
+
+
+def test_cli_messages_name_flags(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # Audit 2026-11-05: --tool X=maybe meant on; the no-terminal error said "yes=True"
+    with pytest.raises(SystemExit):
+        main(["create", "--name", "T", "--path", str(tmp_path / "t"), "--tool", "jupyter=maybe"])
+    assert "jupyter=true, or jupyter=false" in capsys.readouterr().err
+    (tmp_path / "old").mkdir()
+    assert main(["adopt", "--path", str(tmp_path / "old")]) == 1
+    err = capsys.readouterr().err
+    assert "Pass --yes." in err and "yes=True" not in err

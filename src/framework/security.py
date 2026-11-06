@@ -438,13 +438,24 @@ def _frame(rows: list[dict[str, Any]], columns: list[str]) -> pd.DataFrame:
 
 
 def _auto_fix(root: Path, findings: dict[str, pd.DataFrame]) -> int:
-    """Add the folders behind coverage and exposure findings to ``.gitignore``."""
-    folders = list(findings["gitignore_coverage"]["file"])
+    """Add the folders and files behind coverage and exposure findings to ``.gitignore``.
+
+    A folder gets ``folder/`` and ``folder/**``. A data file that is not ignored, though
+    its folder is, gets its own path, never a folder pattern.
+    """
+    coverage = findings["gitignore_coverage"]
+    is_folder = coverage["reason"].str.contains("directory", case=False)
+    folders = list(coverage["file"][is_folder])
     folders += [
         str(Path(name).parent.as_posix()) for name in findings["private_data_exposure"]["file"]
     ]
     folders = list(dict.fromkeys(f.strip("/") for f in folders if f.strip("/") not in ("", ".")))
-    if not folders:
+    files = [
+        f
+        for f in dict.fromkeys(coverage["file"][~is_folder])
+        if f.strip("/") and not any(f.startswith(f"{folder}/") for folder in folders)
+    ]
+    if not folders and not files:
         return 0
     path = root / ".gitignore"
     text = path.read_text(encoding="utf-8") if path.exists() else ""
@@ -456,13 +467,19 @@ def _auto_fix(root: Path, findings: dict[str, pd.DataFrame]) -> int:
         for entry in (f"{folder}/", f"{folder}/**"):
             if entry not in existing and entry not in added:
                 added.append(entry)
+    for file in files:
+        entry = f"/{file.lstrip('/')}"
+        if entry not in existing and entry not in added:
+            added.append(entry)
     if not any(line and not line.startswith("#") for line in added):
         return 0
     if text and not text.endswith("\n"):
         text += "\n"
     path.write_text(text + "\n".join(added) + "\n", encoding="utf-8")
-    inform(f"Added {len(folders)} director{'y' if len(folders) == 1 else 'ies'} to .gitignore")
-    return len(folders)
+    parts = [f"{len(folders)} director{'y' if len(folders) == 1 else 'ies'}"] if folders else []
+    parts += [f"{len(files)} file{'' if len(files) == 1 else 's'}"] if files else []
+    inform(f"Added {' and '.join(parts)} to .gitignore")
+    return len(folders) + len(files)
 
 
 _ICONS = {"pass": "✓ PASS", "warning": "⚠ WARNING", "fail": "✗ FAIL", "skipped": "- SKIPPED"}
@@ -546,7 +563,7 @@ def git_security_audit(
         check_git_history: Scan past commits for private data files.
         history_depth: ``"all"``, ``"shallow"`` (the last 100 commits), or a
             number of commits.
-        auto_fix: Add private folders that are not ignored to ``.gitignore``.
+        auto_fix: Add private folders and data files that are not ignored to ``.gitignore``.
             Files git already tracks stay tracked: run ``git rm --cached``.
         verbose: Print the report.
         extensions: File extensions that count as data files.

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from framework._log import inform
+from framework._paths import rendered_page
 from framework.errors import FrameworkError, FrameworkWarning
 
 PUBLIC_NOTICE = "GitHub Pages sites are public, even when the repository is private."
@@ -100,12 +101,19 @@ def _stage(source: Path, stage: Path, self_contained: bool) -> None:
         quarto = shutil.which("quarto")
         if quarto is None:
             raise FrameworkError("Rendering requires the quarto command on your PATH.")
-        command = [quarto, "render", str(source.resolve()), "--output-dir", str(stage)]
-        command += ["--to", "html", *(["--embed-resources"] if self_contained else [])]
-        inform(f"Rendering {source.name}...")
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            raise FrameworkError(f"Quarto render failed:\n{result.stdout}{result.stderr}")
+        with tempfile.TemporaryDirectory(prefix="fw_render_") as render:
+            out = Path(render)
+            command = [quarto, "render", str(source.resolve()), "--output-dir", str(out)]
+            command += ["--to", "html", *(["--embed-resources"] if self_contained else [])]
+            inform(f"Rendering {source.name}...")
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+            if result.returncode != 0:
+                raise FrameworkError(f"Quarto render failed:\n{result.stdout}{result.stderr}")
+            # A project's _quarto.yml keeps the notebook's folder under the output folder
+            page = rendered_page(out, source.stem)
+            if page is None:
+                raise FrameworkError(f"No single HTML page found to publish from {source}")
+            shutil.copytree(page.parent, stage, dirs_exist_ok=True)
     else:
         raise FrameworkError(
             "GitHub Pages publishing takes rendered HTML, a render folder, or a .qmd or "
@@ -152,7 +160,33 @@ def _confirm() -> None:
             raise FrameworkError("Cancelled: nothing was published.")
 
 
-def github_publish(source: Path, slug: str | None = None, self_contained: bool = True) -> str:
+def _directory_bytes(folder: Path) -> int:
+    """All files in a site, including retained artifact versions."""
+    return sum(path.stat().st_size for path in folder.rglob("*") if path.is_file())
+
+
+def _check_pages_budget(site: Path, incoming: Path, *, bundle: bool) -> None:
+    # Bundles are copied to both the current path and an immutable version folder.
+    # Keep existing files in the estimate, including every retained archive.
+    projected = _directory_bytes(site) + _directory_bytes(incoming) * (2 if bundle else 1)
+    if projected > 1_000_000_000:
+        raise FrameworkError("Publishing would exceed the 1 GB GitHub Pages site limit.")
+    if projected > 800_000_000:
+        warnings.warn(
+            "The GitHub Pages site is approaching its 1 GB limit.",
+            FrameworkWarning,
+            stacklevel=3,
+        )
+
+
+def github_publish(
+    source: Path,
+    slug: str | None = None,
+    self_contained: bool = True,
+    *,
+    bundle: bool = False,
+    private: bool = False,
+) -> str:
     """Copy ``source`` to ``published/<slug>/``, commit only that folder, and push."""
     from framework.project import find_settings_file
 
@@ -177,23 +211,38 @@ def github_publish(source: Path, slug: str | None = None, self_contained: bool =
             "This project has no GitHub remote. Create the project on GitHub first, then "
             "publish again."
         )
-    _confirm()
+    if not private:
+        _confirm()
 
     # published/ sits at the top of the repository, where the workflow deploys from
     rel = f"published/{slug}"
     with tempfile.TemporaryDirectory(prefix="fw_pages_") as temp:
         _stage(source, Path(temp), self_contained)
         target = top / rel
-        if target.exists():
-            shutil.rmtree(target)
-        shutil.copytree(temp, target)
+        _check_pages_budget(top / "published", source if bundle else Path(temp), bundle=bundle)
+        if bundle:
+            import json
+
+            from framework.publish_bundle import folder_deliver
+
+            receipt = folder_deliver(source, top / "published")
+            (source.parent / "receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
+        else:
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(temp, target)
+
+    # Include the regenerated site index in the final check before staging or pushing.
+    if _directory_bytes(top / "published") > 1_000_000_000:
+        raise FrameworkError("Publishing would exceed the 1 GB GitHub Pages site limit.")
 
     # Commit only this folder; anything else the user staged stays staged
-    _git(top, "add", "-A", "--", rel)
-    if _git(top, "diff", "--cached", "--quiet", "--", rel).returncode == 0:
+    paths = [rel, "published/index.html", "published/index.json"] if bundle else [rel]
+    _git(top, "add", "-A", "--", *paths)
+    if _git(top, "diff", "--cached", "--quiet", "--", *paths).returncode == 0:
         inform(f"No change in {rel}; nothing committed or pushed.")
     else:
-        commit = _git(top, "commit", "-m", f"Publish {slug}", "--", rel)
+        commit = _git(top, "commit", "-m", f"Publish {slug}", "--", *paths)
         if commit.returncode != 0:
             raise FrameworkError(f"git commit failed:\n{commit.stdout}{commit.stderr}")
         branch = _git(top, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
@@ -224,5 +273,40 @@ def github_publish(source: Path, slug: str | None = None, self_contained: bool =
         )
     base = pages_url or pages_base(remote.owner, remote.repo)
     url = f"{base.rstrip('/')}/{slug}/"
+    if bundle:
+        import json
+
+        receipt_path = source.parent / "receipt.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt.update(
+            driver="github",
+            url=url,
+            version_url=f"{url}v/{receipt['version']}/",
+            commit=_git(top, "rev-parse", "HEAD").stdout.strip(),
+        )
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
     inform(f"Published to {url}")
     return url
+
+
+def private_pages() -> bool:
+    """Ask GitHub for the Pages access setting; repository privacy is insufficient."""
+    import json
+
+    from framework.project import project_root
+
+    top = project_root()
+    remote = _remote(top)
+    if remote is None:
+        return False
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{remote.owner}/{remote.repo}/pages"],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=top,
+        )
+        return result.returncode == 0 and json.loads(result.stdout).get("public") is False
+    except (OSError, ValueError):
+        return False

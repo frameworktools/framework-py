@@ -139,3 +139,16 @@ def test_forget_and_flush(cache_project: Path) -> None:
     fw.cache_flush()
     assert fw.cache_list().empty
     assert sorted(p.name for p in folder.iterdir()) == ["notes.txt"]
+
+
+def test_flush_removes_values_stored_with_file(cache_project: Path) -> None:
+    # Audit 2026-11-05: values stored with file= stayed on disk after their records went
+    custom = cache_project / "outputs" / "kept.pickle"
+    fw.cache("custom", {"a": 1}, file=custom)
+    other = cache_project / "notes.txt"
+    other.write_text("not a cache value", encoding="utf-8")
+    fw.cache("in_folder", [1])
+    fw.cache_flush()
+    assert not custom.exists()
+    assert other.exists()
+    assert fw.cache_list().empty

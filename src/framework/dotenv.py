@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 
 from framework.errors import SettingsError
@@ -44,15 +45,65 @@ def read(path: str | Path) -> dict[str, str]:
     return parse(file.read_text(encoding="utf-8"))
 
 
-def load(path: str | Path) -> dict[str, str]:
-    """Read a ``.env`` file and set its values in ``os.environ``.
+# What load() set, and what each variable held before, so loading another project's
+# file first takes those values back
+_loaded: dict[str, tuple[str, str | None]] = {}
 
-    Values replace variables that are already set, as R's ``load_dot_env()``
-    does, so a project behaves the same from R and Python.
+
+def _restore(applied: Mapping[str, tuple[str, str | None]]) -> None:
+    """Undo values this module set, unless something changed them since."""
+    for key, (value, previous) in applied.items():
+        if os.environ.get(key) != value:
+            continue
+        if previous is None:
+            del os.environ[key]
+        else:
+            os.environ[key] = previous
+
+
+def _apply(values: Mapping[str, str]) -> dict[str, tuple[str, str | None]]:
+    applied = {key: (value, os.environ.get(key)) for key, value in _applicable(values).items()}
+    os.environ.update({key: value for key, (value, _) in applied.items()})
+    return applied
+
+
+def _applicable(values: Mapping[str, str]) -> dict[str, str]:
+    """The values a project's ``.env`` may set. The R package follows the same rules.
+
+    - A variable already set to a non-empty value wins, so a value exported in the
+      shell is never replaced.
+    - An empty value (``S3_ACCESS_KEY=``, as in the starter file) is skipped, so it never
+      blanks a variable.
+    """
+    return {key: value for key, value in values.items() if value and not os.environ.get(key)}
+
+
+@contextmanager
+def scoped(values: Mapping[str, str]) -> Iterator[dict[str, str]]:
+    """Set ``.env`` values in ``os.environ`` only inside the block.
+
+    ``settings_read()`` uses this to resolve ``env()`` expressions, so one project's
+    token or server never carries over into the next project. Yields what was set.
+    """
+    applied = _apply(values)
+    try:
+        yield {key: value for key, (value, _) in applied.items()}
+    finally:
+        _restore(applied)
+
+
+def load(path: str | Path) -> dict[str, str]:
+    """Read a ``.env`` file and set its values in ``os.environ`` for the session.
+
+    ``scaffold()`` calls this. The rules of ``_applicable()`` apply: shell values win and
+    empty values are skipped. Values an earlier ``load()`` set are removed first, so the
+    previous project's values do not carry over. Returns the values that were set.
     """
     values = read(path)
-    os.environ.update(values)
-    return values
+    _restore(_loaded)
+    _loaded.clear()
+    _loaded.update(_apply(values))
+    return {key: value for key, (value, _) in _loaded.items()}
 
 
 def value(path: str | Path, key: str) -> str | None:

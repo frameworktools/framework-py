@@ -54,6 +54,7 @@ from framework.connections import (
 from framework.console import CapturedOutput, capture_output
 from framework.create import (
     new,
+    new_project,
     project_add_directory,
     project_create,
     project_create_from_layers,
@@ -206,6 +207,7 @@ __all__ = [
     "make_revealjs",
     "make_script",
     "new",
+    "new_project",
     "now",
     "package_add",
     "packages_install",

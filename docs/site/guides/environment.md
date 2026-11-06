@@ -1,7 +1,7 @@
 ---
 id: environment
 title: Environment
-description: The .env file, keeping secrets out of settings, Framework's environment variables, and scratch helpers
+description: The .env file, secret handling, Framework's environment variables, and scratch helpers
 section: features
 position: 14
 ---
@@ -10,7 +10,7 @@ position: 14
 
 Framework keeps credentials and machine-specific values in a `.env` file that git ignores, and keeps them out of the settings files that git tracks. This guide covers the `.env` file, the environment variables Framework reads, and the helpers for quick, throwaway output.
 
-## The .env File
+## The .env file
 
 Every new project except a bare one has a `.env` file in its root. It starts with empty placeholders for a PostgreSQL connection and S3 storage.
 
@@ -31,7 +31,15 @@ S3_SESSION_TOKEN=
 
 Fill in the values the project uses and add any others it needs.
 
-[scaffold()](ref:scaffold) and [settings_read()](ref:settings_read) load `.env` into `os.environ`. Values in the file replace variables that are already set, as the R package's dotenv loader does, so a project behaves the same in both languages. The `dotenv_location` key in the settings points at a different file, or at a folder that holds one.
+Framework reads `.env` with the same rules in Python and R.
+
+- A variable already set in your shell wins over the file.
+- An empty value, such as `S3_ACCESS_KEY=`, is skipped. It never blanks a variable.
+- [settings_read()](ref:settings_read) uses the values only while it resolves `env()` expressions. It leaves `os.environ` as it found it, so one project's values never carry over into the next.
+- [scaffold()](ref:scaffold) loads the values into `os.environ` for the session. Scaffolding another project first removes the values the last one loaded.
+- Storage credentials, the project token, and the cloud server are read from the file when the environment does not set them.
+
+The `dotenv_location` key in the settings points at a different file, or at a folder that holds one.
 
 The file follows the rules of R's dotenv package.
 
@@ -46,7 +54,7 @@ Every project type's `.gitignore` excludes `.env`. Project creation and [bootstr
 
 To tell collaborators which variables a project needs, commit a `.env.example` with empty values. `bootstrap()` copies it to `.env` in a fresh clone and lists the variables that are still empty.
 
-## Using Environment Variables in Settings
+## Environment variables in settings
 
 Settings refer to environment variables with `env("VAR")`, or `env("VAR", "default")` for a fallback.
 
@@ -64,7 +72,7 @@ connections:
 
 The settings file can be committed and shared, and each person's credentials stay in their own `.env`. The [settings.yml](guide:settings-yml) guide describes expressions.
 
-## Secrets Never Go in Settings
+## Secret values
 
 Framework refuses to store secret-looking values in settings. A variable counts as secret when its name contains `PASSWORD`, `SECRET`, `TOKEN`, `ACCESS_KEY`, `API_KEY`, `PRIVATE_KEY`, or `CREDENTIAL`.
 
@@ -85,7 +93,7 @@ Leave the values empty and put them in each project's .env file.
 
 When a secret has been committed by mistake, remove the file from git, commit, and rotate the secret, because it remains in the repository's history.
 
-## Environment Variables Framework Reads
+## Framework environment variables
 
 | Variable | Effect |
 |----------|--------|
@@ -100,7 +108,7 @@ When a secret has been committed by mistake, remove the file from git, commit, a
 | `FW_PROJECT_TOKEN` | The project's cloud token, usually set in `.env`. |
 | `S3_*` and `AWS_*` | Storage bucket credentials and locations. See [Publishing](guide:publishing). |
 
-## Scratch Files
+## Scratch files
 
 The scratch folder holds throwaway output that does not belong in the project's results. Every project type's `.gitignore` excludes `scratch/` folders. The folder is `directories.scratch`, which is `scratch/` in standard and privacy-sensitive projects.
 
@@ -124,7 +132,7 @@ The arguments choose the output.
 fw.scratch_clean()
 ```
 
-## Capturing Printed Output
+## Capturing printed output
 
 [capture_output()](ref:capture_output) is a context manager that captures everything printed to standard output and standard error inside its block.
 

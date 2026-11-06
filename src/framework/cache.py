@@ -321,13 +321,30 @@ def cache_forget(name: str, file: str | Path | None = None) -> None:
 
 
 def cache_flush() -> None:
-    """Remove every cached value (from R and Python) and every cache record."""
+    """Remove every cached value (from R and Python) and every cache record.
+
+    Values stored with ``file=`` outside the cache folder are removed too, as in R, when
+    the file has a cache extension (.parquet, .pickle, or .rds).
+    """
+    suffixes = (*_FORMATS, _R_FORMAT)
     folder = cache_dir()
     if folder.is_dir():
         for path in folder.iterdir():
-            if path.is_file() and path.suffix in (*_FORMATS, _R_FORMAT):
+            if path.is_file() and path.suffix in suffixes:
                 path.unlink()
     with db.connect() as connection:
+        custom = [
+            row["file_path"]
+            for row in connection.execute(
+                "SELECT file_path FROM cache WHERE file_path IS NOT NULL AND file_path != ''"
+            )
+        ]
+        if custom:
+            root = project_root()
+            for stored in custom:
+                path = in_root(str(stored), root)
+                if path.suffix.lower() in suffixes and path.is_file():
+                    path.unlink()
         connection.execute("DELETE FROM cache")
 
 

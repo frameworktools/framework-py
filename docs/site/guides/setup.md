@@ -10,7 +10,7 @@ position: 2
 
 Framework keeps your personal defaults in a global config folder. New projects start from these defaults, and each project can override them in its own settings. framework-py has no graphical setup screen. You set defaults with [configure_global()](ref:configure_global) or by editing the files in the config folder.
 
-## The Config Folder
+## The config folder
 
 [config_dir()](ref:config_dir) returns the folder. It is chosen in this order.
 
@@ -18,7 +18,7 @@ Framework keeps your personal defaults in a global config folder. New projects s
 2. `$XDG_CONFIG_HOME/framework`, when `XDG_CONFIG_HOME` is set.
 3. `~/.config/framework`, on every platform, including Windows.
 
-Python and the `fw` command-line tool share this folder. The R package keeps a separate folder, as the [Copying Settings from R](#copying-settings-from-r) section explains. The folder is created the first time Framework writes to it.
+Python and the `fw` command-line tool share this folder. The R package keeps a separate folder, as the [Copying settings from R](#copying-settings-from-r) section explains. The folder is created the first time Framework writes to it.
 
 ```python
 import framework as fw
@@ -40,7 +40,7 @@ The folder can hold these files.
 
 The cloud files appear only after you use Framework Cloud. The [Framework Cloud](guide:cloud) guide describes them.
 
-## Global Settings
+## Global settings
 
 [configure_global()](ref:configure_global) merges new values into `settings.yml` and returns the result. Called without arguments, it returns the current settings and changes nothing.
 
@@ -60,9 +60,9 @@ Nested mappings merge by key. Each project type's `directories` are replaced who
 
 [global_settings()](ref:global_settings) reads the file without changing it.
 
-### Settings That New Projects Use
+### Settings for new projects
 
-[new()](ref:new) reads these keys from the global settings.
+[new_project()](ref:new_project) reads these keys from the global settings.
 
 | Key | Effect on new projects |
 |-----|------------------------|
@@ -72,7 +72,7 @@ Nested mappings merge by key. Each project type's `directories` are replaced who
 | `defaults.git` | `initialize` decides whether the project becomes a git repository. `hooks` turns on pre-commit checks. |
 | `project_types.<type>.directories` | Folder names for one project type, such as `notebooks: analysis`. |
 
-The assistants you list replace the default selection, which is Claude Code alone. Include `claude` in the list to keep it. Set `enabled: false` to create projects without AI assistant files. The [AI Assistants](guide:ai-assistants) guide describes the files each assistant gets.
+The assistants you list replace the default selection, which is Claude Code alone. Include `claude` in the list to keep it. Set `enabled: false` to create projects without AI assistant files. The [AI assistants](guide:ai-assistants) guide describes the files each assistant gets.
 
 The example below sets a seed, turns on the sensitive-folder hook check, and renames the notebooks folder of standard projects.
 
@@ -110,18 +110,18 @@ project_types:
       notebooks: analysis
 ```
 
-### Package Defaults
+### Package defaults
 
 Values you do not set come from the package defaults that ship with framework-py. [load_settings_catalog()](ref:load_settings_catalog) returns them, together with the `.gitignore` text of each project type.
 
-A `settings-catalog.yml` file in the config folder overrides the package defaults. [new()](ref:new) reads the same keys from it as from the global settings, and the global settings win where both set a value. `load_settings_catalog()` merges the file over the package defaults it returns. The R package's `new()` reads its own `settings-catalog.yml` in the same way.
+A `settings-catalog.yml` file in the config folder overrides the package defaults. [new_project()](ref:new_project) reads the same keys from it as from the global settings, and the global settings win where both set a value. `load_settings_catalog()` merges the file over the package defaults it returns. The R package's `new()` reads its own `settings-catalog.yml` in the same way.
 
 ```python
 catalog = fw.load_settings_catalog()
 catalog["defaults"]["scaffold"]
 ```
 
-## The Project Registry
+## The project registry
 
 Framework records each project it creates in the `projects` list of the global `settings.yml`. Projects created inside the system's temporary folder are not recorded.
 
@@ -134,7 +134,7 @@ fw.project_list()
 fw.project_unregister(3)
 ```
 
-## Copying Settings from R
+## Copying settings from R
 
 The R package keeps its global settings in `tools::R_user_dir("framework", "config")`, because CRAN does not allow a package to write elsewhere. Python never writes to that folder. People who use both languages copy R's settings into Python's folder with [config_sync()](ref:config_sync).
 
@@ -147,7 +147,7 @@ print(result)
 
 The `from_dir` argument names a different source folder. When `FW_CONFIG_HOME` is set, R and Python use the same folder and nothing needs to be copied.
 
-## Personal Templates
+## Personal templates
 
 [make_notebook()](ref:make_notebook), [make_script()](ref:make_script), and [make_presentation()](ref:make_presentation) start from templates. You can keep your own version of three of them in the `templates/` subfolder of the config folder.
 
@@ -173,4 +173,4 @@ fw.write_framework_template(
 fw.reset_framework_template("script")
 ```
 
-A template file in a project's `stubs/` folder takes precedence over your personal template. The [Notebooks and Scripts](guide:notebooks) guide describes stubs and the placeholders templates can use.
+A template file in a project's `stubs/` folder takes precedence over your personal template. The [Notebooks and scripts](guide:notebooks) guide describes stubs and the placeholders templates can use.

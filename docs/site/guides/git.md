@@ -10,15 +10,15 @@ position: 12
 
 Framework sets up git for new projects and guards against committing restricted data and secrets. It writes a `.gitignore` for the project type, installs a pre-commit hook when you enable its checks, and audits a repository on request. For everyday version control, use git itself or your editor. framework-py does not wrap git commands such as `status`, `add`, `commit`, or `push`.
 
-## New Repositories
+## New repositories
 
-[new()](ref:new) initializes a git repository when git is installed and `defaults.git.initialize` in your global settings is not `false`. It then takes these steps.
+[new_project()](ref:new_project) initializes a git repository when git is installed and `defaults.git.initialize` in your global settings is not `false`. It then takes these steps.
 
 1. It installs the pre-commit hook when a hook check is enabled.
 2. It makes sure `.gitignore` ignores `.env`. If git would still track `.env`, creation stops with an error before anything is committed.
 3. It stages every file and makes the first commit, `Initial commit from Framework`. When git's `user.name` or `user.email` is not set, it skips the commit and prints a note.
 
-## .gitignore Templates
+## .gitignore templates
 
 Each project type gets its own `.gitignore`. All of them ignore the same core set of files.
 
@@ -34,7 +34,7 @@ The privacy-sensitive template adds explicit rules for `/inputs/private/`, `/out
 
 The `.gitignore` belongs to the project after creation. Edit it as the project needs. [bootstrap()](ref:bootstrap) adds a `.env` rule back when the file no longer ignores `.env`.
 
-## The Pre-commit Hook
+## The pre-commit hook
 
 R, Python, and the `fw` tool install the same pre-commit hook. It is a short POSIX shell script that finds a runtime and runs the checks in that language's package. For a Python project, which it recognizes by `pyproject.toml`, `uv.lock`, or `.venv`, it runs `python -m framework hook pre-commit` with the first Python it finds in this order.
 
@@ -44,7 +44,7 @@ R, Python, and the `fw` tool install the same pre-commit hook. It is a short POS
 
 The chosen Python must be able to import framework-py, so run `uv sync` after cloning. When no runtime is found, the commit fails, because the hook guards against committing restricted data. `git commit --no-verify` skips the hook for a commit you know is safe.
 
-### Hook Checks
+### Hook checks
 
 The checks are turned on in the `git` section of the settings, which standard and privacy-sensitive projects keep in `settings/git.yml`.
 
@@ -64,7 +64,7 @@ git:
 
 All three checks are off by default. The older name `warn_unignored_sensitive` is accepted for `check_sensitive_dirs`. The R package's `ai_sync` check was removed, because projects keep AI instructions in `AGENTS.md` and skills, and an `ai_sync` setting is ignored.
 
-### Managing the Hook
+### Managing the hook
 
 These functions read and write the `hooks` settings and install or remove the hook.
 
@@ -86,7 +86,7 @@ A pre-commit hook that Framework did not write is kept. `git_hooks_install(force
 
 [bootstrap()](ref:bootstrap) installs the hook in a cloned project when a check is enabled, because git does not carry hooks with a clone.
 
-## The Security Audit
+## The security audit
 
 [git_security_audit()](ref:git_security_audit) checks that private data and secrets stay out of the repository. It runs five checks.
 
@@ -115,7 +115,7 @@ The arguments adjust the audit.
 - `extensions` lists the file extensions that count as data.
 - `verbose=False` skips the printed report.
 
-### Which Folders Are Private
+### Private folders
 
 The audit treats a folder in `directories` as private when its key contains `private`, when its path has a segment whose name contains `private`, `confidential`, or `sensitive`, or when its key is `cache`, `scratch`, or `logs`. Folder keys that contain `_public` are exempt. These are the folders every project type's `.gitignore` ignores, so new standard and privacy-sensitive projects pass the audit.
 

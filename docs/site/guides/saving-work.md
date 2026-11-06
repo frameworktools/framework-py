@@ -1,7 +1,7 @@
 ---
 id: saving-work
-title: Saving Work
-description: Saving tables, figures, models, and reports to the output folders, with public and private outputs
+title: Saving work
+description: Tables, figures, models, reports, and notebooks in the output folders, with public and private outputs
 section: features
 position: 7
 ---
@@ -39,7 +39,7 @@ The formats are `csv` (the default), `parquet`, and `xlsx`, which needs the `exc
 
 ## Figures
 
-[save_figure()](ref:save_figure) saves any object with a `savefig()` method, such as a matplotlib or seaborn figure, and any object with a `save()` method, such as a plotnine plot. Passing `None` saves the current matplotlib figure. framework-py does not depend on a plotting library.
+[save_figure()](ref:save_figure) saves any object with a `savefig()` method, such as a matplotlib or seaborn figure, a matplotlib Axes, which axes-level seaborn plots return, and any object with a `save()` method, such as a plotnine plot. Passing `None` saves the current matplotlib figure. framework-py does not depend on any plotting package.
 
 ```python
 import matplotlib.pyplot as plt
@@ -90,7 +90,7 @@ fw.save_notebook("notebooks/exploration.qmd", name="final_analysis", format="doc
 
 Rendering needs the `quarto` command and, for Python chunks, Jupyter in the environment. The [Quarto](guide:quarto) guide covers rendering.
 
-## Public and Private Outputs
+## Public and private outputs
 
 Privacy-sensitive projects keep separate public and private folders for each kind of output. The `public` argument chooses between them. Outputs are private by default.
 
@@ -106,7 +106,7 @@ Private folders are ignored by git and refused by the publishing functions. Save
 
 In other project types, every output of a kind goes to the one folder for that kind. The `public` flag is still recorded in `framework.db`, so [result_list()](ref:result_list) can filter on it.
 
-## Output Folders
+## Output folders
 
 The folders come from the `directories` section of the settings. These are the defaults of a standard project.
 
@@ -139,13 +139,13 @@ outputs/
 
 A folder that does not exist yet is created the first time something is saved there. Change a folder by editing its key in `directories`.
 
-## The Results Registry
+## The results registry
 
 Each save adds or updates a row in the `results` table with these fields.
 
 | Field | Contents |
 |-------|----------|
-| `name` | The saved file's name, such as `site_summary.csv` |
+| `name` | The saved file's path from the project root, such as `outputs/tables/site_summary.csv` |
 | `type` | `table`, `figure`, `model`, `report`, or `notebook` |
 | `public` | Whether the output was saved as public |
 | `hash` | The file's SHA-256 hash |
@@ -160,4 +160,4 @@ fw.result_list(type="figure")
 fw.result_list(type="table", public=True)
 ```
 
-Rows are keyed by file name. Saving `summary.csv` to the public folder and later to the private folder updates one row.
+Rows are keyed by the path from the project root. A public and a private `summary.csv` get separate rows.

@@ -170,6 +170,9 @@ def _installed_spec(root: Path) -> dict[str, Any]:
     }
 
 
+_SETTINGS_FILES = ("settings.yml", "config.yml")
+
+
 def ai_skills_update(project_path: str | Path = ".") -> list[str]:
     """Refresh clean Framework skills. Preserve local edits and account forks.
 
@@ -182,12 +185,22 @@ def ai_skills_update(project_path: str | Path = ".") -> list[str]:
         project_path: The project's root directory. Default: the current directory.
 
     Returns:
-        The skill folders written.
+        The skill folders whose files changed. Skills that were already current are left
+        out.
+
+    Raises:
+        ProjectNotFoundError: When the folder has no ``.framework/spec.json`` or settings file.
     """
     from framework._log import inform, show_messages
 
     show_messages()
     root = Path(project_path).expanduser()
+    if not any((root / name).is_file() for name in (".framework/spec.json", *_SETTINGS_FILES)):
+        from framework.errors import ProjectNotFoundError
+
+        raise ProjectNotFoundError(
+            f"{root} is not a Framework project: it has no .framework/spec.json or settings file."
+        )
     spec = _installed_spec(root)
     folders, _ = assistant_targets(spec)
     updated = []
@@ -197,9 +210,14 @@ def ai_skills_update(project_path: str | Path = ".") -> list[str]:
         if not _shipped(name).is_dir():
             continue
         for folder in folders:
-            from framework.skill_sync import install_package
+            from framework.skill_sync import bundle_hash, install_package, scan
 
-            if install_package(_shipped(name), root, f"{folder}/{name}", name):
+            target = root / folder / name
+            # Only a skill whose files changed counts as updated
+            before = bundle_hash(scan(target)) if target.is_dir() else None
+            if install_package(_shipped(name), root, f"{folder}/{name}", name) and (
+                (bundle_hash(scan(target)) if target.is_dir() else None) != before
+            ):
                 updated.append(f"{folder}/{name}")
     if updated:
         inform(f"✓ Updated {len(updated)} Framework skill(s)")

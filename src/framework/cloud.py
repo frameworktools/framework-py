@@ -20,6 +20,7 @@ Plain ``http`` is accepted only for localhost.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import mimetypes
@@ -30,7 +31,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import warnings
+import webbrowser
 import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -41,8 +44,9 @@ from typing import Any
 import httpx
 import pandas as pd
 
-from framework import _secretservice, _wincred, _yaml, db, dotenv
+from framework import _keychain, _secretservice, _wincred, _yaml, db, dotenv
 from framework._log import inform, show_messages
+from framework._paths import rendered_page
 from framework._private import confirm_private_upload
 from framework.config_home import config_dir, ensure_config_dir, r_config_dir
 from framework.errors import FrameworkError, FrameworkWarning
@@ -187,10 +191,13 @@ def _write_token_file(path: Path, token: str) -> None:
 
 
 # Windows and Linux entries are read and written in R's format, so R, fw,
-# and Python share one entry per server. macOS Keychain entries already match.
+# and Python share one entry per server. On macOS, /usr/bin/security reads and
+# writes them, as fw does, so the Keychain never asks for access.
 
 
 def _keyring_get(service: str) -> str | None:
+    if sys.platform == "darwin":
+        return _keychain.get(service, "token")
     if sys.platform == "win32":
         return _wincred.get(service, "token")
     if sys.platform == "linux":
@@ -208,6 +215,8 @@ def _keyring_get(service: str) -> str | None:
 
 
 def _keyring_set(service: str, token: str) -> bool:
+    if sys.platform == "darwin":
+        return _keychain.set(service, "token", token)
     try:
         if sys.platform == "win32":
             _wincred.set(service, "token", token)
@@ -223,6 +232,8 @@ def _keyring_set(service: str, token: str) -> bool:
 
 
 def _keyring_delete(service: str) -> bool:
+    if sys.platform == "darwin":
+        return _keychain.delete(service, "token")
     try:
         if sys.platform == "win32":
             return _wincred.delete(service, "token")
@@ -405,30 +416,114 @@ def consent_notice(url: str) -> str:
     )
 
 
+# Tests replace the pause between approval checks.
+_sleep = time.sleep
+
+
+def _device_login(server: str, browser: bool) -> str:
+    """Approve this machine in the browser and return the new token.
+
+    The same flow as ``fw login`` and Stata's ``fw_login``: the server issues a
+    short code, you approve it on the server's page, and the token comes back
+    here. Nothing is typed or pasted.
+    """
+    name = host(server)
+    try:
+        with _client() as client:
+            response = client.post(
+                f"{server}/api/v1/cli/device", json={"client_name": f"Python on {platform.node()}"}
+            )
+    except httpx.HTTPError as error:
+        raise CloudOfflineError(f"Could not reach {name}: {error}") from error
+    if response.status_code in (404, 405):
+        raise CloudError(
+            f"{name} does not offer browser login. Create a token at {server}/tokens, "
+            "then call cloud_login(token)."
+        )
+    if response.is_error:
+        raise _error(response, "Browser login")
+    start = response.json()
+    code = start["device_code"]
+    page = start.get("verification_url_complete") or start["verification_url"]
+    interval = int(start.get("interval") or 5)
+    expires = int(start.get("expires_in") or 600)
+    print(
+        f"Approve this computer in your browser.\n  Code: {start.get('user_code', '')}\n"
+        f"  Page: {page}\nWaiting for approval. Press Ctrl+C to stop.",
+        file=sys.stderr,
+    )
+    if browser:
+        # A missing browser only means opening the link by hand.
+        with contextlib.suppress(Exception):
+            webbrowser.open(page)
+    waited = 0
+    while waited < expires:
+        _sleep(interval)
+        waited += interval
+        try:
+            with _client() as client:
+                response = client.post(
+                    f"{server}/api/v1/cli/device/token", json={"device_code": code}
+                )
+        except httpx.HTTPError as error:
+            raise CloudOfflineError(f"Could not reach {name}: {error}") from error
+        if response.status_code == 428:
+            continue
+        if response.status_code == 429:
+            interval += 5
+            continue
+        if response.status_code == 403:
+            raise CloudError("The login request was denied in the browser.")
+        if response.status_code == 410:
+            break
+        if response.is_error:
+            raise _error(response, "Browser login")
+        token = response.json().get("token")
+        if not isinstance(token, str) or not token:
+            raise CloudError(f"{name} approved the login but returned no token.")
+        return token
+    raise CloudError("The login code expired. Run cloud_login() again.")
+
+
 def cloud_login(
-    token: str, url: str | None = None, verify: bool = True, consent: bool | None = None
+    token: str | None = None,
+    url: str | None = None,
+    verify: bool = True,
+    consent: bool | None = None,
+    browser: bool = True,
 ) -> str:
     """Connect this machine to a Framework Cloud server.
 
-    The token is stored per server in the system keyring (the same entry R and
-    ``fw`` use), or in a file readable only by you when no keyring is
-    available. The server becomes your default.
+    Without a token, ``cloud_login()`` opens the server's approval page in your
+    browser. Sign in, or create a free account, and approve this computer; the
+    token comes back here. With a token from the server's token page,
+    ``cloud_login(token)`` stores that token instead.
+
+    The token is stored per server in the system keyring (the same entry R,
+    Stata, and ``fw`` use), or in a file readable only by you when no keyring
+    is available. The server becomes your default.
 
     Args:
-        token: A personal token from the server's token page.
+        token: A personal token. Omit it to approve this computer in the browser.
         url: The server. Default: ``FW_CLOUD_URL``, then your saved default,
             then https://framework.pub.
         verify: Check the token with the server first.
-        consent: ``True`` to confirm without a prompt (scripts, CI).
+        consent: ``True`` to confirm a pasted token without a prompt (scripts,
+            CI). Approving in the browser is the confirmation for browser login.
+        browser: Open the approval page. ``False`` prints the link only.
 
     Returns:
         Where the token was stored: ``"keyring"`` or a file path.
     """
     show_messages()
-    if len(token) < 10:
-        raise CloudError("That does not look like a Framework Cloud token.")
     server = cloud_server(url).url
     name = host(server)
+    if token is None:
+        print(consent_notice(server), file=sys.stderr)
+        token = _device_login(server, browser)
+        consent = True
+    if len(token) < 10:
+        raise CloudError("That does not look like a Framework Cloud token.")
     if consent is not True:
         print(consent_notice(server), file=sys.stderr)
         if not sys.stdin.isatty():
@@ -469,11 +564,32 @@ def cloud_login(
     return stored
 
 
-def cloud_logout(url: str | None = None) -> list[str]:
-    """Remove this machine's stored token for a server. Returns what was removed.
+def _revoke(server: str, token: str) -> None:
+    """Revoke a token on the server. A token the server already rejects is fine."""
+    try:
+        with _client() as client:
+            response = client.delete(
+                f"{server}/api/v1/token", headers={"Authorization": f"Bearer {token}"}
+            )
+        if response.status_code == 401 or not response.is_error:
+            return
+    except httpx.HTTPError:
+        pass
+    inform(
+        f"The token could not be revoked on {host(server)}. "
+        f"Revoke it on the tokens page: {server}/tokens"
+    )
 
-    Both the keyring entry and the token file are removed. For the default server, the legacy
-    keyring entry and ``~/.secrets/framework/token`` are removed too.
+
+def cloud_logout(url: str | None = None) -> list[str]:
+    """Revoke and remove this machine's stored token for a server. Returns what was removed.
+
+    Each stored token is revoked on the server first. If the server can't be reached, the
+    local copy is still removed, and you can revoke the token on the server's tokens page.
+    The keyring entry, the token file, and the file ``FW_TOKEN_FILE`` names are removed. For
+    the default server, the legacy keyring entry and ``~/.secrets/framework/token`` are removed
+    too. A token in ``FW_CLOUD_TOKEN`` is neither revoked nor removed, and stays in effect
+    until you unset it.
 
     Args:
         url: The server. Default: ``FW_CLOUD_URL``, then your saved default, then
@@ -487,12 +603,20 @@ def cloud_logout(url: str | None = None) -> list[str]:
     server = cloud_server(url).url
     removed = []
     services = [keyring_service(server)] + ([LEGACY_SERVICE] if is_default(server) else [])
-    for service in services:
-        if _keyring_delete(service):
-            removed.append(f"keyring ({service})")
     paths = [config_dir() / token_file_name(server)]
     if is_default(server):
         paths.append(_legacy_token_file())
+    if os.environ.get("FW_TOKEN_FILE"):
+        # cloud_login() writes here when it is set, and cloud_token() reads it first
+        paths.insert(0, Path(os.environ["FW_TOKEN_FILE"]).expanduser())
+    # Only tokens this call removes are revoked, never one in FW_CLOUD_TOKEN
+    stored = [_keyring_get(service) for service in services]
+    stored += [_read_token_file(path) for path in paths]
+    for token in dict.fromkeys(t for t in stored if t):
+        _revoke(server, token)
+    for service in services:
+        if _keyring_delete(service):
+            removed.append(f"keyring ({service})")
     for path in paths:
         if path.exists():
             path.unlink()
@@ -501,6 +625,8 @@ def cloud_logout(url: str | None = None) -> list[str]:
         inform(f"[ok] Removed: {', '.join(removed)}")
     else:
         inform(f"No stored token found for {host(server)}.")
+    if os.environ.get("FW_CLOUD_TOKEN"):
+        inform("FW_CLOUD_TOKEN is still set, so this machine stays connected until you unset it.")
     return removed
 
 
@@ -603,8 +729,8 @@ def cloud_sync(direction: str = "auto") -> int:
         elif local_changed and remote_ahead:
             raise CloudError(
                 "Both your local mirror and the cloud changed since the last sync.\n"
-                '  cloud_sync("pull") to take the cloud version (your file is backed up), or\n'
-                '  cloud_sync("push") to overwrite the cloud with your local mirror.'
+                '  cloud_sync("pull") takes the cloud version and backs up your file.\n'
+                '  Then copy your edits from the backup and run cloud_sync("push").'
             )
         elif local_changed:
             direction = "push"
@@ -657,7 +783,9 @@ def cloud_sync(direction: str = "auto") -> int:
 
 
 def _ledger_live() -> bool:
-    mode = os.environ.get("FW_LEDGER", "")
+    from framework.settings import project_dotenv
+
+    mode = os.environ.get("FW_LEDGER", "") or project_dotenv().get("FW_LEDGER", "")
     if not mode:
         try:
             from framework.settings import settings_read
@@ -686,7 +814,8 @@ def ledger_push_quietly(name: str, digest: str, file_path: Path | None = None) -
         "algo": "sha256",
         "hash": digest,
         "size_bytes": file_path.stat().st_size if file_path and file_path.is_file() else None,
-        "recorded_at": datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
+        # UTC with a Z, as ledger_push() sends: the server stores the clock time as UTC
+        "recorded_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "client": {"device": platform.node(), "package_version": _version()},
     }
     try:
@@ -804,17 +933,25 @@ def data_verify(name: str) -> bool:
     inform(f"Verifying {name} ({info.path})")
     inform(f"  file sha256: {digest[:16]}...")
 
-    record = db.get_data_record(name)
+    # A file path finds the record saved under its catalog name, by its stored path
+    from framework._paths import relative_to_root
+    from framework.project import project_root
+
+    stored = relative_to_root(info.path, project_root())
+    record = db.get_data_record(name, path=stored)
     if record is not None and record.hash:
         if record.hash == digest:
             inform("  [ok] matches local framework.db record")
         else:
             inform(f"  [MISMATCH] local framework.db has {record.hash[:16]}...")
             ok = False
+    else:
+        inform("  (no framework.db record for this file yet)")
+    ledger_name = record.name if record is not None else name
 
     if project_token() is not None:
         try:
-            entries = _ledger_entries(name)
+            entries = _ledger_entries(ledger_name)
         except CloudError as error:
             inform(f"  (cloud ledger unreachable: {error})")
             entries = None
@@ -897,9 +1034,12 @@ def cloud_publish(
 
     Accepts a self-contained ``.html``, an ``.html`` with a sibling
     ``<name>_files/`` folder, a render output folder, or a ``.qmd`` or ``.ipynb``. Each
-    publish adds a version. ``slug`` names the document and turns on its
-    readable URL (``True`` uses the derived name, ``False`` turns it off). A source with
-    "private" in its path needs confirmation, or ``include_private=True``.
+    publish adds a version. A string ``slug`` names the document and leaves its
+    visibility alone: a new artifact is unlisted, and an existing one keeps its setting.
+    ``True`` turns the readable URL on with the derived name, and ``False`` turns it off.
+    Pass ``visibility="public"`` to make an artifact public. An explicit ``visibility``
+    always wins over ``True`` and ``False``. A source with "private" in its path needs
+    confirmation, or ``include_private=True``.
     """
     sources = [source]
     if source.is_dir():
@@ -910,12 +1050,10 @@ def cloud_publish(
     confirm_private_upload(sources, include_private)
     token = _require_project_token()
     url = cloud_server(scope="project").url
-    readable = None if slug is None else slug is not False
-    public = (
-        readable
-        if readable is not None
-        else (visibility == "public" if visibility is not None else None)
-    )
+    # An explicit visibility wins. ``readable`` is the older switch between public
+    # and unlisted, sent only for slug=True or False. A string slug never sets it.
+    readable = slug if isinstance(slug, bool) and visibility is None else None
+    public = visibility == "public" if visibility is not None else readable
     selected = (
         None
         if collection is None
@@ -954,13 +1092,14 @@ def cloud_publish(
                 command.append("--embed-resources")
             if subprocess.run(command, capture_output=True, check=False).returncode != 0:
                 raise CloudError("Quarto render failed.")
-            pages = sorted(p.name for p in out.glob("*.html"))
-            if not pages:
+            # A project's _quarto.yml keeps the notebook's folder under the output folder
+            page = rendered_page(out, source.stem)
+            if page is None:
                 raise CloudError("Quarto render produced no HTML output.")
             if self_contained:
-                html = out / pages[0]
+                html = page
             else:
-                bundle, entrypoint = out, pages[0]
+                bundle, entrypoint = page.parent, page.name
         elif suffix in (".html", ".htm"):
             assets = source.with_name(f"{source.stem}_files")
             if assets.is_dir():
@@ -974,7 +1113,6 @@ def cloud_publish(
         else:
             html = source
 
-        readable = None if slug is None else slug is not False
         name = slug if isinstance(slug, str) else (dest or source.stem)
         data: dict[str, str] = {"slug": re.sub(r"\.html?$", "", name)}
         if readable is not None:
@@ -1021,8 +1159,16 @@ def cloud_publish(
         inform(f"Published version {result['version']}: {result.get('url')}")
     else:
         inform(f"Published: {result.get('url')}")
-    if result.get("notice"):
-        inform(str(result["notice"]))
+    # The server's notice assumes an unlisted link. Say it plainly for a public
+    # artifact whose owner has no handle yet.
+    notice = str(result.get("notice") or "")
+    public = result.get("visibility") == "public" or (
+        result.get("visibility") is None and "handle" in notice
+    )
+    if public and not result.get("readable_url"):
+        inform("Public. Set a handle in Account > Account details to get a readable URL.")
+    elif notice and "handle" not in notice:
+        inform(notice)
     if selected is not None:
         try:
             if not result.get("id"):

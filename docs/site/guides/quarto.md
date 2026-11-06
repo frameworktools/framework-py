@@ -1,7 +1,7 @@
 ---
 id: quarto
 title: Quarto
-description: How Framework configures Quarto for notebooks, documents, and presentations
+description: Quarto configuration for notebooks, documents, and presentations
 section: features
 position: 6
 ---
@@ -10,9 +10,9 @@ position: 6
 
 Framework uses [Quarto](https://quarto.org) to render notebooks, documents, and presentations. When it creates a project, it writes `_quarto.yml` files that set rendering defaults and send rendered output to a separate folder. Python chunks in `.qmd` files run through Jupyter.
 
-Quarto is a tool that a project can turn off. It is on for every project type except `bare`, and `tools={"quarto": False}` in [new()](ref:new) creates a project without the `_quarto.yml` files. Such a project records `quarto: false` under `tools` in `settings.yml`. Its notebooks are Jupyter notebooks, so [make_notebook()](ref:make_notebook) creates `.ipynb` files, and [quarto_regenerate()](ref:quarto_regenerate) refuses to run there. The [New Project](guide:new-project#tools-and-sets) guide covers tools.
+Quarto is an optional tool. It is on for every project type except `bare`, and `tools={"quarto": False}` in [new_project()](ref:new_project) creates a project without the `_quarto.yml` files. Such a project records `quarto: false` under `tools` in `settings.yml`. Its notebooks are Jupyter notebooks, so [make_notebook()](ref:make_notebook) creates `.ipynb` files, and [quarto_regenerate()](ref:quarto_regenerate) refuses to run there. The [New projects](guide:new-project#tools-and-sets) guide covers tools.
 
-## Render Folders
+## Render folders
 
 Framework keeps source files and rendered output apart. A `.qmd` file stays in its source folder, and the rendered HTML goes to a render folder. Rendered files can then be ignored, regenerated, or published without mixing them with the sources.
 
@@ -32,7 +32,7 @@ The `render_dirs` section of the settings maps each source folder to its render 
 
 Folders whose key contains `slide` render as reveal.js presentations, and the others render as HTML. In privacy-sensitive projects, rendered notebooks land in a private folder, because they can contain restricted data.
 
-## Generated Files
+## Generated files
 
 A project gets one `_quarto.yml`, at its root. Its `output-dir` is the folder the render folders share, such as `outputs` in a standard project. Quarto keeps each file's folder under it, so `notebooks/exploration.qmd` renders to `outputs/notebooks/exploration.html`.
 
@@ -68,9 +68,9 @@ format:
 
 A folder whose format differs from the root's gets a `_metadata.yml` with only its format, and it inherits everything else from the root. A course's `slides/` gets one that renders its files as reveal.js. A render folder outside the shared output folder keeps its own `_quarto.yml` with a relative `output-dir`. A presentation renders in place, so its root file has no `output-dir`.
 
-Framework writes these files once. Edit them freely, because Framework does not change them afterward unless you call [quarto_regenerate()](ref:quarto_regenerate).
+Framework writes these files once. You can edit them. Framework does not change them afterward unless you call [quarto_regenerate()](ref:quarto_regenerate).
 
-## Rendering Defaults
+## Rendering defaults
 
 The values in the generated files come from the `quarto` section of the settings. Keys use underscores in the settings and hyphens in `_quarto.yml`.
 
@@ -98,7 +98,7 @@ quarto:
 
 Changing this section does not change existing `_quarto.yml` files. Regenerate them to apply new values.
 
-## Regenerating
+## Regeneration
 
 [quarto_regenerate()](ref:quarto_regenerate) rewrites the Quarto files from the project's settings. It removes the `_quarto.yml` and `_metadata.yml` files in the render folders, which also updates projects created with one `_quarto.yml` per folder. It overwrites manual edits, so it first copies the existing files into `.quarto_backups/<timestamp>/`.
 
@@ -112,9 +112,9 @@ result.backup_location
 
 Pass `backup=False` to skip the copy. [quarto_generate_all()](ref:quarto_generate_all) writes the files from explicit arguments and is what project creation uses.
 
-## Creating Quarto Files
+## Creating Quarto files
 
-[make_notebook()](ref:make_notebook) and [make_qmd()](ref:make_qmd) create notebooks, and [make_presentation()](ref:make_presentation) creates reveal.js slides. The [Notebooks and Scripts](guide:notebooks) guide describes them.
+[make_notebook()](ref:make_notebook) and [make_qmd()](ref:make_qmd) create notebooks, and [make_presentation()](ref:make_presentation) creates reveal.js slides. The [Notebooks and scripts](guide:notebooks) guide describes them.
 
 ## Rendering
 
@@ -137,7 +137,7 @@ fw.save_notebook("notebooks/exploration.qmd")
 fw.save_notebook("notebooks/exploration.qmd", name="exploration-2026-10", format="pdf")
 ```
 
-The formats are `html`, `pdf`, and `docx`. HTML is rendered as one self-contained file unless you pass `embed_resources=False`. `quarto_args` passes extra arguments to `quarto render`. `save_notebook()` also renders Jupyter notebooks (`.ipynb`).
+The formats are `html`, `pdf`, and `docx`. HTML is rendered as one self-contained file unless you pass `embed_resources=False`. That overrides the project's `_quarto.yml` and saves the page's `_files/` folder beside it. `quarto_args` passes extra arguments to `quarto render`. `save_notebook()` also renders Jupyter notebooks (`.ipynb`).
 
 ## Publishing
 

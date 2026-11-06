@@ -238,3 +238,49 @@ def test_listing(db_project: Path) -> None:
 def test_r_project_connections_work(r_project: Path) -> None:
     """R writes connections.yml in the shared shape, and Python can use it."""
     assert fw.db_query("SELECT 1 AS one", "framework")["one"].tolist() == [1]
+
+
+# Audit 2026-11-05: DuckDB autocommitted, so rollback failed and the row stayed; SQLite
+# kept a CREATE TABLE from a failed block.
+@pytest.mark.parametrize("name", ["local", "duck"])
+def test_failed_transactions_roll_back_rows_and_tables(db_project: Path, name: str) -> None:
+    fw.db_execute("CREATE TABLE runs (id INTEGER)", name)
+    fw.db_execute("INSERT INTO runs VALUES (1)", name)
+    with fw.db_connect(name) as conn:
+        with pytest.raises(fw.FrameworkError, match="rolled back"), fw.db_transaction(conn):
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO runs VALUES (2)")
+            cursor.execute("CREATE TABLE extra (id INTEGER)")
+            raise ValueError("boom")
+        with fw.db_transaction(conn):
+            conn.cursor().execute("INSERT INTO runs VALUES (3)")
+    assert fw.db_query("SELECT id FROM runs ORDER BY id", name)["id"].tolist() == [1, 3]
+    with pytest.raises(fw.FrameworkError):
+        fw.db_query("SELECT * FROM extra", name)
+
+
+@pytest.mark.parametrize("host", ["db_server", "::1", "[::1]", "10.0.0.5", "db.example.org"])
+def test_host_names_docker_services_and_ipv6(host: str) -> None:
+    # Audit 2026-11-05: IPv6 literals and Docker service names were rejected
+    from framework.connections import _host
+
+    assert _host(host) == host.strip("[]")
+
+
+@pytest.mark.parametrize("host", ["bad host", "h;DROP", "a/b"])
+def test_host_refuses_unsafe_values(host: str) -> None:
+    from framework.connections import _host
+
+    with pytest.raises(fw.FrameworkError, match="Invalid host name"):
+        _host(host)
+
+
+def test_missing_driver_hint_works_in_zsh(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from framework import connections
+
+    def missing(name: str) -> None:
+        raise ImportError(name)
+
+    monkeypatch.setattr(connections, "import_module", missing)
+    with pytest.raises(fw.FrameworkError, match=r'pip install "framework-py\[postgres\]"'):
+        connections._require("psycopg", "postgres", "PostgreSQL")

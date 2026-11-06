@@ -10,7 +10,7 @@ position: 2
 
 Every Framework project has a SQLite database named `framework.db` in its root folder. Framework uses it to record what it knows about the project: the hash of each data file, the cached values and their expiry, and the outputs you have saved.
 
-You rarely work with the database directly. [data_read()](ref:data_read), [cache_remember()](ref:cache_remember), [save_table()](ref:save_table), and the other functions update it as they run. [scaffold()](ref:scaffold), [new()](ref:new), and [bootstrap()](ref:bootstrap) create it when it is missing.
+You rarely work with the database directly. [data_read()](ref:data_read), [cache_remember()](ref:cache_remember), [save_table()](ref:save_table), and the other functions update it as they run. [scaffold()](ref:scaffold), [new_project()](ref:new_project), and [bootstrap()](ref:bootstrap) create it when it is missing.
 
 The schema comes from the R package, so R and Python read and write the same tables. A file one language saved verifies in the other.
 
@@ -26,7 +26,7 @@ The schema comes from the R package, so R and Python read and write the same tab
 
 Paths are stored relative to the project root, so a project still works after it is moved or cloned.
 
-## Data Integrity
+## Data integrity
 
 The `data` table holds the hash Framework compares each data file against. The first [data_read()](ref:data_read) of a catalog name records the file's SHA-256 hash. Later reads compare the file with that record.
 
@@ -37,13 +37,13 @@ fw.scaffold()
 survey = fw.data_read("inputs.raw.survey")
 ```
 
-A changed file raises a `DataChangedWarning` and the new hash is recorded. When the catalog entry has `locked: true`, a changed file raises an `IntegrityError` instead and the data is not read. [data_add()](ref:data_add) and [data_save()](ref:data_save) record a file's hash when they register it. The [Data Management](guide:data-management) guide covers locking.
+A changed file raises a `DataChangedWarning` and the new hash is recorded. When the catalog entry has `locked: true`, a changed file raises an `IntegrityError` instead and the data is not read. [data_add()](ref:data_add) and [data_save()](ref:data_save) record a file's hash when they register it. The [Data management](guide:data-management) guide covers locking.
 
-## Cache Records
+## Cache records
 
 The `cache` table records each cached value's file, hash, and expiry time. [cache_get()](ref:cache_get) and [cache_remember()](ref:cache_remember) use it to decide whether a cached value exists, has expired, or no longer matches its file. The [Caching](guide:caching) guide describes the cache.
 
-## The Results Registry
+## The results registry
 
 Each `save_*()` function records its file in the `results` table with the output type, whether it is public, and the file's hash. [result_list()](ref:result_list) returns the records, newest first.
 
@@ -53,9 +53,9 @@ fw.result_list(type="figure")
 fw.result_list(type="table", public=True)
 ```
 
-Results are recorded by file name, such as `summary.csv`. The [Saving Work](guide:saving-work) guide covers the output functions.
+Results are recorded by their path from the project root, such as `outputs/tables/summary.csv`, in both packages. A row from an older save, named by the file name alone, takes the path the next time the file is saved. The [Saving work](guide:saving-work) guide covers the output functions.
 
-## Querying the Database
+## Querying the database
 
 Every new project defines a connection named `framework` that points at `framework.db`. [db_query()](ref:db_query) runs SQL against it like any other connection.
 

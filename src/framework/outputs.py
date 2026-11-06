@@ -1,13 +1,14 @@
 """Saving results: tables, figures, models, reports, and rendered notebooks.
 
 Each save writes the file to the project's output folder for its kind and
-records it in the ``results`` table of framework.db (named by file name, with
-the file's hash), the same way R does. Sensitive projects keep public and
-private outputs in separate folders.
+records it in the ``results`` table of framework.db (named by its path from the
+project root, with the file's hash), as in the R package.
+Sensitive projects keep public and private outputs in separate folders.
 """
 
 from __future__ import annotations
 
+import os
 import pickle
 import shutil
 import subprocess
@@ -20,7 +21,7 @@ import pandas as pd
 
 from framework import db
 from framework._log import inform
-from framework._paths import output_directory
+from framework._paths import output_directory, relative_to_root
 from framework.errors import FrameworkError, UnsupportedFormatError
 from framework.integrity import file_hash
 from framework.settings import settings_read
@@ -48,12 +49,26 @@ def _check_overwrite(path: Path, overwrite: bool) -> None:
         raise FrameworkError(f"File already exists: {path}. Use overwrite=True to replace.")
 
 
+def _result_name(path: Path) -> str:
+    """The results key: the path from the project root, so same-named files stay apart."""
+    from framework.project import find_settings_file
+
+    found = find_settings_file()
+    return relative_to_root(path, found.parent) if found else path.resolve().as_posix()
+
+
 def _record(path: Path, type: str, public: bool) -> None:
-    """Record a saved output in the results table, as R's ``.save_result()`` does."""
-    name = path.name
+    """Record a saved output in the results table, keyed by its project-relative path.
+
+    Older saves, from either language, keyed by file name. A row with only this file's
+    name is renamed to the path the first time the file is saved again.
+    """
+    name = _result_name(path)
     digest = file_hash(path) if path.is_file() else None
     now = db.timestamp()
     with db.connect() as connection:
+        if not connection.execute("SELECT id FROM results WHERE name = ?", (name,)).fetchone():
+            connection.execute("UPDATE results SET name = ? WHERE name = ?", (name, path.name))
         if connection.execute("SELECT id FROM results WHERE name = ?", (name,)).fetchone():
             connection.execute(
                 "UPDATE results SET type = ?, public = ?, comment = ?, hash = ?, updated_at = ? "
@@ -104,7 +119,7 @@ def save_table(
             import openpyxl  # noqa: F401
         except ImportError as error:
             raise FrameworkError(
-                "xlsx tables need openpyxl. Install with: pip install framework-py[excel]"
+                'xlsx tables need openpyxl. Install with: pip install "framework-py[excel]"'
             ) from error
         data.to_excel(path, index=False, **kwargs)
     inform(f"Saved table to {path}")
@@ -137,9 +152,9 @@ def save_figure(
     """Save a figure to the figures output folder.
 
     Args:
-        plot: A matplotlib or seaborn figure (anything with ``savefig()``), a
-            plotnine plot (anything with ``save()``), or None for the current
-            matplotlib figure.
+        plot: A matplotlib or seaborn figure (anything with ``savefig()``), a matplotlib
+            Axes (its figure is saved), a plotnine plot (anything with ``save()``), or None
+            for the current matplotlib figure.
         name: File name without extension.
         format: png, pdf, svg, jpg, jpeg, or tiff.
         width: Width in inches.
@@ -157,6 +172,9 @@ def save_figure(
     if width < 0.1 or height < 0.1 or dpi < 1:
         raise FrameworkError("width and height must be at least 0.1 and dpi at least 1")
     figure = _current_figure() if plot is None else plot
+    if not hasattr(figure, "savefig") and hasattr(figure, "get_figure"):
+        # matplotlib Axes, which axes-level seaborn plots return, as publish() accepts
+        figure = figure.get_figure() or figure
     path = _folder("figures", public) / f"{name}.{format}"
     _check_overwrite(path, overwrite)
 
@@ -193,11 +211,21 @@ def save_model(model: Any, name: str, public: bool = False, overwrite: bool = Tr
 
     Raises:
         FrameworkError: When the file exists and ``overwrite`` is False.
+
+    A model that cannot be pickled raises pickle's error and leaves any existing file and
+    its record unchanged.
     """
     path = _folder("models", public) / f"{name}.pkl"
     _check_overwrite(path, overwrite)
-    with path.open("wb") as handle:
-        pickle.dump(model, handle)
+    # Pickle to a temporary file first, so a failed dump leaves any existing model intact
+    descriptor, temp = tempfile.mkstemp(prefix=f".{name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            pickle.dump(model, handle)
+        Path(temp).replace(path)
+    except BaseException:
+        Path(temp).unlink(missing_ok=True)
+        raise
     inform(f"Saved model to {path}")
     _record(path, "model", public)
     return path
@@ -254,7 +282,8 @@ def save_notebook(
         format: ``"html"``, ``"pdf"``, or ``"docx"``.
         public: In a sensitive project, save to the public notebooks folder.
         overwrite: Replace an existing file.
-        embed_resources: For HTML, embed images and styles in one file.
+        embed_resources: For HTML, embed images and styles in one file. False overrides the
+            project's ``_quarto.yml`` and saves the page's ``_files/`` folder beside it.
         quarto_args: Extra arguments for ``quarto render``.
     """
     source = Path(file)
@@ -274,8 +303,9 @@ def save_notebook(
 
     with tempfile.TemporaryDirectory(prefix="save_notebook_") as temp:
         command = [quarto, "render", str(source.resolve()), "--output-dir", temp, "--to", format]
-        if embed_resources and format == "html":
-            command.append("--embed-resources")
+        if format == "html":
+            # -M wins over the project's _quarto.yml, which turns embedding on
+            command += ["--embed-resources"] if embed_resources else ["-M", "embed-resources:false"]
         command.extend(quarto_args)
         inform(f"Rendering {source.name}...")
         result = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -290,6 +320,12 @@ def save_notebook(
         if not outputs:
             raise FrameworkError(f"No {format} output found after rendering")
         shutil.copyfile(outputs[0], destination)
+        assets = outputs[0].with_name(f"{outputs[0].stem}_files")
+        if assets.is_dir():
+            # Without embedding, the page links to its supporting folder by the source's name
+            target = destination.parent / assets.name
+            shutil.rmtree(target, ignore_errors=True)
+            shutil.copytree(assets, target)
     inform(f"Saved notebook to {destination}")
     _record(destination, "notebook", public)
     return destination

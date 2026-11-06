@@ -1,7 +1,7 @@
 ---
 id: connections
-title: Database Connections
-description: Defining database connections in the settings and querying them with db_query(), db_execute(), and db_transaction()
+title: Database connections
+description: Database connections in the settings, and queries with db_query(), db_execute(), and db_transaction()
 section: features
 position: 9
 ---
@@ -10,7 +10,7 @@ position: 9
 
 Framework defines database connections once, in the project settings, and opens them by name. The query functions open a connection, run the statement, and close the connection again, so analysis code does not manage connections by hand. Credentials come from the project's `.env` file and never sit in the settings.
 
-## Configuring Connections
+## Configuring connections
 
 Connections live in the `connections` section, which standard and privacy-sensitive projects keep in `settings/connections.yml`. Each database is an entry under `databases`.
 
@@ -83,7 +83,7 @@ Each driver accepts a few more fields.
 
 PostgreSQL, MySQL, and SQL Server connections time out after ten seconds when the server does not answer.
 
-## Running Queries
+## Running queries
 
 [db_query()](ref:db_query) runs a query and returns the rows as a DataFrame. It takes the SQL and the connection name.
 
@@ -107,7 +107,7 @@ fw.db_execute("INSERT INTO visits VALUES (?, ?)", "local", params=[1, "north"])
 
 A failed query raises `FrameworkError` with the driver's message.
 
-## Working with a Connection
+## Open connections
 
 [db_connect()](ref:db_connect) opens a connection and returns a `Connection`. It behaves like the driver's own connection object, with `cursor()`, `commit()`, and the rest of the DB-API, and it closes when a `with` block ends.
 
@@ -133,7 +133,9 @@ with fw.db_connect("local") as conn, fw.db_transaction(conn):
 
 A transaction inside another transaction on the same connection joins the outer one.
 
-## Listing Connections
+On SQLite, DuckDB, PostgreSQL, and SQL Server, a rollback also undoes `CREATE TABLE` and other schema changes. MySQL and MariaDB commit schema changes at once, so a rollback cannot undo them.
+
+## Listing connections
 
 [db_list()](ref:db_list) returns the configured databases with their driver, host, port, and database. [connections_list()](ref:connections_list) returns databases and storage buckets together and marks the defaults.
 

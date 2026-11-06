@@ -1,7 +1,7 @@
 ---
 id: publishing
 title: Publishing
-description: Publishing notebooks, data, and files to S3-compatible storage or Framework Cloud
+description: Notebook, data, and file publishing to storage buckets, Framework Cloud, GitHub Pages, and named destinations
 section: features
 position: 10
 ---
@@ -14,9 +14,9 @@ Framework publishes rendered notebooks, datasets, and other files so that collea
 - **Framework Cloud.** The framework.pub service or a self-hosted server, for projects created from or registered with it.
 - **GitHub Pages.** The project's own GitHub repository, with `to="github"`.
 
-Every publishing function warns about files with `private` in their path and asks before it uploads them. The [Private Paths](#private-paths) section explains the rule.
+Every publishing function warns about files with `private` in their path and asks before it uploads them. The [Private paths](#private-paths) section explains the rule.
 
-## Choosing a Destination
+## Choosing a destination
 
 [publish()](ref:publish) and [publish_notebook()](ref:publish_notebook) choose the destination in this order.
 
@@ -29,7 +29,7 @@ Every publishing function warns about files with `private` in their path and ask
 
 [publish_data()](ref:publish_data), [publish_dir()](ref:publish_dir), [publish_list()](ref:publish_list), and [storage_test()](ref:storage_test) work with buckets only.
 
-## Configuring a Bucket
+## Configuring a bucket
 
 Buckets live under `connections.storage_buckets`, which standard and privacy-sensitive projects keep in `settings/connections.yml`.
 
@@ -94,7 +94,7 @@ fw.storage_test()
 fw.storage_test("minio")
 ```
 
-## Publishing to a Bucket
+## Publishing to a bucket
 
 Uploaded files are public. Framework uploads with a public-read ACL, and for buckets that have ACLs turned off, the bucket's policy decides access. Each function returns the URL of what it uploaded.
 
@@ -130,7 +130,7 @@ fw.publish_data("outputs/public/tables/summary.csv", "datasets/summary.csv")
 
 With `compress=True`, the file is gzipped and `.gz` is added to the destination.
 
-### Folders and Files
+### Folders and files
 
 [publish_dir()](ref:publish_dir) uploads every file in a folder. `pattern` is a regular expression on the file paths, and `recursive=False` skips subfolders.
 
@@ -157,7 +157,7 @@ fw.publish_list(prefix="reports")
 
 ## Publishing to Framework Cloud
 
-A project created with `fw.new(key=...)`, or registered with the cloud when it was created, has `FW_PROJECT_TOKEN` and `FW_CLOUD_URL` in its `.env`. When the settings define no storage bucket, [publish()](ref:publish) and [publish_notebook()](ref:publish_notebook) send documents to that server.
+A project created with `fw.new_project(key=...)`, or registered with the cloud when it was created, has `FW_PROJECT_TOKEN` and `FW_CLOUD_URL` in its `.env`. When the settings define no storage bucket, [publish()](ref:publish) and [publish_notebook()](ref:publish_notebook) send documents to that server.
 
 ```python
 fw.publish_notebook("notebooks/exploration.qmd")
@@ -172,10 +172,10 @@ Framework Cloud accepts the following sources.
 - A folder of rendered output, whose `index.html` or first HTML file is the entry page.
 - A `.qmd` file, which Framework renders to HTML first.
 
-Each publish adds a new version of the document. The `slug` argument names the document and turns on its readable URL. `slug=True` uses the name derived from the file, and `slug=False` turns the readable URL off. `publish_notebook()` publishes HTML only when the destination is Framework Cloud.
+Each publish adds a new version of the document. A string `slug` names the document and leaves its visibility alone. A new artifact starts unlisted, and an existing one keeps its setting. `slug=True` turns the readable URL on with the name derived from the file, and `slug=False` turns it off. Pass `visibility="public"` to make an artifact public. `publish_notebook()` publishes HTML only when the destination is Framework Cloud.
 
 You can also publish an object from your Python session. On Framework Cloud,
-each one becomes a file that Cloud can show well.
+each object is converted to a format that matches its type.
 
 - pandas and polars DataFrames and Series, and numpy arrays with one or two
   dimensions, become tables. Every row is kept, along with a summary of each
@@ -213,8 +213,14 @@ fw.publish(fitted_model, to="cloud", slug="adjusted-model", password="reviewer-p
 ```
 
 `title`, `description`, `kind`, `password`, and `visibility` set artifact metadata.
-Passwords require at least eight characters. Visibility can be `"public"` or `"unlisted"`.
+Passwords require at least eight characters. Visibility can be `"public"`, `"unlisted"`, or `"private"`.
 Anyone with an unlisted link can open it unless it is password protected.
+An explicit `visibility` always wins. Without one, `slug=True` makes the document public
+and `slug=False` makes it unlisted. A string slug changes nothing: a new artifact is unlisted,
+and an existing one keeps its visibility.
+
+A public artifact gets a readable URL, `/@handle/project/slug`, once you set a handle in
+Account > Account details. Until then its share link works.
 
 Publishing sends only the document you name. The [Framework Cloud](guide:cloud) guide describes what else the cloud receives.
 
@@ -234,16 +240,17 @@ Before the first publish, turn on "Publish with GitHub Pages" for the project un
 Each publish takes these steps.
 
 1. Find the project's git repository and its GitHub remote: the branch's upstream remote, then `origin`, then any other GitHub remote. Without one, it raises an error that says to create the project on GitHub first.
-2. Copy the page to `published/<slug>/index.html` at the top of the repository, replacing that folder completely. An `.html` file's `<name>_files/` folder is copied beside it under the same name, so relative links keep working. A folder must have an `index.html` at its top. A `.qmd` or `.ipynb` file is rendered to HTML first.
-3. Commit only `published/<slug>/`, with the message `Publish <slug>`. Anything else you have staged stays staged and out of the commit. When nothing changed, it reports that and neither commits nor pushes.
-4. Push. A branch with no upstream is pushed with `git push -u <remote> HEAD`. On a branch other than the default branch, it warns that the page won't appear until the branch is merged.
-5. Return and report the URL.
+2. Build a portable bundle, as for the other [named destinations](#named-destinations). A `.qmd` or `.ipynb` file is rendered to HTML first. An `.html` file's `<name>_files/` folder is copied beside it under the same name, so relative links keep working.
+3. Keep every publish. Each one is copied to `published/<slug>/v/<number>/`, and the latest one also sits at `published/<slug>/`. The site index, `published/index.html` and `published/index.json`, lists every artifact.
+4. Commit only `published/<slug>/` and the site index, with the message `Publish <slug>`. Anything else you have staged stays staged and out of the commit. When nothing changed, it reports that and neither commits nor pushes.
+5. Push. A branch with no upstream is pushed with `git push -u <remote> HEAD`. On a branch other than the default branch, it warns that the page does not appear until the branch is merged.
+6. Return and report the URL.
 
-The slug defaults to the file name in lowercase, with each run of other characters replaced by `-`. `Final Report (v2).html` becomes `final-report-v2`. An explicit slug must start with a lowercase letter or digit and use only lowercase letters, digits, `.`, `_`, and `-`, because GitHub Pages URLs are case-sensitive. `dest`, `connection`, and `slug=True` or `slug=False` apply only to other destinations and raise an error with `to="github"`.
+The slug defaults to the file name. Framework lowercases it and replaces each run of other characters with `-`, so `Final Report (v2).html` becomes `final-report-v2`. An explicit slug is changed the same way: `slug="Main Results"` publishes to `main-results`. `dest`, `connection`, and `slug=True` or `slug=False` apply only to other destinations and raise an error with `to="github"`.
 
 A project with a Framework Cloud project token asks the cloud for the site's URL. When the cloud reports that Pages is off, publishing still commits and pushes, and it warns you to turn Pages on. Otherwise the URL comes from the remote: `https://<owner>.github.io/<repo>/<slug>/`, or `https://<owner>.github.io/<slug>/` for a repository named `<owner>.github.io`.
 
-## Private Paths
+## Private paths
 
 Publishing happens only when you call a publishing function, and framework-py never uploads anything on its own. Every publishing function checks the full path of each file it is about to upload. A path that contains `private` in any letter case, such as `outputs/private/tables/detail.csv` or `~/Private/notes.html`, gets a warning that lists the files.
 
@@ -256,7 +263,7 @@ FrameworkError: Not uploading files with 'private' in their path without confirm
 Review them, then pass include_private=True to upload them.
 ```
 
-`include_private=True` uploads without asking. Only a person who has reviewed the files should pass it. The older name `allow_private` still works but warns that it is deprecated. A DataFrame passed to `publish_data()` has no path, so the check does not apply to it. Review the data before you publish it.
+`include_private=True` uploads without asking. Only a person who has reviewed the files should pass it. The older name `allow_private` still works but warns that it is deprecated. An object has no path, so the check does not apply to a DataFrame, model, or figure passed to `publish()` or `publish_data()`, even one made from private data. Review it before you publish it.
 
 On macOS, the system resolves `/tmp` and `/var` to paths under `/private/`. That leading `/private/` does not count. A folder you named `private` always counts.
 
@@ -267,7 +274,7 @@ fw.save_table(aggregated, "summary", public=True)
 fw.publish_data("outputs/public/tables/summary.csv", "datasets/summary.csv")
 ```
 
-## Organizing Published Files
+## Organizing published files
 
 A bucket `prefix` per project keeps a shared bucket organized.
 
@@ -298,4 +305,71 @@ readers of an unlisted collection requires explicit consent through
 `share_unlisted`.
 If attachment fails after the artifact uploads, publishing returns its URL and
 warns that collection attachment failed. Attach the artifact from the project
-Outputs page; publishing again creates another version.
+Outputs page. Publishing again creates another version.
+
+## Named destinations
+
+`publish()` and `publish_notebook()` accept destination names from project settings.
+An explicit `to` takes priority over `publish.default`. Without either, Framework
+keeps the existing bucket-first, then Cloud behavior. An explicit `connection`
+selects the legacy bucket path.
+
+```yaml
+publish:
+  default: lab
+  destinations:
+    lab:
+      driver: folder
+      path: /Volumes/research/published
+      url: https://research.example.org/published
+      visibility: public
+    pages:
+      driver: github
+    cloud:
+      driver: cloud
+    results:
+      driver: s3
+      bucket: reports
+```
+
+```python
+fw.publish(table, to="lab", slug="study-table", title="Study table")
+fw.publish(model, to="pages", slug="adjusted-model")
+```
+
+Folder, GitHub, and named S3 destinations receive portable bundles. Each bundle
+contains `artifact.json`, an offline `index.html`, the original export, and typed
+`representation.json` when available. Tables also retain a CSV export. The reader
+works from a local file without PHP or a network connection. Bundle manifests list
+each file's byte count and SHA-256 checksum.
+
+Folder and GitHub sites retain every publish under `<slug>/v/<number>/`. The
+artifact URL shows the latest version. Their site indexes list published artifacts.
+Named S3 destinations retain the same version layout and an artifact index.
+The index of a private destination stays private. A public index lists only public artifacts.
+GitHub Pages warns above 800 MB and rejects sites above 1 GB before committing
+or pushing. The size includes retained versions and the rest of the published site.
+
+Static destinations reject passwords, collections, and unlisted access before
+delivery. Folder access follows the share's permissions. Configure its `visibility`
+to match the share before requesting explicit public or private access. Private
+S3 publishing requires `visibility: private` in the destination. `private: true`
+is a compatible alias. Framework verifies that the bucket policy is not public
+before uploading private artifacts. Public policies and unavailable policy checks
+reject the publish. GitHub private Pages requires a verified private Pages
+setting from GitHub. Repository privacy alone is insufficient. Verification uses
+an authenticated `gh` command.
+
+Connected projects record external publication metadata in Cloud after delivery.
+Artifact contents and folder paths are never included. A tracking failure produces
+a warning and preserves the delivered artifact.
+
+Legacy bucket uploads, including `to="bucket"`, retain their existing raw-file
+layout. `publish_data()` and `publish_dir()` remain bucket utilities.
+
+For legacy raw bucket uploads, connected projects record metadata
+with version 1 and a content checksum. A conflicting replacement produces a tracking
+warning after delivery. Use a named S3 destination for retained versions and portable bundles.
+
+Publishing destination credentials must use environment references such as
+`env("RESULTS_ACCESS_KEY")`. Literal credentials are rejected.

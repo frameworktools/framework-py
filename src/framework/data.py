@@ -11,6 +11,7 @@ CSV and Parquet, which R reads too. ``.rds`` files are R-only.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import warnings
 from collections.abc import Callable
@@ -107,7 +108,8 @@ def _require(module: str, extra: str, what: str) -> None:
         __import__(module)
     except ImportError as error:
         raise FrameworkError(
-            f"{what} need the {module} package. Install it with: pip install framework-py[{extra}]"
+            f"{what} need the {module} package. "
+            f'Install it with: pip install "framework-py[{extra}]"'
         ) from error
 
 
@@ -133,6 +135,10 @@ def _reader(file_type: str) -> Callable[[Path, str | None, bool, dict[str, Any]]
     def excel(path: Path, _d: str | None, _k: bool, kwargs: dict[str, Any]) -> Any:
         if path.suffix.lower() == ".xlsx":
             _require("openpyxl", "excel", "Excel files")
+        elif path.suffix.lower() == ".xls" and importlib.util.find_spec("xlrd") is None:
+            raise FrameworkError(
+                "Older .xls Excel files need the xlrd package. Install it with: pip install xlrd"
+            )
         return pd.read_excel(path, **kwargs)
 
     def stata(path: Path, _d: str | None, keep: bool, kwargs: dict[str, Any]) -> Any:
@@ -145,10 +151,17 @@ def _reader(file_type: str) -> Callable[[Path, str | None, bool, dict[str, Any]]
     def spss_por(path: Path, _d: str | None, keep: bool, kwargs: dict[str, Any]) -> Any:
         return _read_spss(path, keep, kwargs, portable=True)
 
-    # Without an encoding, pandas returns SAS text columns as bytes.
     def sas(path: Path, _d: str | None, _k: bool, kwargs: dict[str, Any]) -> Any:
-        kwargs.setdefault("encoding", "infer")
-        return pd.read_sas(path, format="sas7bdat", **kwargs)
+        # pandas misreads some files, such as those R's haven writes: blank names and
+        # wrong values. pyreadstat (the sas extra) reads them correctly, so it goes first.
+        try:
+            import pyreadstat
+        except ImportError:
+            # Without an encoding, pandas returns SAS text columns as bytes.
+            kwargs.setdefault("encoding", "infer")
+            return pd.read_sas(path, format="sas7bdat", **kwargs)
+        frame, _ = pyreadstat.read_sas7bdat(str(path), **kwargs)
+        return frame
 
     def sas_xpt(path: Path, _d: str | None, _k: bool, kwargs: dict[str, Any]) -> Any:
         # pandas reads only version 5 transport files. pyreadstat (the sas
@@ -159,7 +172,7 @@ def _reader(file_type: str) -> Callable[[Path, str | None, bool, dict[str, Any]]
             if path.read_bytes()[:80].find(b"LIBV8") != -1:
                 raise FrameworkError(
                     "This is a version 8 SAS transport file, which needs the pyreadstat "
-                    "package. Install it with: pip install framework-py[sas]"
+                    'package. Install it with: pip install "framework-py[sas]"'
                 ) from None
             kwargs.setdefault("encoding", "utf-8")
             return pd.read_sas(path, format="xport", **kwargs)

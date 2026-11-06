@@ -318,6 +318,10 @@ def git_hooks_list(settings_file: str | Path | None = None) -> pd.DataFrame:
 # Running the hook -----------------------------------------------------------
 
 
+# A file name no project has, used to ask git whether a folder's contents are ignored
+_PROBE = ".framework-ignore-probe"
+
+
 def _unignored_sensitive_dirs(root: Path) -> list[str]:
     found: list[str] = []
     for current, dirnames, _ in os.walk(root):
@@ -327,12 +331,19 @@ def _unignored_sensitive_dirs(root: Path) -> list[str]:
                 found.append((Path(current) / name).relative_to(root).as_posix())
     if not found:
         return []
-    # A folder is covered when it or an ancestor is ignored.
-    candidates = {
-        ancestor
-        for folder in found
-        for ancestor in [folder, *(p.as_posix() for p in Path(folder).parents if str(p) != ".")]
-    }
+
+    # A folder is covered when it, an ancestor, or its contents are ignored. A path without
+    # a trailing slash never matches a folder-only rule such as "scratch/", and "scratch/*"
+    # matches only what is inside, so each folder is also asked about with a slash and
+    # with a file inside it.
+    def forms(folder: str) -> set[str]:
+        return {folder, f"{folder}/", f"{folder}/{_PROBE}"}
+
+    def variants(folder: str) -> set[str]:
+        ancestors = [folder, *(p.as_posix() for p in Path(folder).parents if str(p) != ".")]
+        return {form for ancestor in ancestors for form in forms(ancestor)}
+
+    candidates = {form for folder in found for form in variants(folder)}
     # -z separates paths with NUL, since text pipes on Windows turn "\n" into "\r\n".
     result = subprocess.run(
         ["git", "-C", str(root), "check-ignore", "--no-index", "--stdin", "-z"],
@@ -344,11 +355,7 @@ def _unignored_sensitive_dirs(root: Path) -> list[str]:
         check=False,
     )
     ignored = {path for path in result.stdout.split("\0") if path}
-    return [
-        folder
-        for folder in found
-        if not ({folder} | {p.as_posix() for p in Path(folder).parents}) & ignored
-    ]
+    return [folder for folder in found if not variants(folder) & ignored]
 
 
 def _confirm(question: str) -> bool | None:

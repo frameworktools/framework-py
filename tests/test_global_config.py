@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -71,8 +72,12 @@ def test_ai_skills_update(tmp_path: Path) -> None:
     skill.write_text("stale\n", encoding="utf-8")
     (root / ".claude/skills/mine").mkdir()
     (root / ".claude/skills/mine/SKILL.md").write_text("custom\n", encoding="utf-8")
+    shutil.rmtree(root / ".claude/skills/framework-sensitive-data")
     updated = fw.ai_skills_update(root)
-    assert ".claude/skills/framework-sensitive-data" in updated
+    # Audit 2026-11-05: skills that were already current were reported as updated
+    assert updated == [".claude/skills/framework-sensitive-data"]
+    assert (root / ".claude/skills/framework-sensitive-data/SKILL.md").is_file()
+    assert fw.ai_skills_update(root) == []
     assert skill.read_text(encoding="utf-8") == "stale\n"
     assert (root / ".claude/skills/mine/SKILL.md").read_text(encoding="utf-8") == "custom\n"
 
@@ -84,3 +89,10 @@ def test_ai_skills_update_without_spec(project: Path) -> None:
     updated = fw.ai_skills_update(project)
     assert ".agents/skills/framework-workflow" in updated
     assert (project / ".agents/skills/framework-workflow/SKILL.md").is_file()
+
+
+def test_ai_skills_update_refuses_a_folder_that_is_not_a_project(tmp_path: Path) -> None:
+    # Audit 2026-11-05: it wrote skill folders into any folder
+    with pytest.raises(fw.ProjectNotFoundError, match="not a Framework project"):
+        fw.ai_skills_update(tmp_path)
+    assert list(tmp_path.iterdir()) == []

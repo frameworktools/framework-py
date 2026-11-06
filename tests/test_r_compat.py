@@ -46,8 +46,12 @@ def test_key_order_matches_r(r_project: Path, r_expected: dict[str, Any]) -> Non
     assert list(fw.settings_read()) == list(r_expected["settings_default"])
 
 
-def test_dotenv_values_are_loaded(r_project: Path) -> None:
+def test_dotenv_values_resolve_without_staying_in_the_environment(r_project: Path) -> None:
+    # Audit 2026-11-05: settings_read() left .env values in os.environ, so one project's
+    # token carried into the next. R and Python now share the scoped rule.
     assert fw.settings("fixture.dotenv_value") == "from dotenv"
+    assert "FW_FIXTURE_DOTENV" not in os.environ
+    fw.scaffold()
     assert os.environ["FW_FIXTURE_DOTENV"] == "from dotenv"
 
 
@@ -165,7 +169,7 @@ def test_python_records_results_the_way_r_does(r_project: Path, r_expected: dict
     with closing(sqlite3.connect(r_project / "framework.db")) as connection:
         row = connection.execute(
             "SELECT type, public, blind, comment, typeof(created_at) FROM results "
-            "WHERE name = 'py_summary.csv'"
+            "WHERE name = 'outputs/tables/py_summary.csv'"
         ).fetchone()
     expected = r_expected["result_row"]
     assert row == (

@@ -27,7 +27,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,6 +35,7 @@ from typing import Any
 import pandas as pd
 
 from framework._log import inform
+from framework._paths import rendered_page
 from framework._private import confirm_private_upload, include_private_arg
 from framework.errors import FrameworkError
 from framework.settings import settings_read
@@ -124,7 +125,7 @@ class Bucket:
         except ImportError as error:
             raise FrameworkError(
                 "Storage buckets need the boto3 package. "
-                "Install it with: pip install framework-py[s3]"
+                'Install it with: pip install "framework-py[s3]"'
             ) from error
         endpoint = (
             f"{'https' if self.use_https else 'http'}://{self.endpoint}" if self.endpoint else None
@@ -145,6 +146,13 @@ def _first(
     for name in env:
         if os.environ.get(name):
             return os.environ[name]
+    # Then the project's .env, which settings_read() no longer leaves in os.environ
+    from framework.settings import project_dotenv
+
+    project_env = project_dotenv()
+    for name in env:
+        if project_env.get(name):
+            return project_env[name]
     for key in keys:
         if config.get(key):
             return str(config[key])
@@ -244,7 +252,13 @@ def _files(folder: Path, recursive: bool, pattern: str | None) -> list[Path]:
     found = folder.rglob("*") if recursive else folder.iterdir()
     files = sorted(p for p in found if p.is_file())
     if pattern is not None:
-        files = [p for p in files if re.search(pattern, p.as_posix())]
+        # Matched against the path inside the folder, so the folder's own location and its
+        # parents' names never match
+        try:
+            expression = re.compile(pattern)
+        except re.error as error:
+            raise FrameworkError(f"Invalid pattern {pattern!r}: {error}") from error
+        files = [p for p in files if expression.search(p.relative_to(folder).as_posix())]
     return files
 
 
@@ -378,7 +392,7 @@ def _artifact_file(source: Any, directory: Path, cloud: bool = False) -> Path:
     raise FrameworkError(_ACCEPTED)
 
 
-def publish(
+def _publish_legacy(
     source: Any,
     dest: str | None = None,
     connection: str | None = None,
@@ -396,6 +410,7 @@ def publish(
     visibility: str | None = None,
     collection: str | int | None = None,
     share_unlisted: bool = False,
+    _on_s3: Callable[[Path, str | list[str]], None] | None = None,
 ) -> str | list[str]:
     """Upload a file or folder to the project's storage bucket.
 
@@ -419,15 +434,18 @@ def publish(
         include_private: Upload files with "private" in their path without asking. Only a
             person who has reviewed the files should set this.
         to: "cloud" explicitly publishes to Framework Cloud and "bucket" selects storage.
-            "github" publishes to the project's GitHub Pages site: the page is copied to
-            ``published/<slug>/`` at the top of the repository, only that folder is
-            committed, and the commit is pushed. Pages sites are public, even from a private
-            repository. Default: a storage bucket or Framework Cloud.
+            "github" publishes to the project's GitHub Pages site: each publish is kept in
+            ``published/<slug>/v/<number>/``, the latest also sits at ``published/<slug>/``,
+            only those and the site index are committed, and the commit is pushed. Pages
+            sites are public, even from a private repository. Default: a storage bucket or
+            Framework Cloud.
         title: Artifact title on Framework Cloud.
         description: Artifact description on Framework Cloud.
         kind: Optional artifact kind override on Framework Cloud.
         password: Password required to view an artifact on Framework Cloud.
-        visibility: "public" or "unlisted" on Framework Cloud.
+        visibility: "public", "unlisted", or "private" on Framework Cloud. Default: a new
+            artifact is unlisted and an existing one keeps its setting. It wins over
+            ``slug=True`` or ``False``.
         collection: Existing project collection ID or slug; follows the latest artifact version.
         share_unlisted: Explicitly allow collection readers to access an unlisted artifact.
         allow_private: Deprecated name for ``include_private``.
@@ -443,7 +461,7 @@ def publish(
             path = _artifact_file(source, Path(temp), cloud=is_cloud)
             if kind is None and is_cloud and path.name in ("table.json", "model.json"):
                 kind = path.stem
-            return publish(
+            return _publish_legacy(
                 path,
                 dest=dest,
                 connection=connection,
@@ -460,6 +478,7 @@ def publish(
                 visibility=visibility,
                 collection=collection,
                 share_unlisted=share_unlisted,
+                _on_s3=_on_s3,
             )
     path = Path(source)
     if not path.exists():
@@ -495,10 +514,203 @@ def publish(
     if path.is_dir():
         urls = _upload_folder(path, dest, bucket, _files(path, True, None))
         inform(f"Published {len(urls)} files to S3")
+        if _on_s3 is not None:
+            _on_s3(path, urls)
         return urls
     url = upload_file(path, dest, bucket)
     inform(f"Published: {url}")
+    if _on_s3 is not None:
+        _on_s3(path, url)
     return url
+
+
+def publish(
+    source: Any,
+    dest: str | None = None,
+    connection: str | None = None,
+    overwrite: bool = True,
+    self_contained: bool = True,
+    slug: str | bool | None = None,
+    include_private: bool = False,
+    *,
+    to: str | None = None,
+    allow_private: bool | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    kind: str | None = None,
+    password: str | None = None,
+    visibility: str | None = None,
+    collection: str | int | None = None,
+    share_unlisted: bool = False,
+) -> str | list[str]:
+    """Publish an artifact to a named destination or the project default.
+
+    Args:
+        source: A file, a rendered folder, or an object. Accepted objects are pandas and
+            polars DataFrames and Series, numpy arrays with one or two dimensions, pandas
+            Styler tables, scipy.stats test results, statsmodels results, fitted
+            scikit-learn, xgboost, and lightgbm models, matplotlib Figures and Axes, seaborn
+            plots and grids, plotly Figures, and altair charts. On Framework Cloud, tables
+            become typed tables with column summaries (every row is kept), tests and models
+            become structured summaries, and static plots become SVG. Model exports carry
+            coefficients, importance, and fit statistics, never observations, residuals, or
+            serialized models. Buckets receive CSV tables, PNG figures, and HTML model
+            summaries; Styler tables, plotly figures, and altair charts keep their HTML or
+            Vega-Lite form everywhere.
+        dest: Where to put it in the bucket. Default: the source's name.
+        connection: A storage bucket name. Default: the project's default bucket.
+        overwrite: Accepted for parity with R; uploads always replace.
+        self_contained: For Framework Cloud publishing.
+        slug: For Framework Cloud publishing.
+        include_private: Upload files with "private" in their path without asking. Only a
+            person who has reviewed the files should set this.
+        to: A configured destination name, cloud, github, folder, s3, or bucket.
+            Named destinations take priority over publish.default and legacy defaults.
+            "cloud" explicitly publishes to Framework Cloud and "bucket" selects storage.
+            "github" publishes to the project's GitHub Pages site: each publish is kept in
+            ``published/<slug>/v/<number>/``, the latest also sits at ``published/<slug>/``,
+            only those and the site index are committed, and the commit is pushed. Pages
+            sites are public, even from a private repository. Default: a storage bucket or
+            Framework Cloud.
+        title: Artifact title on Framework Cloud.
+        description: Artifact description on Framework Cloud.
+        kind: Optional artifact kind override on Framework Cloud.
+        password: Password required to view an artifact on Framework Cloud.
+        visibility: "public", "unlisted", or "private" on Framework Cloud. Default: a new
+            artifact is unlisted and an existing one keeps its setting. It wins over
+            ``slug=True`` or ``False``.
+        collection: Existing project collection ID or slug; follows the latest artifact version.
+        share_unlisted: Explicitly allow collection readers to access an unlisted artifact.
+        allow_private: Deprecated name for ``include_private``.
+
+    Returns:
+        The public URL, or a list of URLs for a folder.
+    """
+    from framework.publish_bundle import (
+        Destination,
+        build_bundle,
+        destination,
+        publish_external,
+        validate,
+    )
+
+    if share_unlisted and collection is None:
+        raise FrameworkError("share_unlisted requires a collection.")
+    selected = None if to == "bucket" else destination(to, connection)
+    if selected is not None:
+        visibility = visibility or selected.options.get("visibility")
+        validate(selected, visibility, password, collection)
+        if connection is not None and selected.driver != "s3":
+            raise FrameworkError("connection is only used with a storage bucket.")
+        own = selected.options
+        if (
+            connection is not None
+            and selected.driver == "s3"
+            and (
+                own.get("region")
+                or own.get("endpoint")
+                or own.get("bucket") not in (None, connection)
+            )
+        ):
+            # The destination names its own bucket, so connection would be ignored
+            raise FrameworkError(
+                f'The "{selected.name}" destination sets its own bucket. Leave out connection, '
+                "or remove the bucket from the destination."
+            )
+    else:
+        driver = _target(connection, to)
+        validate(Destination(driver, driver, {}), visibility, password, collection)
+    if isinstance(source, (str, Path)):
+        path = Path(source)
+        if not path.exists():
+            raise FrameworkError(f"Source not found: {path}")
+        files = _files(path, True, None) if path.is_dir() else [path]
+        if path.is_file():
+            assets = path.with_name(f"{path.stem}_files")
+            if assets.is_dir():
+                files += _files(assets, True, None)
+        confirm_private_upload(files, include_private_arg(include_private, allow_private))
+    with tempfile.TemporaryDirectory(prefix="fw_publish_bundle_") as temp:
+        bundle = Path(temp) / "bundle"
+        manifest = build_bundle(
+            source,
+            bundle,
+            slug=slug if isinstance(slug, str) else None,
+            title=title,
+            description=description,
+            kind=kind,
+            self_contained=self_contained,
+        )
+        if selected is not None and selected.driver != "cloud":
+            if dest is not None:
+                raise FrameworkError(
+                    f'Not used with to="{selected.driver}": dest. Name the folder with slug.'
+                )
+            if isinstance(slug, bool):
+                raise FrameworkError("slug=True/False is not used with bundle destinations.")
+            return publish_external(
+                source,
+                selected,
+                slug=slug,
+                title=title,
+                description=description,
+                kind=kind,
+                visibility=visibility,
+                self_contained=self_contained,
+                connection=connection,
+                built_bundle=bundle,
+                built_manifest=manifest,
+            )
+
+        def record_legacy(path: Path, published: str | list[str]) -> None:
+            import hashlib
+
+            from framework.publish_bundle import track_external
+
+            paths = _files(path, True, None) if path.is_dir() else [path]
+            if path.is_file():
+                checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+            else:
+                checksum = hashlib.sha256(
+                    json.dumps(
+                        [
+                            {
+                                "path": item.relative_to(path).as_posix(),
+                                "sha256": hashlib.sha256(item.read_bytes()).hexdigest(),
+                            }
+                            for item in paths
+                        ],
+                        sort_keys=True,
+                    ).encode("utf-8")
+                ).hexdigest()
+            receipt = {
+                "driver": "s3",
+                "version": 1,
+                "version_url": None,
+                "url": published if isinstance(published, str) else next(iter(published), None),
+                "size_bytes": sum(item.stat().st_size for item in paths),
+                "sha256": checksum,
+            }
+            track_external(manifest, receipt, bundle, "public")
+
+        return _publish_legacy(
+            source,
+            dest=dest,
+            connection=connection,
+            overwrite=overwrite,
+            self_contained=self_contained,
+            slug=slug,
+            include_private=True,
+            to="cloud" if selected is not None else to,
+            title=title,
+            description=description,
+            kind=kind,
+            password=password,
+            visibility=visibility,
+            collection=collection,
+            share_unlisted=share_unlisted,
+            _on_s3=record_legacy,
+        )
 
 
 def publish_notebook(
@@ -536,16 +748,17 @@ def publish_notebook(
             always self-contained. With static hosting, False uploads the render folder.
         format: The Quarto output format passed to ``--to``. Framework Cloud accepts only
             "html". Default: "html".
-        slug: For Framework Cloud: a string names the document and turns on its readable URL,
-            True uses the derived name, and False turns the readable URL off. A storage bucket
-            ignores it with a warning.
+        slug: For Framework Cloud: a string names the document and leaves its visibility
+            alone, True turns the readable URL on with the derived name, and False turns it
+            off. A storage bucket ignores it with a warning.
         include_private: Upload files with "private" in their path without asking. Only a
             person who has reviewed the files should set this.
         to: "cloud" explicitly publishes to Framework Cloud and "bucket" selects storage.
-            "github" publishes to the project's GitHub Pages site: the page is copied to
-            ``published/<slug>/`` at the top of the repository, only that folder is
-            committed, and the commit is pushed. Pages sites are public, even from a private
-            repository. Default: a storage bucket or Framework Cloud.
+            "github" publishes to the project's GitHub Pages site: each publish is kept in
+            ``published/<slug>/v/<number>/``, the latest also sits at ``published/<slug>/``,
+            only those and the site index are committed, and the commit is pushed. Pages
+            sites are public, even from a private repository. Default: a storage bucket or
+            Framework Cloud.
         collection: Existing project collection ID or slug on Framework Cloud.
         share_unlisted: Explicitly allow collection readers to access an unlisted artifact.
         allow_private: Deprecated name for ``include_private``.
@@ -558,6 +771,29 @@ def publish_notebook(
             and is not confirmed, Quarto is not installed, rendering fails, or there is nowhere
             to publish.
     """
+    from framework.publish_bundle import destination
+
+    selected = None if to == "bucket" else destination(to, connection)
+    if selected is not None:
+        source_path = Path(file)
+        if not source_path.is_file() or source_path.suffix.lower() not in (".qmd", ".ipynb"):
+            raise FrameworkError("publish_notebook() needs an existing .qmd or .ipynb file.")
+        if format != "html":
+            raise FrameworkError("Bundle publishing accepts HTML only.")
+        published = publish(
+            file,
+            dest=dest,
+            connection=connection,
+            self_contained=self_contained,
+            slug=slug,
+            include_private=include_private,
+            to=to,
+            allow_private=allow_private,
+            collection=collection,
+            share_unlisted=share_unlisted,
+        )
+        assert isinstance(published, str)
+        return published
     if share_unlisted and collection is None:
         raise FrameworkError("share_unlisted requires a collection.")
     if collection is not None and to == "github":
@@ -603,23 +839,25 @@ def publish_notebook(
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise FrameworkError(f"Quarto render failed:\n{result.stdout}{result.stderr}")
-        outputs = sorted(Path(temp).glob("*.html"))
-        if not outputs:
+        # A project's _quarto.yml keeps the notebook's folder under the output folder
+        page = rendered_page(Path(temp), source.stem)
+        if page is None:
             raise FrameworkError("No HTML output found after rendering")
+        root = page.parent
         base = re.sub(r"\.html$", "", (dest or source.stem).rstrip("/"))
 
         if bucket.static_hosting:
             if self_contained:
-                upload_file(outputs[0], f"{base}/index.html", bucket)
+                upload_file(page, f"{base}/index.html", bucket)
             else:
-                index = Path(temp) / "index.html"
-                if outputs[0] != index:
-                    outputs[0].rename(index)
-                urls = _upload_folder(Path(temp), base, bucket, _files(Path(temp), True, None))
+                index = root / "index.html"
+                if page != index:
+                    page.rename(index)
+                urls = _upload_folder(root, base, bucket, _files(root, True, None))
                 inform(f"Published {len(urls)} files")
             url = bucket.url(bucket.key(f"{base}/"))
         else:
-            url = upload_file(outputs[0], f"{base}.html", bucket)
+            url = upload_file(page, f"{base}.html", bucket)
     inform(f"Published: {url}")
     return url
 
@@ -704,8 +942,9 @@ def publish_dir(
             the folder's name.
         connection: A storage bucket name from the settings. Default: the project's default
             bucket, then one marked ``default: true``, then the first.
-        pattern: Only upload files whose path matches this regular expression (searched
-            anywhere in the path). Default: every file.
+        pattern: Only upload files whose path inside ``dir`` matches this regular expression
+            (searched anywhere in that path, such as ``"figures/.*\\.png$"``). Default: every
+            file.
         recursive: Include files in subfolders.
         include_private: Upload files with "private" in their path without asking. Only a
             person who has reviewed the files should set this.
@@ -740,6 +979,9 @@ def publish_list(
 ) -> pd.DataFrame:
     """Objects in the bucket (under its prefix): key, size, last_modified, and url.
 
+    This lists uploads to S3 storage buckets only. Framework Cloud artifacts are listed on
+    the server's Artifacts page, ``<server>/published``.
+
     Args:
         prefix: Only list objects under this path, which is added to the bucket's prefix.
             Default: everything under the bucket's prefix.
@@ -753,6 +995,14 @@ def publish_list(
     Raises:
         FrameworkError: When no bucket is configured or listing fails.
     """
+    if connection is None and not bucket_configs() and _has_project_token():
+        from framework.cloud import cloud_server
+
+        server = cloud_server(scope="project").url
+        raise FrameworkError(
+            "publish_list() lists uploads to S3 storage buckets, and this project has none. "
+            f"See your Framework Cloud artifacts on the Artifacts page: {server}/published"
+        )
     bucket = resolve_bucket(connection)
     full_prefix = bucket.key(prefix) if prefix else bucket.prefix
     try:
@@ -784,7 +1034,9 @@ def storage_test(connection: str | None = None) -> bool:
         True when the bucket answers, False when the request fails.
 
     Raises:
-        FrameworkError: When no bucket is configured or the named one is not found.
+        FrameworkError: When no bucket is configured, the named one is not found, or its
+            credentials are missing. These are setup problems, so they raise rather than
+            return False.
     """
     bucket = resolve_bucket(connection)
     try:

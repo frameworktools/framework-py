@@ -1,14 +1,14 @@
 ---
 id: packages
 title: Packages
-description: Managing a project's Python packages with pyproject.toml and uv
+description: Python package management with pyproject.toml and uv
 section: features
 position: 3
 ---
 
 ## Overview
 
-A Python project lists its packages in `pyproject.toml`, and uv locks the exact versions in `uv.lock`. Framework follows these Python conventions. The `package_add()` and `packages_*()` functions call uv, so you can manage packages from a notebook or from the terminal with the same result.
+A Python project lists its packages in `pyproject.toml`, and uv locks the exact versions in `uv.lock`. Framework uses these standard Python files. The `package_add()` and `packages_*()` functions call uv, so you can manage packages from a notebook or from the terminal with the same result.
 
 New projects start with one dependency.
 
@@ -30,7 +30,7 @@ package = false
 
 Commit `pyproject.toml` and `uv.lock`. A collaborator who clones the project installs the same versions with `uv sync` or [bootstrap()](ref:bootstrap).
 
-## Adding Packages
+## Adding packages
 
 [package_add()](ref:package_add) adds a requirement to `pyproject.toml`, updates `uv.lock`, and installs the package. It runs `uv add` in the project root.
 
@@ -66,7 +66,7 @@ Quarto runs the Python chunks of `.qmd` notebooks through Jupyter, so projects t
 fw.package_add("jupyter")
 ```
 
-## Listing and Checking
+## Listing and checking
 
 [packages_list()](ref:packages_list) returns the dependencies in `pyproject.toml` with the version installed in the running environment.
 
@@ -82,7 +82,7 @@ status.ok
 status.missing
 ```
 
-## Installing, Locking, and Updating
+## Installing, locking, and updating
 
 These functions wrap uv commands and run them in the project root.
 
@@ -101,7 +101,7 @@ fw.packages_update(["pandas", "statsmodels"])
 
 uv is the supported tool. When it is not installed, [package_add()](ref:package_add) edits the `dependencies` list in `pyproject.toml` as text and installs the package with pip into the running environment. [packages_install()](ref:packages_install) installs the listed dependencies with pip. Locking, restoring, updating, and dev dependencies need uv and raise an error that says how to install it.
 
-## Packages in Notebooks
+## Packages in notebooks
 
 Run notebooks with the project's environment, so that the packages in `uv.lock` are the ones imported. In VS Code and Positron, select the project's `.venv` interpreter. The workspace file Framework creates points at `.venv/bin/python`. From the terminal, prefix commands with `uv run`.
 

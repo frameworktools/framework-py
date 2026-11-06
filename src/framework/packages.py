@@ -280,15 +280,20 @@ def packages_status() -> PackagesStatus:
         else:
             lock_current = False
     status = PackagesStatus(lock_current=lock_current, synced=synced, missing=missing)
-    lines = [
-        f"Lock file: {_describe(lock_current, 'current', 'out of date (run packages_snapshot())')}",
-        f"Environment: {_describe(synced, 'in sync', 'out of sync (run packages_restore())')}",
-    ]
+    has_lock = (root / "uv.lock").is_file()
+    if uv is None:
+        lock_line = environment_line = "unknown (uv is not installed)"
+    elif not has_lock:
+        lock_line = "missing (run packages_snapshot())"
+        environment_line = "unknown (no uv.lock to compare with)"
+    else:
+        lock_line = "current" if lock_current else "out of date (run packages_snapshot())"
+        environment_line = "in sync" if synced else "out of sync (run packages_restore())"
+    lines = [f"Lock file: {lock_line}", f"Environment: {environment_line}"]
     if missing:
         lines.append(f"Not installed here: {', '.join(missing)}")
+        venv = root / ".venv"
+        if venv.is_dir() and Path(sys.prefix).resolve() != venv.resolve():
+            lines.append(f"(This checks the running Python, {sys.prefix}, not {venv}.)")
     print("\n".join(lines))
     return status
-
-
-def _describe(value: bool | None, good: str, bad: str) -> str:
-    return "unknown (uv is not installed)" if value is None else good if value else bad

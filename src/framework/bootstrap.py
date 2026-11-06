@@ -22,6 +22,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,13 @@ def _check_spec(root: Path) -> None:
         )
 
 
+def _ask(prompt: str) -> str:
+    """Ask on stderr, so stdout carries only results, such as the CLI's printed path."""
+    sys.stderr.write(prompt)
+    sys.stderr.flush()
+    return input()
+
+
 def _prepare_env(root: Path, interactive: bool, result: BootstrapResult) -> None:
     env = root / ".env"
     example = root / ".env.example"
@@ -83,7 +91,7 @@ def _prepare_env(root: Path, interactive: bool, result: BootstrapResult) -> None
     if interactive and empty:
         values: dict[str, str] = {}
         for key in empty:
-            ask = getpass.getpass if _SECRET_NAME.search(key) else input
+            ask = getpass.getpass if _SECRET_NAME.search(key) else _ask
             answer = ask(f"{key} (leave empty to skip): ").strip()
             if answer:
                 values[key] = answer
@@ -183,7 +191,12 @@ def bootstrap(
     if settings_file is None:
         raise FrameworkError(f"No settings.yml in {root}. Is this a Framework project?")
     config = settings_read(settings_file)
-    language = config.get("language") or "r"
+    language = config.get("language")
+    if not language:
+        raise FrameworkError(
+            "The settings name no language, so this is read as an R project. Prepare it "
+            "in R with framework::bootstrap(), or add language: python to the settings."
+        )
     if language != "python":
         raise FrameworkError(
             f"This is a {language} project. Prepare it with that language's Framework "
@@ -198,7 +211,8 @@ def bootstrap(
     _create_folders(root, config, result)
     existed = db.db_path(root).exists()
     db.ensure_db(root)
-    result.done.append("Updated framework.db" if existed else "Created framework.db")
+    if not existed:
+        result.done.append("Created framework.db")
     if packages:
         _restore_packages(root, result)
     if (root / ".git").exists() and git_hooks_install(settings_file, verbose=False):

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pickle
 import shutil
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import matplotlib
@@ -9,6 +11,7 @@ import pandas as pd
 import pytest
 
 import framework as fw
+from framework.integrity import file_hash
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -40,7 +43,31 @@ def test_sensitive_projects_split_public_and_private(sensitive: Path) -> None:
     assert fw.save_table(FRAME, "p") == sensitive / "outputs/private/tables/p.csv"
     assert fw.save_table(FRAME, "q", public=True) == sensitive / "outputs/public/tables/q.csv"
     listed = fw.result_list(public=True)
-    assert listed["name"].tolist() == ["q.csv"]
+    assert listed["name"].tolist() == ["outputs/public/tables/q.csv"]
+
+
+def test_same_named_outputs_keep_separate_records(sensitive: Path) -> None:
+    # Audit 2026-11-05: records were keyed by file name, so the public save took over
+    # the private file's record and hash
+    private = fw.save_table(FRAME, "summary")
+    public = fw.save_table(FRAME.head(1), "summary", public=True)
+    listed = fw.result_list().set_index("name")
+    assert set(listed.index) == {
+        "outputs/private/tables/summary.csv",
+        "outputs/public/tables/summary.csv",
+    }
+    assert listed.loc["outputs/private/tables/summary.csv", "public"] == False  # noqa: E712
+    assert listed.loc["outputs/private/tables/summary.csv", "hash"] == file_hash(private)
+    assert listed.loc["outputs/public/tables/summary.csv", "hash"] == file_hash(public)
+
+
+def test_a_record_named_by_file_name_moves_to_the_path(project: Path) -> None:
+    path = fw.save_table(FRAME, "old")
+    with closing(sqlite3.connect(project / "framework.db")) as connection, connection:
+        connection.execute("UPDATE results SET name = 'old.csv'")
+    fw.save_table(FRAME, "old")
+    assert fw.result_list()["name"].tolist() == ["outputs/tables/old.csv"]
+    assert path.is_file()
 
 
 def test_save_figure(project: Path) -> None:
@@ -77,6 +104,19 @@ def test_save_model(project: Path) -> None:
         assert pickle.load(handle) == {"coef": [1, 2]}
 
 
+def test_a_failed_pickle_keeps_the_existing_model(project: Path) -> None:
+    # Audit 2026-11-05: the file was opened for writing first, so a failed dump left
+    # 0 bytes and framework.db kept the old hash
+    path = fw.save_model({"coef": [1, 2]}, "fit")
+    before = path.read_bytes()
+    recorded = fw.result_list()["hash"].tolist()
+    with pytest.raises((pickle.PicklingError, AttributeError, TypeError)):
+        fw.save_model(lambda x: x, "fit")
+    assert path.read_bytes() == before
+    assert fw.result_list()["hash"].tolist() == recorded == [file_hash(path)]
+    assert sorted(p.name for p in path.parent.iterdir()) == ["fit.pkl"]
+
+
 def test_save_report_copy_and_move(project: Path) -> None:
     report = project / "draft.pdf"
     report.write_bytes(b"%PDF")
@@ -92,8 +132,8 @@ def test_result_list(project: Path) -> None:
     fw.save_table(FRAME, "first")
     fw.save_model(1, "second")
     listed = fw.result_list()
-    assert listed["name"].tolist() == ["second.pkl", "first.csv"]
-    assert fw.result_list(type="table")["name"].tolist() == ["first.csv"]
+    assert listed["name"].tolist() == ["outputs/models/second.pkl", "outputs/tables/first.csv"]
+    assert fw.result_list(type="table")["name"].tolist() == ["outputs/tables/first.csv"]
     assert listed["public"].tolist() == [False, False]
     with pytest.raises(fw.FrameworkError, match="type must be"):
         fw.result_list(type="other")
@@ -132,3 +172,43 @@ def test_save_notebook_in_a_project_with_a_root_quarto_file(
     path = fw.save_notebook(notebook)
     assert path == root / "outputs/notebooks/summary.html"
     assert "Hello." in path.read_text(encoding="utf-8")
+
+
+def test_save_figure_takes_an_axes(project: Path) -> None:
+    # Audit 2026-11-05: Axes, which axes-level seaborn plots return, were rejected
+    _, axis = plt.subplots()
+    axis.plot([1, 2], [3, 4])
+    path = fw.save_figure(axis, "from-axes", dpi=20)
+    assert path.read_bytes()[:4] == b"\x89PNG"
+    plt.close("all")
+
+
+def test_save_notebook_without_embedding_overrides_the_project(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit 2026-11-05: embed_resources=False had no effect, because the project's
+    # _quarto.yml turns embedding on
+    import subprocess
+
+    from framework import outputs
+
+    commands: list[list[str]] = []
+
+    def render(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        out = Path(command[command.index("--output-dir") + 1]) / "notebooks"
+        (out / "report_files").mkdir(parents=True)
+        (out / "report.html").write_text("<p>r</p>", encoding="utf-8")
+        (out / "report_files" / "style.css").write_text("p{}", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(outputs.shutil, "which", lambda name: "/usr/bin/quarto")
+    monkeypatch.setattr(outputs.subprocess, "run", render)
+    notebook = project / "notebooks" / "report.qmd"
+    notebook.parent.mkdir()
+    notebook.write_text("---\ntitle: R\n---\n", encoding="utf-8")
+    saved = fw.save_notebook(notebook, name="final", embed_resources=False)
+    assert commands[-1][-2:] == ["-M", "embed-resources:false"]
+    assert (saved.parent / "report_files" / "style.css").is_file()
+    fw.save_notebook(notebook)
+    assert "--embed-resources" in commands[-1]

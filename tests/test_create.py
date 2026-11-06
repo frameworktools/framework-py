@@ -287,8 +287,10 @@ def test_new_applies_the_user_settings_catalog(tmp_path: Path) -> None:
     assert spec["directories"]["notebooks"] == "analysis"
 
 
-def test_new_defaults_to_bare_and_needs_answers(tmp_path: Path) -> None:
-    root = fw.new("Bare", tmp_path / "bare", interactive=False)
+def test_new_defaults_to_project_and_needs_answers(tmp_path: Path) -> None:
+    root = fw.new("Standard", tmp_path / "standard", interactive=False)
+    assert json.loads((root / ".framework/spec.json").read_text("utf-8"))["type"] == "project"
+    root = fw.new("Bare", tmp_path / "bare", "bare", interactive=False)
     assert json.loads((root / ".framework/spec.json").read_text("utf-8"))["type"] == "bare"
     with pytest.raises(fw.FrameworkError, match="name is required"):
         fw.new(interactive=False)
@@ -342,6 +344,9 @@ def test_cli_from_layers_and_name(tmp_path: Path, capsys: pytest.CaptureFixture[
     assert (tmp_path / "b/settings.yml").is_file()
     assert main(["create", "--name", "Cli", "--path", str(tmp_path / "b")]) == 1
     assert "already exists" in capsys.readouterr().err
+    assert main(["create", "--name", "Cli", "--path", str(tmp_path / "c")]) == 0
+    spec = json.loads((tmp_path / "c/.framework/spec.json").read_text("utf-8"))
+    assert spec["type"] == "project"
     r_layers = tmp_path / "r.json"
     r_layers.write_text(
         json.dumps({"spec_version": 1, "name": "R", "layers": []}), encoding="utf-8"
@@ -372,3 +377,24 @@ def test_secrets_backstop_respects_negation(tmp_path: Path) -> None:
 def test_secrets_backstop_patterns(tmp_path: Path, text: str, added: bool) -> None:
     (tmp_path / ".gitignore").write_text(text, encoding="utf-8")
     assert ensure_secrets_ignored(tmp_path) is added
+
+
+def test_layers_file_with_a_list(tmp_path: Path) -> None:
+    # Audit 2026-11-05: a JSON list raised AttributeError
+    layers = tmp_path / "layers.json"
+    layers.write_text("[]", encoding="utf-8")
+    with pytest.raises(fw.FrameworkError, match="must hold a JSON object"):
+        fw.project_create_from_layers(layers, tmp_path / "p")
+
+
+def test_new_prompt_suggests_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    prompts: list[str] = []
+
+    def answer(prompt: str) -> str:
+        prompts.append(prompt)
+        return ""
+
+    monkeypatch.setattr("builtins.input", answer)
+    root = fw.new("Prompted", tmp_path / "prompted", interactive=True, offline=True)
+    assert json.loads((root / ".framework/spec.json").read_text("utf-8"))["type"] == "project"
+    assert prompts[-1].endswith("[project]: ")

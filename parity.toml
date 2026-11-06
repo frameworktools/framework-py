@@ -300,8 +300,8 @@ note = "Writes a `.py` script"
 [functions.new]
 python = "new"
 status = "ported"
-usage = "new(name=None, location=None, type=\"project\", *, key=None)"
-note = "`key` fetches cloud layers, as planned for R 2.0"
+usage = "new(name=None, location=None, type=\"project\", *, key=None, url=None)"
+note = "`key` fetches cloud layers, as planned for R 2.0. `url` names the server that issued it"
 
 [functions.new_course]
 python = "new"
@@ -314,9 +314,9 @@ status = "folded"
 usage = "new(type=\"presentation\")"
 
 [functions.new_project]
-python = "new"
-status = "folded"
-usage = "new(type=\"project\")"
+python = "new_project"
+status = "ported"
+usage = "new_project(type=\"project\")"
 
 [functions.new_project_sensitive]
 python = "new"
@@ -501,8 +501,8 @@ status = "ported"
 [functions.setup]
 python = "new"
 status = "folded"
-usage = "new(key=...)"
-note = "The token path becomes `new(key)` as in the R 2.0 plan. The GUI part is R-only"
+usage = "new(key=..., url=...)"
+note = "The token path becomes `new(key, url=)` as in the R 2.0 plan. The GUI part is R-only"
 
 [functions.spec_check]
 python = "spec_check"

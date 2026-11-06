@@ -1,8 +1,8 @@
 {
-  "commit": "c8bb65019fdad5eada84453e1ba88b1a35ddb113",
+  "commit": "6755b53da142a6deedada08f449c9ad5b7e6aa9a",
   "files": {
     "docs/docs-site.md": {
-      "sha256": "a1d525010bb582a2ae0e6872ed2ec8b466ec56193554468c51dc7fcc0bd2aafd",
+      "sha256": "2b86e376b11401881ef77a595d20af203ffc50ed95d99a55e895157e8f8dca25",
       "source": "inst/schema/docs-site.md"
     },
     "src/framework/_assets/adopt/rules.json": {
@@ -38,7 +38,7 @@
       "source": "inst/features/uv.json"
     },
     "src/framework/_assets/hooks/pre-commit": {
-      "sha256": "c1790d7adb2e6f7b138b62d87b007e6f90d137cca801df8cf291bd3846b44cfb",
+      "sha256": "47f459c28af29a3d95e534f4546f31104a2846f9049bbad14e1148de10ab6a19",
       "source": "inst/hooks/pre-commit"
     },
     "src/framework/_assets/init.sql": {
@@ -46,20 +46,24 @@
       "source": "inst/templates/init.sql"
     },
     "src/framework/_assets/schema/docs-reference.v1.json": {
-      "sha256": "e115abd1d68a5f15d46c5794f05f880623e9286197ffda6a4c1fe8dcb9309f5f",
+      "sha256": "fbf9d71cf95e563c2d96cf4085e53e0a24e5ab5ab98ac204a21aa3dfd21e7f6a",
       "source": "inst/schema/docs-reference.v1.json"
     },
     "src/framework/_assets/schema/layer.v1.json": {
-      "sha256": "74c6e41efd3b064adedfc774ecb3d9534bbd197906039659436d68d894e3cb8b",
+      "sha256": "40c6878cb147a9c3fd9c980f8fa88fe4cbcc55a2255a7c3b1be401de45336402",
       "source": "inst/schema/layer.v1.json"
     },
     "src/framework/_assets/schema/layers.v1.json": {
-      "sha256": "8d7839d5602012459997d5a5e3df65ae5942ca7cd50ae9ad09a821f95dc800b9",
+      "sha256": "aa3df242985189da4f1bf889e06ebb61d4c0f3383920ce3cf329058695d1907d",
       "source": "inst/schema/layers.v1.json"
     },
     "src/framework/_assets/schema/spec.v1.json": {
-      "sha256": "5323ccd0d20e1a3e1bd7e5af0c46565a02b5bfc7678642ff64f6f3448bd33bec",
+      "sha256": "767fddb1071e0ce2cd88eb0d9999921c5009ff97ef51193f079224648df56536",
       "source": "inst/schema/spec.v1.json"
+    },
+    "src/framework/_assets/sets/packages/python-data-analysis.json": {
+      "sha256": "d11b6029bd828c9c3d0928235630fe7971f181922ed133d15d8980345da7392b",
+      "source": "inst/sets/packages/python-data-analysis.json"
     },
     "src/framework/_assets/sets/packages/tidyverse-analysis.json": {
       "sha256": "f5b157a35097ab007d2a5b7837faf78fdce2bd523c5d6fa6e5f0c433f4fdd738",
@@ -238,6 +242,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "c8bb65019fdad5eada84453e1ba88b1a35ddb113",
+  "ref": "6755b53da142a6deedada08f449c9ad5b7e6aa9a",
   "source": "framework (R package)"
 }

@@ -46,6 +46,7 @@ _ORDER = (
     "scaffold",
     "quarto",
     "connections",
+    "publish",
     "security",
     "env",
     "data_hooks",

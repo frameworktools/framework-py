@@ -44,6 +44,27 @@ def test_shipped_hook_is_a_posix_script() -> None:
     assert "-c 'import framework'" in script
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="runs the hook with /bin/sh")
+def test_shipped_hook_finds_a_runtime_without_project_markers(repo: Path, tmp_path: Path) -> None:
+    # Audit 2026-11-05 (shared with R's inst/hooks/pre-commit): a default project has
+    # settings.yml but no .Rproj, renv.lock, pyproject.toml, uv.lock, or .venv. The hook
+    # used to fail with "found neither R ... nor Python". Now it tries R, then Python.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "python3.log"
+    fake = bin_dir / "python3"
+    fake.write_text(f'#!/bin/sh\necho "$*" >> "{log}"\nexit 0\n', encoding="utf-8")
+    fake.chmod(0o755)
+    hook = tmp_path / "pre-commit"
+    hook.write_text(hook_script(), encoding="utf-8")
+    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin"}
+    result = subprocess.run(
+        ["/bin/sh", str(hook)], cwd=repo, env=env, capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert "-m framework hook pre-commit" in log.read_text(encoding="utf-8")
+
+
 def test_nothing_installed_until_a_hook_is_enabled(repo: Path) -> None:
     assert fw.git_hooks_install() is False
     assert not (repo / ".git/hooks/pre-commit").exists()
@@ -226,3 +247,27 @@ def test_project_create_installs_enabled_hooks(tmp_path: Path) -> None:
     spec = fw.spec_resolve([layer], name="Hooked").spec
     root = fw.project_create(spec, tmp_path / "hooked")
     assert (root / ".git/hooks/pre-commit").read_text(encoding="utf-8") == hook_script()
+
+
+def test_sensitive_folders_ignored_by_content_rules_are_covered(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Audit 2026-11-05: "scratch/*" and "private/" rules did not count, so every commit in
+    # a new project warned about scratch/ and private/
+    fw.git_hooks_enable("check_sensitive_dirs")
+    for folder in ("scratch", "private", "outputs/cache", "notes/sensitive"):
+        (repo / folder).mkdir(parents=True)
+    (repo / ".gitignore").write_text(
+        ".env\nscratch/*\n!scratch/.gitkeep\nprivate/\noutputs/cache/**\n", encoding="utf-8"
+    )
+    monkeypatch.setattr("framework.hooks._confirm", lambda question: False)
+    assert hook_run("pre-commit") == 1
+    err = capsys.readouterr().err
+    assert "notes/sensitive" in err
+    assert "  - notes/sensitive" in err
+    for covered in ("scratch", "private", "outputs/cache"):
+        assert f"  - {covered}\n" not in err
+    (repo / ".gitignore").write_text(
+        ".env\nscratch/*\nprivate/\noutputs/cache/**\nnotes/\n", encoding="utf-8"
+    )
+    assert hook_run("pre-commit") == 0

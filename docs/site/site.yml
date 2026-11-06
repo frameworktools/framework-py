@@ -8,11 +8,11 @@ repository: https://github.com/frameworktools/framework-py
 install: uv add framework-py
 sections:
   - id: getting_started
-    title: Getting Started
+    title: Getting started
   - id: features
     title: Features
   - id: project_types
-    title: Project Types
+    title: Project types
   - id: reference
     title: Reference
     reference: true

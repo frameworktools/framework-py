@@ -1,7 +1,7 @@
 ---
 id: notebooks
-title: Notebooks and Scripts
-description: Creating notebooks, scripts, and presentations from stubs and templates
+title: Notebooks and scripts
+description: Notebooks, scripts, and presentations from stubs and templates
 section: features
 position: 5
 ---
@@ -85,7 +85,7 @@ fw.make_presentation("Quarterly Review")
 
 Presentation projects start with their own `presentation.qmd`. The [Quarto](guide:quarto) guide covers rendering.
 
-## The Stubs
+## Stubs
 
 framework-py ships five stubs.
 
@@ -117,7 +117,7 @@ fw.stubs_list()
 fw.stubs_list("quarto")
 ```
 
-## Customizing Stubs
+## Custom stubs
 
 A project can keep its own stubs in a `stubs/` folder in the root. Stub files are named `notebook-<name>.qmd`, `notebook-<name>.ipynb`, or `script-<name>.py`. [stubs_publish()](ref:stubs_publish) copies Framework's stubs into that folder so you can edit them.
 

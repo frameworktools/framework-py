@@ -325,7 +325,8 @@ def structure_import(
         yes: Send the proposed mapping without asking, as a script must.
 
     Returns:
-        The new structure: ``key`` (``"<owner>/<key>"``), ``name``, and ``url``.
+        The new structure: ``key`` (``"<owner>/<key>"``, or only ``"<key>"`` when your
+        account has no handle yet), ``name``, and ``url``.
 
     Raises:
         CloudError: When you are not logged in, or the server rejects the layout or

@@ -200,3 +200,30 @@ def test_invalid_arguments(repo: Path) -> None:
         fw.git_security_audit(history_depth="deep", verbose=False)
     with pytest.raises(ValueError, match="history_depth"):
         fw.git_security_audit(history_depth=0, verbose=False)
+
+
+def test_auto_fix_writes_files_as_files(repo: Path) -> None:
+    # Audit 2026-11-05: a data file was written as "<file>/" and "<file>/**", folder
+    # patterns that never match it
+    (repo / "inputs/private/raw").mkdir(parents=True, exist_ok=True)
+    (repo / "inputs/private/raw/a.parquet").write_bytes(b"PAR1")
+    (repo / "inputs/private/raw/keep.parquet").write_bytes(b"PAR1")
+    (repo / ".gitignore").write_text(
+        ".env\ninputs/private/raw/*\n!inputs/private/raw/keep.parquet\n", encoding="utf-8"
+    )
+    coverage = fw.git_security_audit(verbose=False).findings["gitignore_coverage"]
+    assert list(coverage["file"]) == ["inputs/private/raw/keep.parquet"]
+    fw.git_security_audit(auto_fix=True, verbose=False)
+    lines = (repo / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "/inputs/private/raw/keep.parquet" in lines
+    assert not any(line.startswith("inputs/private/raw/keep.parquet/") for line in lines)
+    assert fw.git_security_audit(verbose=False).findings["gitignore_coverage"].empty
+
+
+def test_auto_fix_adds_only_the_folder_when_it_covers_the_files(repo: Path) -> None:
+    (repo / "inputs/private/raw").mkdir(parents=True, exist_ok=True)
+    (repo / "inputs/private/raw/a.parquet").write_bytes(b"PAR1")
+    (repo / ".gitignore").write_text(".env\n", encoding="utf-8")
+    fw.git_security_audit(auto_fix=True, verbose=False)
+    lines = (repo / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert lines[-2:] == ["inputs/private/raw/", "inputs/private/raw/**"]

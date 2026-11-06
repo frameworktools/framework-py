@@ -141,3 +141,17 @@ def test_real_uv_lock_and_status(project: Path, monkeypatch: pytest.MonkeyPatch)
 def test_no_pyproject(project: Path) -> None:
     with pytest.raises(fw.FrameworkError, match=r"No pyproject\.toml"):
         fw.packages_list()
+
+
+def test_packages_status_without_a_lock_file_names_the_real_reason(
+    project: Path,
+    calls: list[list[str]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Audit 2026-11-05: with uv installed and no uv.lock, it said "uv is not installed"
+    status = fw.packages_status()
+    assert status.lock_current is False
+    out = capsys.readouterr().out
+    assert "uv is not installed" not in out
+    assert "Lock file: missing (run packages_snapshot())" in out
+    assert "Environment: unknown (no uv.lock to compare with)" in out

@@ -17,9 +17,12 @@ SHARED = Path(__file__).parent / "shared"
 def isolated_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
     """Keep each test's environment variables and config folders separate.
 
-    settings_read() loads .env files into os.environ, as R does, so the whole
-    environment is restored after each test.
+    scaffold() loads .env files into os.environ, so the whole environment is
+    restored after each test, along with what the loader remembers it set.
     """
+    from framework import dotenv
+
+    dotenv._loaded.clear()
     saved = dict(os.environ)
     home = tmp_path_factory.mktemp("home")
     for name in (
@@ -35,11 +38,14 @@ def isolated_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[N
     os.environ["R_USER_CONFIG_DIR"] = str(home / "r-config")
     # Authoritative when set, so no test reads or writes the real keyring.
     os.environ["FW_TOKEN_FILE"] = str(home / "no-token")
+    # Logout still clears the keyring, so turn it off (the macOS path honors this too).
+    os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
     try:
         yield
     finally:
         os.environ.clear()
         os.environ.update(saved)
+        dotenv._loaded.clear()
 
 
 @pytest.fixture

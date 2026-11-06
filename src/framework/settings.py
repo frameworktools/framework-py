@@ -6,7 +6,8 @@ gives the same values in both languages:
 - A file with a ``default:`` section (or another common environment name at
   the top level) has environment sections. The active environment is merged
   over ``default``: mappings merge by key, and anything else is replaced.
-- The project's ``.env`` is loaded before split files are read.
+- The project's ``.env`` is read before split files. Its values are visible only while
+  the settings resolve, shell values win, and empty values are skipped.
 - A top-level value ending in ``.yml`` or ``.yaml`` names a split file, which
   is read, merged in, and may itself name split files.
 - ``env("VAR")``, ``env("VAR", "default")``, and ``!expr Sys.getenv(...)``
@@ -168,8 +169,46 @@ def _select_environment(raw: Any, environment: str, label: str, *, warn: bool) -
 # Expressions ----------------------------------------------------------------
 
 
+def _check_publish_credentials(publish: Any) -> None:
+    """Named publishing destinations keep credential values in the environment."""
+    if not isinstance(publish, dict):
+        return
+    destinations = publish.get("destinations")
+    if not isinstance(destinations, dict):
+        return
+    credential_keys = {
+        "access_key",
+        "access_key_id",
+        "secret_key",
+        "secret_access_key",
+        "session_token",
+        "password",
+        "token",
+        "api_key",
+    }
+    for name, options in destinations.items():
+        if not isinstance(options, dict):
+            continue
+        for key, raw in options.items():
+            if str(key).lower() not in credential_keys or raw in (None, ""):
+                continue
+            call = _ENV_CALL.match(raw) if isinstance(raw, str) else None
+            if call is not None and not call.group(2):
+                continue
+            expression = _EXPR.sub("", raw, count=1).strip() if isinstance(raw, str) else ""
+            system = _SYS_GETENV.match(expression)
+            if system is not None and not system.group(4):
+                continue
+            raise SettingsError(
+                f"publish.destinations.{name}.{key} must use an environment reference "
+                'such as env("VARIABLE").'
+            )
+
+
 def _evaluate(value: Any) -> Any:
     if isinstance(value, dict):
+        if "publish" in value:
+            _check_publish_credentials(value["publish"])
         return {key: _evaluate(item) for key, item in value.items()}
     if isinstance(value, list):
         return [_evaluate(item) for item in value]
@@ -235,7 +274,14 @@ def _resolve_split_files(
         split = _resolve_split_files(
             split, environment, split_path, (*visited, split_path), config_root, main_keys
         )
-        split = _evaluate(split)
+        # Publish credentials are validated while still expressed as env references.
+        # Keep that section raw until the final whole-settings evaluation.
+        raw_publish = split.get("publish", _MISSING) if isinstance(split, dict) else _MISSING
+        if raw_publish is not _MISSING:
+            split = _evaluate({k: v for k, v in split.items() if k != "publish"})
+            split["publish"] = raw_publish
+        else:
+            split = _evaluate(split)
         if not isinstance(split, dict):
             continue
 
@@ -295,6 +341,34 @@ def _lift_connections(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _dotenv_file(config: Mapping[str, Any], root: Path) -> Path:
+    """The project's ``.env``: ``dotenv_location`` when set, else the root's."""
+    location = config.get("dotenv_location")
+    if location is None:
+        return root / ".env"
+    env_path = Path(str(location))
+    if not env_path.is_absolute():
+        env_path = root / env_path
+    return env_path / ".env" if env_path.is_dir() else env_path
+
+
+def project_dotenv() -> dict[str, str]:
+    """The current project's ``.env`` values, read without touching ``os.environ``.
+
+    For values used after ``settings_read()`` returns, such as storage credentials. Empty
+    outside a project or when the file cannot be read.
+    """
+    path = find_settings_file()
+    if path is None:
+        return {}
+    try:
+        raw = _yaml.read(path)
+        config = _select_environment(raw, active_environment(), str(path), warn=False)
+        return dotenv.read(_dotenv_file(config if isinstance(config, dict) else {}, path.parent))
+    except Exception:
+        return {}
+
+
 # Public API -----------------------------------------------------------------
 
 
@@ -328,33 +402,28 @@ def settings_read(
     if not isinstance(config, dict):
         raise SettingsError(f"Settings file '{path}' must contain a mapping")
 
-    root = path.parent
-    dotenv_location = config.get("dotenv_location")
-    if dotenv_location is not None:
-        env_path = Path(str(dotenv_location))
-        if not env_path.is_absolute():
-            env_path = root / env_path
-        if env_path.is_dir():
-            env_path = env_path / ".env"
-    else:
-        env_path = root / ".env"
+    env_path = _dotenv_file(config, path.parent)
+    values: dict[str, str] = {}
     if env_path.is_file():
         try:
-            dotenv.load(env_path)
+            values = dotenv.read(env_path)
         except SettingsError as error:
             warnings.warn(f"Failed to load .env file: {error}", SettingsWarning, stacklevel=2)
 
-    resolved_path = path.resolve()
-    config = _resolve_split_files(
-        config, active, resolved_path, (), resolved_path.parent, frozenset(config)
-    )
-    config = _lift_connections(config)
+    # The .env values are visible only while env() and !expr values resolve. Shell values
+    # win, empty values are skipped, and nothing stays in os.environ afterward.
+    with dotenv.scoped(values):
+        resolved_path = path.resolve()
+        config = _resolve_split_files(
+            config, active, resolved_path, (), resolved_path.parent, frozenset(config)
+        )
+        config = _lift_connections(config)
 
-    for section in (*_STANDARD_SECTIONS, "options"):
-        if config.get(section) is None:
-            config[section] = {}
+        for section in (*_STANDARD_SECTIONS, "options"):
+            if config.get(section) is None:
+                config[section] = {}
 
-    evaluated: dict[str, Any] = _evaluate(config)
+        evaluated: dict[str, Any] = _evaluate(config)
     return evaluated
 
 

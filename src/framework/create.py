@@ -179,6 +179,8 @@ def _write_settings(root: Path, spec: Mapping[str, Any]) -> None:
         main["data"] = {}
         main["connections"] = sections["connections"]
 
+    if spec.get("publish") is not None:
+        main["publish"] = spec["publish"]
     main["security"] = spec.get("security") or {"sensitive": False}
     if spec.get("data_hooks"):
         main["data_hooks"] = spec["data_hooks"]
@@ -484,6 +486,8 @@ def project_create_from_layers(
         envelope = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise FrameworkError(f"Failed to read layers file '{source}': {error}") from error
+    if not isinstance(envelope, dict):
+        raise FrameworkError(f"Layers file '{source}' must hold a JSON object")
     if envelope.get("spec_version") != 1:
         raise FrameworkError(
             f"Unsupported spec_version in '{source}': {envelope.get('spec_version')} "
@@ -565,7 +569,7 @@ def catalog_layer(type: str) -> dict[str, Any]:
     return _defaults_layer(catalog, type) if isinstance(catalog, dict) else {}
 
 
-def new(
+def new_project(
     name: str | None = None,
     location: str | Path | None = None,
     type: str | None = None,
@@ -581,6 +585,7 @@ def new(
     ai: bool | Mapping[str, Any] | None = None,
     git: bool | None = None,
     key: str | None = None,
+    url: str | None = None,
     interactive: bool | None = None,
     offline: bool = False,
 ) -> Path:
@@ -593,8 +598,9 @@ def new(
             you are logged in to Framework Cloud, every choice is resolved there:
             a type is its system blueprint (``framework/<type>``), and with no
             choices at all the project starts from your defaults. When not logged
-            in, a missing type is asked for interactively and is ``bare``
-            otherwise, as in R's ``new()``.
+            in, a missing type is asked for interactively and is ``project``,
+            the Standard Project, otherwise, as in R's ``new()``. Pass
+            ``type="bare"`` for a bare project.
         workflow: How notebooks are written: ``"jupyter"`` (``.ipynb``, with Quarto kept
             for rendering and publishing), ``"quarto"`` (``.qmd``), or ``"scripts"`` (no
             notebooks). Default: ``"jupyter"`` for project and project_sensitive, and the
@@ -625,6 +631,10 @@ def new(
         key: A Framework Cloud project token. The project's definition (its
             layers) is fetched from the cloud, and the token is saved in the
             new project's ``.env`` for publishing and the ledger.
+        url: With ``key``: the Framework Cloud server that issued the token. No login is
+            needed. The server is saved as ``FW_CLOUD_URL`` in the project's ``.env``.
+            Default: ``FW_CLOUD_URL``, then the server you last logged in to with
+            [`cloud_login()`](ref:cloud_login), then https://framework.pub.
         interactive: Whether to prompt. Default: whether stdin is a terminal.
         offline: Build from Framework's built-in defaults without contacting Framework Cloud.
             When you are logged in and pass no choices, ``new()`` resolves your defaults on
@@ -635,9 +645,13 @@ def new(
     Returns:
         The project folder.
     """
+    # Before anything can inform(), so the first call in a process shows every message
+    show_messages()
     interactive = sys.stdin.isatty() if interactive is None else interactive
     if key is not None:
-        return _new_from_cloud(key, location, interactive)
+        return _new_from_cloud(key, location, interactive, url)
+    if url is not None:
+        raise FrameworkError("url names the server for key. Pass key too.")
     cloud_choices = blueprint is not None or structure is not None
     if cloud_choices and type is not None:
         raise FrameworkError("Pass type, or blueprint and structure, not both")
@@ -728,9 +742,9 @@ def _new_local(
     if type is None:
         if interactive:
             choices = ", ".join(TYPES)
-            type = input(f"Project type ({choices}) [bare]: ").strip() or "bare"
+            type = input(f"Project type ({choices}) [project]: ").strip() or "project"
         else:
-            type = "bare"
+            type = "project"
     if type not in TYPES:
         raise FrameworkError(f"Invalid project type. Must be one of: {', '.join(TYPES)}")
 
@@ -914,6 +928,9 @@ def _build_and_register(
     spec = spec_resolve(envelope.get("layers") or [], name, envelope.get("author")).spec
     spec["source"] = envelope.get("source") or {"origin": "cloud"}
     root = project_create(spec, location)
+    if spec.get("type") == "bare":
+        # As offline: a bare project has no .env for a project token, so it stays local
+        return root
     try:
         created = api("/api/v2/projects", token, server, method="POST", body=body)
     except CloudError as error:
@@ -946,10 +963,12 @@ def _replace_default_skills(spec: dict[str, Any], type: str, layers: Sequence[An
     }
 
 
-def _new_from_cloud(key: str, location: str | Path | None, interactive: bool) -> Path:
+def _new_from_cloud(
+    key: str, location: str | Path | None, interactive: bool, url: str | None = None
+) -> Path:
     from framework.cloud import fetch_layers, write_project_token
 
-    envelope, server = fetch_layers(key)
+    envelope, server = fetch_layers(key, url)
     name = envelope.get("name")
     if not name:
         raise FrameworkError("The cloud project has no name")
@@ -999,3 +1018,7 @@ def project_add_directory(project_path: str | Path, key: str, label: str, path: 
     config["extra_directories"] = extra
     _yaml.write(settings_file, raw)
     return folder
+
+
+# Backward-compatible project creation alias.
+new = new_project

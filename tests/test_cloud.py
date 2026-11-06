@@ -228,7 +228,8 @@ def test_bad_token_is_reported(project: Path, server: FakeCloud, keyring: dict[s
     assert keyring == {}
 
 
-def test_logout(project: Path, keyring: dict[str, str]) -> None:
+def test_logout(project: Path, server: FakeCloud, keyring: dict[str, str]) -> None:
+    server.route("DELETE", "/api/v1/token", lambda r: httpx.Response(204))
     keyring["framework-cloud:framework.pub"] = "a"
     keyring["framework.pub"] = "b"
     fw.config_dir().mkdir(parents=True)
@@ -355,7 +356,7 @@ def test_cloud_publish_html_and_bundle(cloud_project: Path, server: FakeCloud) -
     assert fw.publish(report, slug="main-results") == "https://cloud.example.edu/d/report"
     first = received[0]["body"]
     assert b'name="slug"\r\n\r\nmain-results' in first
-    assert b'name="readable"\r\n\r\n1' in first
+    assert b'name="readable"' not in first
     assert b'filename="report.html"' in first
 
     (cloud_project / "outputs" / "report_files").mkdir()
@@ -832,3 +833,521 @@ def test_cloud_dataframe_uses_structured_schema(cloud_project: Path, server: Fak
     assert b'name="slug"\r\n\r\ntable' in body
     assert b'name="kind"\r\n\r\ntable' in body
     assert b'"schema": "framework.artifact/v1"' in body
+
+
+# Browser login -------------------------------------------------------------------------
+
+
+def _device_routes(server: FakeCloud, replies: list[int]) -> None:
+    server.route(
+        "POST",
+        "/api/v1/cli/device",
+        lambda r: httpx.Response(
+            200,
+            json={
+                "device_code": "dev-123",
+                "user_code": "ABCD-EFGH",
+                "verification_url": "https://cloud.example.edu/device",
+                "verification_url_complete": "https://cloud.example.edu/device?code=ABCD-EFGH",
+                "interval": 2,
+                "expires_in": 10,
+            },
+        ),
+    )
+    pending = list(replies)
+
+    def poll(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content) == {"device_code": "dev-123"}
+        assert "Authorization" not in request.headers
+        status = pending.pop(0) if pending else 200
+        if status == 200:
+            return httpx.Response(200, json={"token": "fw_browser_0123456789"})
+        return httpx.Response(status, json={"error": "pending"})
+
+    server.route("POST", "/api/v1/cli/device/token", poll)
+
+
+def test_browser_login_stores_the_approved_token(
+    project: Path, server: FakeCloud, keyring: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened: list[str] = []
+    waits: list[int] = []
+    monkeypatch.setattr(cloud, "_sleep", waits.append)
+    monkeypatch.setattr(cloud.webbrowser, "open", opened.append)
+    _device_routes(server, [428, 429])
+    stored = fw.cloud_login(url="https://cloud.example.edu")
+    assert stored == "keyring"
+    assert keyring == {"framework-cloud:cloud.example.edu": "fw_browser_0123456789"}
+    assert opened == ["https://cloud.example.edu/device?code=ABCD-EFGH"]
+    assert waits == [2, 2, 7]
+    assert server.paths() == [
+        "POST /api/v1/cli/device",
+        "POST /api/v1/cli/device/token",
+        "POST /api/v1/cli/device/token",
+        "POST /api/v1/cli/device/token",
+        "GET /api/v1/me",
+    ]
+    assert json.loads(server.requests[0].content)["client_name"].startswith("Python on ")
+
+
+def test_browser_login_without_opening_a_browser(
+    project: Path, server: FakeCloud, keyring: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cloud, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(cloud.webbrowser, "open", lambda url: pytest.fail("opened a browser"))
+    _device_routes(server, [])
+    assert fw.cloud_login(url="https://cloud.example.edu", browser=False) == "keyring"
+
+
+@pytest.mark.parametrize(
+    ("status", "message"), [(403, "denied in the browser"), (410, "code expired")]
+)
+def test_browser_login_reports_denial_and_expiry(
+    project: Path,
+    server: FakeCloud,
+    keyring: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    message: str,
+) -> None:
+    monkeypatch.setattr(cloud, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(cloud.webbrowser, "open", lambda url: None)
+    _device_routes(server, [status])
+    with pytest.raises(fw.CloudError, match=message):
+        fw.cloud_login(url="https://cloud.example.edu")
+    assert keyring == {}
+
+
+def test_browser_login_on_a_server_without_it(
+    project: Path, server: FakeCloud, keyring: dict[str, str]
+) -> None:
+    with pytest.raises(fw.CloudError, match="does not offer browser login"):
+        fw.cloud_login(url="https://cloud.example.edu")
+
+
+# Audit 2026-11-05 regressions ------------------------------------------------------------
+
+
+def _fields(body: bytes) -> dict[str, str]:
+    """The plain multipart fields of a request body."""
+    import re
+
+    return {
+        match[0]: match[1]
+        for match in re.findall(rb'name="([^"]+)"\r\n\r\n([^\r]*)\r\n', body)
+        if b"filename" not in match[0]
+    }  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("slug", "visibility", "readable"),
+    [
+        ("x", "private", None),
+        ("x", "unlisted", None),
+        (False, "private", None),
+        (True, "public", None),
+        ("x", None, None),
+        (True, None, b"1"),
+        (False, None, b"0"),
+    ],
+)
+def test_explicit_visibility_wins_over_the_slug(
+    cloud_project: Path,
+    server: FakeCloud,
+    slug: str | bool,
+    visibility: str | None,
+    readable: bytes | None,
+) -> None:
+    # A string slug sent readable=1, which the server turned into public.
+    # Now only slug=True or False sends the switch.
+    server.route(
+        "POST", "/api/v1/documents", lambda r: httpx.Response(201, json={"url": "https://x/d/1"})
+    )
+    report = cloud_project / "report.html"
+    report.write_text("<p>hi</p>", encoding="utf-8")
+    fw.publish(report, to="cloud", slug=slug, visibility=visibility)
+    fields = _fields(server.requests[-1].content)
+    assert fields.get(b"readable") == readable
+    assert fields.get(b"visibility") == (visibility.encode() if visibility else None)
+
+
+def test_hidden_visibility_with_a_slug_fails_a_public_collection_first(
+    cloud_project: Path, server: FakeCloud
+) -> None:
+    rows = [{"id": 7, "slug": "findings", "title": "F", "visibility": "public"}]
+    server.route(
+        "GET", "/api/v2/collections", lambda r: httpx.Response(200, json={"collections": rows})
+    )
+    path = cloud_project / "figure.png"
+    path.write_bytes(b"png")
+    with pytest.raises(fw.CloudError, match="Public collections require public artifacts"):
+        fw.publish(path, to="cloud", slug="fig", visibility="private", collection="findings")
+    assert all(r.method == "GET" for r in server.requests)
+
+
+def test_logout_removes_the_fw_token_file(project: Path, server: FakeCloud) -> None:
+    # cloud_login() wrote FW_TOKEN_FILE, but cloud_logout() never removed it
+    fw.cloud_login("fw_0123456789", consent=True)
+    token_file = Path(os.environ["FW_TOKEN_FILE"])
+    assert token_file.is_file() and fw.cloud_status() is True
+    assert str(token_file) in fw.cloud_logout()
+    assert not token_file.exists()
+    assert fw.cloud_status() is False
+
+
+def test_live_ledger_time_is_utc(cloud_project: Path, server: FakeCloud) -> None:
+    # The live push sent local time with an offset, which the server stored as UTC
+    from datetime import UTC, datetime, timedelta
+
+    os.environ["FW_LEDGER"] = "live"
+    fw.data_save(pd.DataFrame({"x": [1]}), "inputs/a.csv")
+    recorded = server.ledger[0]["recorded_at"]
+    assert recorded.endswith("Z")
+    when = datetime.strptime(recorded, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    assert abs(datetime.now(UTC) - when) < timedelta(minutes=1)
+
+
+def test_live_ledger_can_be_turned_on_in_the_project_env(
+    cloud_project: Path, server: FakeCloud
+) -> None:
+    with (cloud_project / ".env").open("a", encoding="utf-8") as env:
+        env.write("FW_LEDGER=live\n")
+    fw.settings_read()
+    assert "FW_LEDGER" not in os.environ
+    fw.data_save(pd.DataFrame({"x": [1]}), "inputs/a.csv")
+    assert [e["name"] for e in server.ledger] == ["inputs/a.csv"]
+
+
+def test_data_verify_by_path_finds_the_catalog_record(cloud_project: Path) -> None:
+    # Given a path, the framework.db lookup missed the record and passed a tampered file
+    import warnings
+
+    os.environ.pop("FW_PROJECT_TOKEN", None)
+    (cloud_project / ".env").write_text("", encoding="utf-8")
+    (cloud_project / "settings.yml").write_text(
+        "default:\n  data:\n    a: inputs/a.csv\n", encoding="utf-8"
+    )
+    (cloud_project / "inputs/a.csv").write_text("x\n1\n", encoding="utf-8")
+    fw.data_read("a")
+    assert fw.data_verify("inputs/a.csv") is True
+    (cloud_project / "inputs/a.csv").write_text("x\n2\n", encoding="utf-8")
+    with pytest.warns(fw.FrameworkWarning, match="Integrity mismatch"):
+        assert fw.data_verify("inputs/a.csv") is False
+    (cloud_project / "inputs/b.csv").write_text("x\n1\n", encoding="utf-8")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert fw.data_verify("inputs/b.csv") is True
+
+
+def test_data_verify_reports_a_missing_record(
+    cloud_project: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (cloud_project / ".env").write_text("", encoding="utf-8")
+    (cloud_project / "inputs/b.csv").write_text("x\n1\n", encoding="utf-8")
+    caplog.set_level("INFO", logger="framework")
+    assert fw.data_verify("inputs/b.csv") is True
+    assert "no framework.db record for this file yet" in caplog.text
+
+
+def test_sync_conflict_advice_works(project: Path, server: FakeCloud) -> None:
+    # The conflict message advised a push that the server always rejects
+    os.environ["FW_CLOUD_TOKEN"] = "fw_0123456789"
+    mirror = fw.config_dir() / "cloud-settings.yml"
+    fw.cloud_sync()
+    server.settings = {"revision": 9, "document": {"author": {"name": "Remote"}}}
+    _yaml.write(mirror, {"author": {"name": "Local"}})
+    with pytest.raises(fw.CloudError) as raised:
+        fw.cloud_sync()
+    assert 'cloud_sync("push") to overwrite' not in str(raised.value)
+    assert fw.cloud_sync("pull") == 9
+    _yaml.write(mirror, {"author": {"name": "Local"}})
+    assert fw.cloud_sync("push") == 10
+
+
+def test_logged_in_bare_projects_stay_local(tmp_path: Path, server: FakeCloud) -> None:
+    # The guide says bare projects are not registered; logged in, they were
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    envelope = {
+        "spec_version": 1,
+        "name": "Plain",
+        "layers": [
+            {"kind": "base", "key": "framework/bare", "layer": {"type": "bare"}},
+            {"kind": "project", "key": "plain", "layer": {"language": "python"}},
+        ],
+        "source": {"origin": "cloud"},
+    }
+    server.route("POST", "/api/v2/resolve", lambda r: httpx.Response(200, json=envelope))
+    root = fw.new("Plain", tmp_path / "plain", "bare", interactive=False)
+    assert (root / "settings.yml").is_file()
+    assert "POST /api/v2/projects" not in server.paths()
+
+
+def test_new_shows_its_first_messages(
+    tmp_path: Path, server: FakeCloud, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Messages logged before project_create() turned output on were lost
+    import logging
+
+    from framework._defaults_cache import write_cached_defaults
+
+    logger = logging.getLogger("framework")
+    saved = (list(logger.handlers), logger.level)
+    for handler in [h for h in logger.handlers if getattr(h, "_framework", False)]:
+        logger.removeHandler(handler)
+    logger.setLevel(logging.NOTSET)
+    try:
+        os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+        write_cached_defaults(cloud.cloud_server().url, "python", choices_envelope(), "rev-7")
+        server.route("POST", "/api/v2/resolve", offline)
+        fw.new("Lab", tmp_path / "lab", interactive=False)
+        assert "Using your Framework Cloud defaults from 20" in capsys.readouterr().err
+    finally:
+        logger.handlers[:] = saved[0]
+        logger.setLevel(saved[1])
+
+
+# Interop fixes (2026-11-05) -------------------------------------------------------------------
+
+
+def test_a_string_slug_does_not_fail_a_public_collection_pre_check(
+    cloud_project: Path, server: FakeCloud
+) -> None:
+    # The pre-check took a string slug as public, so it never asked for share_unlisted
+    rows = [{"id": 7, "slug": "findings", "title": "F", "visibility": "unlisted"}]
+    server.route(
+        "GET", "/api/v2/collections", lambda r: httpx.Response(200, json={"collections": rows})
+    )
+    path = cloud_project / "figure.png"
+    path.write_bytes(b"png")
+    server.route(
+        "POST", "/api/v1/documents", lambda r: httpx.Response(201, json={"id": 1, "url": "u"})
+    )
+    server.route("POST", "/api/v2/collections/7/items", lambda r: httpx.Response(201, json={}))
+    assert fw.publish(path, to="cloud", slug="fig", collection="findings") == "u"
+    fields = _fields(server.requests[1].content)
+    assert b"readable" not in fields and b"visibility" not in fields
+
+
+@pytest.mark.parametrize(
+    ("reply", "shown", "hidden"),
+    [
+        (
+            {
+                "visibility": "public",
+                "readable_url": None,
+                "notice": "Set a handle in Account > Account details to get a readable URL. "
+                "The unlisted link works now.",
+            },
+            "Public. Set a handle in Account > Account details",
+            "unlisted",
+        ),
+        (
+            {
+                "readable_url": None,
+                "notice": "Set a handle in Account > Account details to get a readable URL. "
+                "The unlisted link works now.",
+            },
+            "Public. Set a handle",
+            "unlisted",
+        ),
+        ({"visibility": "public", "readable_url": "https://x/@ada/p/r"}, "", "Set a handle"),
+        ({"visibility": "unlisted", "readable_url": None}, "", "Set a handle"),
+        ({"notice": "Storage is almost full."}, "Storage is almost full.", "Set a handle"),
+    ],
+)
+def test_the_handle_hint_is_only_for_public_artifacts_without_a_readable_url(
+    cloud_project: Path,
+    server: FakeCloud,
+    caplog: pytest.LogCaptureFixture,
+    reply: dict[str, Any],
+    shown: str,
+    hidden: str,
+) -> None:
+    server.route(
+        "POST",
+        "/api/v1/documents",
+        lambda r: httpx.Response(201, json={"url": "https://x/d/1", **reply}),
+    )
+    report = cloud_project / "report.html"
+    report.write_text("<p>hi</p>", encoding="utf-8")
+    caplog.set_level("INFO", logger="framework")
+    fw.publish(report, to="cloud", slug="r")
+    assert shown in caplog.text
+    assert hidden not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("status", "message"),
+    [(204, None), (401, None), (500, "could not be revoked"), (None, "could not be revoked")],
+)
+def test_logout_revokes_the_token_first(
+    project: Path,
+    server: FakeCloud,
+    keyring: dict[str, str],
+    caplog: pytest.LogCaptureFixture,
+    status: int | None,
+    message: str | None,
+) -> None:
+    url = "https://cloud.example.edu"
+    service = cloud.keyring_service(url)
+    keyring[service] = "fw_stored0123"
+    seen: list[tuple[str, bool]] = []
+
+    def revoke(request: httpx.Request) -> httpx.Response:
+        # The local copy is still there while the server revokes it
+        seen.append((request.headers["Authorization"], service in keyring))
+        if status is None:
+            raise httpx.ConnectError("offline")
+        return httpx.Response(status, json={} if status != 204 else None)
+
+    server.route("DELETE", "/api/v1/token", revoke)
+    caplog.set_level("INFO", logger="framework")
+    assert fw.cloud_logout(url) == [f"keyring ({service})"]
+    assert seen == [("Bearer fw_stored0123", True)]
+    assert keyring == {}
+    if message:
+        assert message in caplog.text and f"{url}/tokens" in caplog.text
+    else:
+        assert "could not be revoked" not in caplog.text
+
+
+def test_logout_never_revokes_the_environment_token(
+    project: Path, server: FakeCloud, keyring: dict[str, str]
+) -> None:
+    os.environ["FW_CLOUD_TOKEN"] = "fw_env0123"
+    assert fw.cloud_logout("https://cloud.example.edu") == []
+    assert not any(r.method == "DELETE" for r in server.requests)
+
+
+def test_logout_revokes_each_stored_token_once(
+    project: Path, server: FakeCloud, keyring: dict[str, str]
+) -> None:
+    keyring["framework-cloud:framework.pub"] = "fw_same"
+    keyring["framework.pub"] = "fw_same"
+    fw.config_dir().mkdir(parents=True)
+    (fw.config_dir() / "cloud-token").write_text("fw_other\n", encoding="utf-8")
+    server.route("DELETE", "/api/v1/token", lambda r: httpx.Response(204))
+    fw.cloud_logout()
+    revoked = [r.headers["Authorization"] for r in server.requests if r.method == "DELETE"]
+    assert revoked == ["Bearer fw_same", "Bearer fw_other"]
+
+
+class FakeSecurity:
+    """/usr/bin/security for one service: records each call and keeps one password."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[list[str], str | None]] = []
+        self.password: str | None = None
+
+    def __call__(
+        self, args: list[str], input: str | None = None, **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        self.calls.append((args, input))
+        assert args[0] == "/usr/bin/security"
+        command = args[1]
+        if command == "-i":
+            assert input is not None
+            self.password = input.split("-w '")[1].split("'")[0]
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if command == "find-generic-password":
+            if self.password is None:
+                return subprocess.CompletedProcess(args, 44, "", "not found")
+            return subprocess.CompletedProcess(args, 0, self.password + "\n", "")
+        if command == "delete-generic-password":
+            code = 44 if self.password is None else 0
+            self.password = None
+            return subprocess.CompletedProcess(args, code, "", "")
+        raise AssertionError(command)
+
+
+def test_macos_keychain_goes_through_security(monkeypatch: pytest.MonkeyPatch) -> None:
+    from framework import _keychain
+
+    del os.environ["PYTHON_KEYRING_BACKEND"]
+    fake = FakeSecurity()
+    monkeypatch.setattr(_keychain.subprocess, "run", fake)
+    monkeypatch.setattr(cloud.sys, "platform", "darwin")
+    service = "framework-cloud:keychain-test.invalid"
+    assert cloud._keyring_get(service) is None
+    assert cloud._keyring_set(service, "fw_secret0123") is True
+    # The token goes on stdin, never in argv
+    write = next(call for call in fake.calls if call[0][1] == "-i")
+    assert "fw_secret0123" not in " ".join(write[0])
+    assert write[1] == (f"add-generic-password -U -s '{service}' -a 'token' -w 'fw_secret0123'\n")
+    assert cloud._keyring_get(service) == "fw_secret0123"
+    assert cloud._keyring_delete(service) is True
+    assert cloud._keyring_delete(service) is False
+    assert ["/usr/bin/security", "find-generic-password", "-s", service, "-a", "token", "-w"] in [
+        call[0] for call in fake.calls
+    ]
+
+
+def test_macos_keychain_decodes_go_keyring_and_refuses_quotes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import base64
+
+    from framework import _keychain
+
+    assert _keychain.decode("go-keyring-base64:" + base64.b64encode(b"fw_x").decode() + "\n") == (
+        "fw_x"
+    )
+    assert _keychain.decode("fw_plain\n") == "fw_plain"
+    assert _keychain.decode("\n") is None
+    del os.environ["PYTHON_KEYRING_BACKEND"]
+    monkeypatch.setattr(_keychain.subprocess, "run", lambda *a, **k: pytest.fail("ran security"))
+    assert _keychain.set("framework-cloud:keychain-test.invalid", "token", "a'b") is False
+    assert _keychain.set("framework-cloud:keychain-test.invalid", "token", "a\\b") is False
+
+
+def test_null_keyring_backend_skips_the_macos_keychain(monkeypatch: pytest.MonkeyPatch) -> None:
+    from framework import _keychain
+
+    monkeypatch.setattr(_keychain.subprocess, "run", lambda *a, **k: pytest.fail("ran security"))
+    monkeypatch.setattr(cloud.sys, "platform", "darwin")
+    assert cloud._keyring_get("framework-cloud:keychain-test.invalid") is None
+    assert cloud._keyring_set("framework-cloud:keychain-test.invalid", "fw_x") is False
+    assert cloud._keyring_delete("framework-cloud:keychain-test.invalid") is False
+
+
+def test_new_from_a_cloud_key_on_a_named_server(tmp_path: Path, server: FakeCloud) -> None:
+    server.route("GET", "/api/v2/projects/pull", lambda r: httpx.Response(200, json=envelope()))
+    root = fw.new(
+        key="fwp_project0123",
+        url="https://cloud.example.edu/",
+        location=tmp_path / "cloud-study",
+        interactive=False,
+    )
+    assert str(server.requests[0].url) == "https://cloud.example.edu/api/v2/projects/pull"
+    assert dotenv.read(root / ".env")["FW_CLOUD_URL"] == "https://cloud.example.edu"
+
+
+def test_url_without_a_key_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(fw.FrameworkError, match="Pass key too"):
+        fw.new_project("x", tmp_path / "x", "project", url="https://cloud.example.edu")
+
+
+def test_a_blank_cloud_author_email_is_not_written(tmp_path: Path, server: FakeCloud) -> None:
+    def pull(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={**envelope(), "author": {"name": "Ada", "email": ""}})
+
+    server.route("GET", "/api/v2/projects/pull", pull)
+    root = fw.new(key="fwp_project0123", location=tmp_path / "cloud-study", interactive=False)
+    spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
+    assert spec["author"]["name"] == "Ada"
+    assert not spec["author"].get("email")
+    # Settings keep email: "" as R writes it; front matter never gets an empty email
+    for path in root.rglob("*"):
+        if path.suffix in (".qmd", ".ipynb") and ".git" not in path.parts:
+            assert "email:" not in path.read_text(encoding="utf-8"), path
+    from framework.notebooks import author_front_matter
+
+    lines = author_front_matter({"name": "Ada", "email": "", "url": "https://example.org"})
+    assert not any("email" in line for line in lines)
+
+
+def test_publish_list_points_cloud_projects_to_the_artifacts_page(cloud_project: Path) -> None:
+    with pytest.raises(fw.FrameworkError) as error:
+        fw.publish_list()
+    assert "S3 storage buckets" in str(error.value)
+    assert "https://cloud.example.edu/published" in str(error.value)

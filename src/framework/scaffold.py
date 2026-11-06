@@ -41,8 +41,16 @@ def _first(config: dict[str, Any], key: str) -> Any:
 
 
 def _load_dotenv(config: dict[str, Any], root: Path) -> None:
+    """Load the project's ``.env`` into ``os.environ`` for the session.
+
+    Shell values win, empty values are skipped, and values an earlier scaffold() loaded
+    from another project are removed first.
+    """
     location = config.get("dotenv_location")
     if location is None:
+        path = root / ".env"
+        if path.is_file():
+            dotenv.load(path)
         return
     path = in_root(str(location), root)
     if path.is_dir():
@@ -202,7 +210,9 @@ def scaffold(settings_file: str | Path | None = None) -> Path:
     """
     show_messages()
     path = Path(settings_file).expanduser() if settings_file is not None else find_settings_file()
-    if path is None or not path.is_file():
+    if path is not None and not path.is_file():
+        raise ProjectNotFoundError(f"Settings file not found: {path}")
+    if path is None:
         raise ProjectNotFoundError(
             "Could not locate a Framework project: no settings.yml or config.yml in "
             f"{Path.cwd()} or its parent folders. Create one with framework.new()."

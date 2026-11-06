@@ -19,6 +19,7 @@ from typing import Any
 import pandas as pd
 
 from framework import _yaml
+from framework.errors import SettingsError
 
 # Files config_sync() copies. Token files hold a secret and are written 0600.
 _SYNC_FILES = ("settings.yml", "cloud.yml")
@@ -77,6 +78,8 @@ class SyncResult:
 
     def __str__(self) -> str:
         verb = "Would copy" if self.dry_run else "Copied"
+        if not self.copied and not self.source.is_dir():
+            return f"Nothing to copy: {self.source} does not exist."
         if not self.copied:
             return f"Nothing to copy from {self.source} (Python's folder is up to date)."
         return f"{verb} {', '.join(self.copied)} from {self.source} to {self.target}."
@@ -140,7 +143,10 @@ def global_settings() -> dict[str, Any]:
     path = _global_settings_path()
     if not path.is_file():
         return {}
-    data = _yaml.read(path)
+    try:
+        data = _yaml.read(path)
+    except Exception as error:
+        raise SettingsError(f"Failed to parse global settings '{path}': {error}") from error
     return data if isinstance(data, dict) else {}
 
 

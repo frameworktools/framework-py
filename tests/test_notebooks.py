@@ -125,3 +125,12 @@ def test_user_templates(project: Path) -> None:
     assert "fw.scaffold()" in fw.make_script("w", dir=project).read_text(encoding="utf-8")
     with pytest.raises(fw.FrameworkError, match="add rules with a facet"):
         fw.read_framework_template("gitignore-project")
+
+
+def test_stubs_list_shows_your_templates(project: Path) -> None:
+    # Audit 2026-11-05: make_qmd() used a personal template, but stubs_list() said
+    # "framework" for it
+    fw.write_framework_template("notebook", "---\ntitle: mine\n---\n")
+    listed = fw.stubs_list("quarto").set_index("name")
+    assert listed.loc["default", "source"] == "personal"
+    assert listed.loc["minimal", "source"] == "framework"

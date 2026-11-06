@@ -47,8 +47,9 @@ class DataInfo:
 
     Attributes:
         path: Absolute path to the file.
-        type: File type: csv, parquet, rds, excel, stata, spss, spss_por, sas,
-            or sas_xpt.
+        type: File type: csv, tsv, parquet, rds, excel, stata, spss, spss_por, sas,
+            or sas_xpt. A ``.tsv`` file found by its extension is csv with a tab
+            delimiter; ``type: tsv`` in the catalog is kept as tsv.
         delimiter: For delimited text: comma, tab, semicolon, or space. None
             means it is guessed from the extension.
         locked: Whether the file's hash is checked against framework.db on read.
@@ -132,6 +133,22 @@ def _build(
     )
 
 
+def _pathless_entry(item: Any) -> bool:
+    """Whether a mapping is an entry's fields without a path, rather than a group.
+
+    Every key must be an entry field, and no value may look like a file path, so a
+    group with an entry named ``type: data/type.csv`` still reads as a group.
+    """
+    if not isinstance(item, dict) or not item or not set(item) <= _KNOWN_FIELDS:
+        return False
+    return not any(
+        isinstance(value, (str, dict))
+        and (isinstance(value, dict) or "/" in value or "\\" in value or Path(value).suffix)
+        for key, value in item.items()
+        if key != "description"
+    )
+
+
 def catalog_names(data: Any, prefix: str = "") -> list[str]:
     """Every dot-notation name in a catalog section, in file order."""
     names: list[str] = []
@@ -140,6 +157,9 @@ def catalog_names(data: Any, prefix: str = "") -> list[str]:
     for key, item in data.items():
         full = f"{prefix}.{key}" if prefix else str(key)
         if isinstance(item, str) or (isinstance(item, dict) and "path" in item):
+            names.append(full)
+        elif _pathless_entry(item):
+            # broken: {type: csv} is an entry missing its path, not a group
             names.append(full)
         elif isinstance(item, dict):
             names.extend(catalog_names(item, full))

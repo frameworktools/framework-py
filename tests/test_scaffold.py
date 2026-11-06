@@ -201,3 +201,20 @@ def test_scaffold_warns_about_modules_that_hide_others(
         "Rename it so imports of statistics get the standard one.",
     ]
     assert caught[0].filename == __file__
+
+
+def test_capture_output_includes_framework_messages(project: Path) -> None:
+    # Audit 2026-11-05: the message handler kept the original stderr, so Framework's own
+    # progress messages escaped the capture
+    from framework._log import show_messages
+
+    show_messages()
+    with fw.capture_output() as captured:
+        fw.save_model({"a": 1}, "captured")
+    assert any("Saved model to" in line for line in captured.lines)
+
+
+def test_scaffold_names_a_missing_settings_file(tmp_path: Path) -> None:
+    # Audit 2026-11-05: an explicit missing file was reported as a lookup from the cwd
+    with pytest.raises(fw.ProjectNotFoundError, match=r"Settings file not found: .*nope\.yml"):
+        fw.scaffold(tmp_path / "nope.yml")

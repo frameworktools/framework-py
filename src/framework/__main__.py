@@ -35,7 +35,7 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument(
         "--type",
         choices=["project", "project_sensitive", "course", "presentation", "bare"],
-        help="project type, with --name (default: bare, or asked with --interactive)",
+        help="project type, with --name (default: project, or asked with --interactive)",
     )
     create.add_argument(
         "--workflow",
@@ -129,8 +129,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             tools = {}
             for tool in args.tool:
-                name, _, value = tool.partition("=")
-                tools[name] = value.lower() not in ("false", "no", "0", "off")
+                name, given, value = tool.partition("=")
+                switch = value.lower()
+                if given and switch not in ("true", "yes", "1", "on", "false", "no", "0", "off"):
+                    parser.error(f"--tool {tool}: use {name}, {name}=true, or {name}=false")
+                tools[name] = switch not in ("false", "no", "0", "off")
             path = new(
                 args.name,
                 args.path,
@@ -143,7 +146,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 offline=args.offline,
             )
     except FrameworkError as error:
-        print(f"Error: {error}", file=sys.stderr)
+        # The functions' advice names Python arguments; the command line has flags
+        message = str(error).replace("Pass yes=True.", "Pass --yes.")
+        print(f"Error: {message}", file=sys.stderr)
         return 1
     print(path)
     return 0

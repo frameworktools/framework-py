@@ -130,13 +130,23 @@ class DataRecord:
     updated_at: datetime | None
 
 
-def get_data_record(name: str, root: str | Path | None = None) -> DataRecord | None:
+def get_data_record(
+    name: str, root: str | Path | None = None, *, path: str | None = None
+) -> DataRecord | None:
+    """The ``data`` row for ``name``, or, with ``path``, the newest row for that file."""
     with connect(root) as connection:
         row = connection.execute(
             "SELECT name, path, type, delimiter, locked, hash, last_read_at, created_at, "
             "updated_at FROM data WHERE name = ?",
             (name,),
         ).fetchone()
+        if row is None and path is not None:
+            row = connection.execute(
+                "SELECT name, path, type, delimiter, locked, hash, last_read_at, created_at, "
+                "updated_at FROM data WHERE path = ? AND hash IS NOT NULL AND hash != '' "
+                "ORDER BY updated_at DESC LIMIT 1",
+                (path,),
+            ).fetchone()
     if row is None:
         return None
     return DataRecord(

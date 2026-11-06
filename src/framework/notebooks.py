@@ -280,7 +280,8 @@ def make_qmd(
 
     Args:
         name: The file name before slugifying, such as "Data Cleaning", which becomes
-            ``data-cleaning.qmd``.
+            ``data-cleaning.qmd``. Another extension wins, as in R: "x.ipynb" creates a
+            Jupyter notebook and "x.py" a script.
         dir: The folder. Default: ``directories: notebooks`` or ``directories: work`` in the
             settings, then ``options: notebook_dir``, then an existing ``notebooks/`` or
             ``work/`` folder, then the project root. The folder is created when missing.
@@ -377,15 +378,18 @@ def make_script(
 
 
 def stubs_list(type: NotebookType | None = None) -> pd.DataFrame:
-    """The available stubs: the project's own, then Framework's.
+    """The available stubs: the project's own, then your templates, then Framework's.
+
+    This is the order ``make_notebook()`` searches.
 
     Args:
         type: Only list stubs of this type. One of "quarto", "jupyter", or "script".
             Default: every type.
 
     Returns:
-        A DataFrame with columns name, type, and source (``user`` or
-        ``framework``). A project stub hides Framework's of the same name.
+        A DataFrame with columns name, type, and source (``user`` for the project's
+        ``stubs/``, ``personal`` for your templates, or ``framework``). The first source
+        hides the later ones for the same name.
 
     Raises:
         ValueError: When ``type`` is not allowed.
@@ -394,7 +398,11 @@ def stubs_list(type: NotebookType | None = None) -> pd.DataFrame:
         raise ValueError("type must be 'quarto', 'jupyter', or 'script'")
     root, _ = _project()
     rows = []
-    for source, folder in (("user", root / "stubs"), ("framework", _shipped_stubs())):
+    for source, folder in (
+        ("user", root / "stubs"),
+        ("personal", templates_dir()),
+        ("framework", _shipped_stubs()),
+    ):
         if not folder.is_dir():
             continue
         for path in sorted(folder.iterdir()):

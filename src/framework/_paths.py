@@ -63,3 +63,22 @@ def output_directory(
         return directory(config, f"outputs_{kind}", f"outputs/{kind}", root)
     side = "public" if public else "private"
     return directory(config, f"outputs_{side}_{kind}", f"outputs/{side}/{kind}", root)
+
+
+def rendered_page(out: Path, stem: str, extension: str = ".html") -> Path | None:
+    """The page ``quarto render --output-dir out`` wrote for a source named ``stem``.
+
+    Inside a Quarto project, such as any project ``new()`` makes, the output keeps the
+    source's folder under the output folder: ``notebooks/x.qmd`` becomes
+    ``out/notebooks/x.html``. The shallowest page named for the source wins. Otherwise
+    the one page outside ``_files`` folders is used. None when there is no single page.
+    """
+    named = sorted(out.rglob(f"{stem}{extension}"), key=lambda p: (len(p.parts), p))
+    if named:
+        return named[0]
+    pages = [
+        p
+        for p in sorted(out.rglob(f"*{extension}"))
+        if not any(part.endswith("_files") for part in p.relative_to(out).parts[:-1])
+    ]
+    return pages[0] if len(pages) == 1 else None

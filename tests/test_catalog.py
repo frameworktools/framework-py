@@ -144,3 +144,17 @@ def test_tilde_in_a_path_is_the_home_folder(project: Path, monkeypatch: pytest.M
     monkeypatch.setenv("HOME", str(project))
     monkeypatch.setenv("USERPROFILE", str(project))
     assert fw.data_info("~/inputs/a.csv").path == (project / "inputs/a.csv").resolve()
+
+
+def test_entry_with_fields_but_no_path_is_listed_by_its_name(project: Path) -> None:
+    # Audit 2026-11-05: broken: {type: csv} was listed as "broken.type" with path "csv"
+    write_catalog(
+        project,
+        "  data:\n    broken: {type: csv, locked: true}\n    group:\n      type: data/type.csv\n",
+    )
+    frame = fw.data_list()
+    assert list(frame["name"]) == ["broken", "group.type"]
+    assert frame["path"].isna().tolist() == [True, False]
+    assert frame.loc[1, "path"] == "data/type.csv"
+    with pytest.raises(fw.DataNotFoundError, match="has no path"):
+        fw.data_info("broken")

@@ -1,7 +1,7 @@
 ---
 id: data-management
-title: Data Management
-description: Reading and saving data through the data catalog, with integrity hashes and locked files
+title: Data management
+description: The data catalog, reading and saving data, integrity hashes, and locked files
 section: features
 position: 4
 ---
@@ -19,7 +19,7 @@ survey = fw.data_read("inputs.raw.survey")
 
 Data comes back as a pandas DataFrame.
 
-## The Catalog
+## The catalog
 
 The catalog is the `data` section of the settings, stored in `settings/data.yml` in standard and privacy-sensitive projects. Each part of a name is one level of nesting.
 
@@ -57,7 +57,7 @@ A key may contain dots. `inputs.raw.survey` is found as nested YAML, as a `raw.s
 
 You can write entries by hand, but [data_add()](ref:data_add) and [data_save()](ref:data_save) write them for you.
 
-## Adding Existing Files
+## Adding existing files
 
 [data_add()](ref:data_add) registers a file that is already in the project. It writes the catalog entry, records the file's hash in `framework.db`, and returns the entry.
 
@@ -73,7 +73,7 @@ fw.data_add("inputs/raw/sites_2024.csv", name="inputs.raw.sites")
 
 Entries added this way are locked by default. Pass `locked=False` for files that are expected to change. The `type` and `delimiter` arguments override what the extension suggests. With `update_config=False`, only `framework.db` is updated.
 
-## Reading Data
+## Reading data
 
 [data_read()](ref:data_read) takes a catalog name or a file path.
 
@@ -92,7 +92,7 @@ fw.data_read("inputs.raw.survey", usecols=["id", "score"])
 
 For Stata and SPSS files, `keep_attributes=True` returns value labels as categories. By default the stored codes are returned, as in R.
 
-## Saving Data
+## Saving data
 
 [data_save()](ref:data_save) writes a DataFrame, records its hash, and returns the DataFrame, so a call can end a pipeline.
 
@@ -120,7 +120,7 @@ The R package's `data_save()` selects the folder by the first two parts only, so
 
 Saved files are locked by default. The target folder must exist unless you pass `force=True`.
 
-## Supported Formats
+## Supported formats
 
 framework-py reads these formats. It writes CSV and Parquet, which both languages read.
 
@@ -140,7 +140,7 @@ A catalog entry with an extension Framework does not recognize is read as comma-
 
 `.rds` files are R-only. Reading one raises `UnsupportedFormatError`, with a message that suggests saving the data from R as Parquet or CSV. The catalog records each file's type, so either language reads the CSV and Parquet entries the other wrote.
 
-## Data Integrity
+## Data integrity
 
 Framework hashes each catalog file with SHA-256 and stores the hash in `framework.db`.
 
@@ -165,7 +165,7 @@ fw.data_add("inputs/raw/survey.csv", name="inputs.raw.survey")
 
 [data_verify()](ref:data_verify) checks a file against `framework.db` and, for projects connected to Framework Cloud, against the integrity ledger. It returns `True` when every record matches.
 
-## Inspecting the Catalog
+## Inspecting the catalog
 
 [data_info()](ref:data_info) returns how Framework will read one file: its absolute path, type, delimiter, locked flag, and description.
 
@@ -183,7 +183,7 @@ fw.data_list()
 
 An unknown name raises `DataNotFoundError`, and the message lists up to twenty names the catalog does define.
 
-## Organizing Data
+## Organizing data
 
 Keep data in the stage folders, and name catalog entries after the folder.
 

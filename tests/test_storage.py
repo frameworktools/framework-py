@@ -321,3 +321,182 @@ def test_statsmodels_interval_method_metadata(tmp_path: Path) -> None:
         assert metrics["interval_method"] == ("wald-t" if use_t else "wald-normal")
         assert document["tables"][0]["rows"][1][5:] == pytest.approx(model.conf_int()[1])
         assert set(document) == {"schema", "kind", "source", "model", "tables", "metrics"}
+
+
+def test_legacy_bucket_tracks_metadata_without_paths_or_content(
+    project: Path, s3: FakeS3, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+    import json
+    from types import SimpleNamespace
+
+    source = project / "report.txt"
+    source.write_text("artifact-content-sentinel", encoding="utf-8")
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr("framework.cloud.project_token", lambda: "project-token")
+    monkeypatch.setattr(
+        "framework.cloud.cloud_server", lambda **kw: SimpleNamespace(url="https://cloud")
+    )
+
+    def api(path: str, token: str, server: str, **kwargs: Any) -> dict[str, Any]:
+        if path == "/api/v1/me":
+            return {"project": "study"}
+        assert path == "/api/v2/projects/study/artifacts/external"
+        calls.append(kwargs["body"])
+        if len(calls) > 1:
+            raise RuntimeError("409 Conflict: version already exists")
+        return {}
+
+    monkeypatch.setattr("framework.cloud.api", api)
+    result = fw.publish(source, to="bucket")
+    assert calls[0]["driver"] == "s3"
+    assert calls[0]["version"] == 1
+    assert calls[0]["url"] == result
+    assert calls[0]["version_url"] is None
+    assert calls[0]["size_bytes"] == source.stat().st_size
+    assert calls[0]["sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
+    assert str(project) not in json.dumps(calls)
+    assert "artifact-content-sentinel" not in json.dumps(calls)
+    assert not {"location", "path", "files", "content", "representation"} & calls[0].keys()
+    source.write_text("replacement", encoding="utf-8")
+    with pytest.warns(fw.FrameworkWarning, match="409 Conflict"):
+        assert fw.publish(source, to="bucket") == result
+    assert s3.uploads["project-x/report.txt"]["body"] == b"replacement"
+
+
+# Audit 2026-11-05 regressions ------------------------------------------------------------
+
+
+def _render_into_subfolder(monkeypatch: pytest.MonkeyPatch, *modules: Any) -> None:
+    """Fake quarto render as a project's _quarto.yml does: the notebook's folder is kept."""
+    import subprocess
+
+    def render(command: list[str], **kwargs: Any) -> Any:
+        out = Path(command[command.index("--output-dir") + 1])
+        page = out / "notebooks" / f"{Path(command[2]).stem}.html"
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text("<p>rendered</p>", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    for module in modules:
+        monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/bin/quarto")
+        monkeypatch.setattr(module.subprocess, "run", render)
+
+
+def test_publish_notebook_finds_output_in_a_subfolder(
+    project: Path, s3: FakeS3, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every new() project's _quarto.yml sent output to <temp>/notebooks/, and publishing
+    # looked only at the top: "No HTML output found"
+    _render_into_subfolder(monkeypatch, storage)
+    notebook = project / "notebooks" / "report.qmd"
+    notebook.parent.mkdir()
+    notebook.write_text("---\ntitle: R\n---\n", encoding="utf-8")
+    assert fw.publish_notebook(notebook).endswith("project-x/report.html")
+    assert s3.uploads["project-x/report.html"]["body"] == b"<p>rendered</p>"
+    fw.publish_notebook(notebook, connection="minio", self_contained=False)
+    assert s3.uploads["report/index.html"]["body"] == b"<p>rendered</p>"
+
+
+def test_cloud_publish_finds_output_in_a_subfolder(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from framework import cloud
+
+    _render_into_subfolder(monkeypatch, cloud)
+    sent: list[bytes] = []
+    (project / ".env").write_text(
+        "FW_PROJECT_TOKEN=fwp_project0123\nFW_CLOUD_URL=https://cloud.example.edu\n",
+        encoding="utf-8",
+    )
+    import httpx
+
+    def fake(request: httpx.Request) -> httpx.Response:
+        sent.append(request.content)
+        return httpx.Response(201, json={"url": "https://cloud.example.edu/d/r", "version": 1})
+
+    monkeypatch.setattr(cloud, "_transport", httpx.MockTransport(fake))
+    notebook = project / "notebooks" / "report.qmd"
+    notebook.parent.mkdir()
+    notebook.write_text("---\ntitle: R\n---\n", encoding="utf-8")
+    assert cloud.cloud_publish(notebook) == "https://cloud.example.edu/d/r"
+    assert b"<p>rendered</p>" in sent[0]
+    assert cloud.cloud_publish(notebook, self_contained=False) == "https://cloud.example.edu/d/r"
+    assert b'name="entrypoint"\r\n\r\nreport.html' in sent[1]
+
+
+def test_bundle_destinations_find_output_in_a_subfolder(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Folder, GitHub, named S3, and cloud bundles failed: "No single HTML page found"
+    from framework import _pages
+
+    _render_into_subfolder(monkeypatch, _pages)
+    site = project / "site"
+    (project / "settings.yml").write_text(
+        "default:\n  publish:\n    destinations:\n"
+        f"      lab: {{driver: folder, path: '{site.as_posix()}'}}\n",
+        encoding="utf-8",
+    )
+    notebook = project / "notebooks" / "report.qmd"
+    notebook.parent.mkdir()
+    notebook.write_text("---\ntitle: R\n---\n", encoding="utf-8")
+    fw.publish(notebook, to="lab", slug="report")
+    assert (site / "report" / "index.html").read_text(encoding="utf-8") == "<p>rendered</p>"
+
+
+@pytest.mark.skipif(shutil.which("quarto") is None, reason="quarto is not installed")
+def test_publish_notebook_in_a_project_with_quarto_settings(project: Path, s3: FakeS3) -> None:
+    (project / "_quarto.yml").write_text(
+        "project:\n  type: default\n  output-dir: outputs\n", encoding="utf-8"
+    )
+    notebook = project / "notebooks" / "report.qmd"
+    notebook.parent.mkdir()
+    notebook.write_text("---\ntitle: R\n---\n\nHello.\n", encoding="utf-8")
+    assert fw.publish_notebook(notebook).endswith("project-x/report.html")
+    assert b"Hello." in s3.uploads["project-x/report.html"]["body"]
+
+
+def test_s3_credentials_come_from_the_project_env(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # settings_read() no longer leaves .env values in os.environ, so the bucket reads them
+    (project / "settings.yml").write_text(
+        "default:\n  connections:\n    storage_buckets:\n      reports: {bucket: b}\n",
+        encoding="utf-8",
+    )
+    (project / ".env").write_text("S3_ACCESS_KEY=from-file\nS3_SECRET_KEY=s\n", encoding="utf-8")
+    os.environ.pop("S3_ACCESS_KEY", None)
+    os.environ["S3_SECRET_KEY"] = "shell"
+    bucket = storage.resolve_bucket("reports")
+    assert (bucket.access_key, bucket.secret_key) == ("from-file", "shell")
+    assert "S3_ACCESS_KEY" not in os.environ
+
+
+def test_publish_dir_pattern_ignores_the_folders_location(project: Path, s3: FakeS3) -> None:
+    # Audit 2026-11-05: the pattern matched the absolute path, so a parent folder's name
+    # matched every file; a bad pattern raised re.PatternError
+    folder = project / "site-figures" / "out"
+    folder.mkdir(parents=True)
+    (folder / "a.txt").write_text("a", encoding="utf-8")
+    (folder / "figures").mkdir()
+    (folder / "figures" / "b.png").write_bytes(b"png")
+    urls = fw.publish_dir(folder, dest="d", pattern="figures")
+    assert [url.rsplit("/", 2)[-2:] for url in urls] == [["figures", "b.png"]]
+    with pytest.raises(fw.FrameworkError, match="Invalid pattern"):
+        fw.publish_dir(folder, dest="d", pattern="(")
+
+
+def test_connection_with_a_destination_bucket_is_refused(
+    project: Path, s3: FakeS3, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit 2026-11-05: connection= was silently ignored with a named S3 destination
+    (project / "settings.yml").write_text(
+        (project / "settings.yml").read_text(encoding="utf-8")
+        + "  publish:\n    destinations:\n      results: {driver: s3, bucket: reports}\n",
+        encoding="utf-8",
+    )
+    path = project / "a.png"
+    path.write_bytes(b"png")
+    with pytest.raises(fw.FrameworkError, match="sets its own bucket"):
+        fw.publish(path, to="results", connection="minio")

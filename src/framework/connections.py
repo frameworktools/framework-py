@@ -37,7 +37,9 @@ from framework.errors import FrameworkError
 from framework.project import project_root
 from framework.settings import settings_read
 
-_HOST = re.compile(r"^[a-zA-Z0-9.-]+$")
+# Host names (Docker service names have underscores), IPv4, and IPv6 literals, with or
+# without brackets. Spaces, ';', '/', and the like are refused.
+_HOST = re.compile(r"^(?:[A-Za-z0-9._-]+|\[?[0-9A-Fa-f:.]+\]?)$")
 
 # Driver name -> (canonical driver, Python module, extra)
 DRIVERS: dict[str, tuple[str, str, str | None]] = {
@@ -116,7 +118,7 @@ def _require(module: str, extra: str | None, what: str) -> Any:
     try:
         return import_module(module)
     except ImportError as error:
-        hint = f" Install it with: pip install framework-py[{extra}]" if extra else ""
+        hint = f' Install it with: pip install "framework-py[{extra}]"' if extra else ""
         raise FrameworkError(f"{what} connections need the {module} package.{hint}") from error
 
 
@@ -142,7 +144,7 @@ def _host(value: Any) -> str:
     host = str(value)
     if not _HOST.match(host):
         raise FrameworkError(f"Invalid host name: {host}")
-    return host
+    return host.removeprefix("[").removesuffix("]")
 
 
 def _file_path(config: Mapping[str, Any], what: str) -> str:
@@ -238,6 +240,23 @@ _CONNECTORS = {
 }
 
 
+class _SharedCursor:
+    """A DuckDB cursor that runs on its connection; closing it leaves the connection open."""
+
+    def __init__(self, raw: Any) -> None:
+        self._raw = raw
+
+    def __getattr__(self, attribute: str) -> Any:
+        return getattr(self._raw, attribute)
+
+    def execute(self, *args: Any, **kwargs: Any) -> _SharedCursor:
+        self._raw.execute(*args, **kwargs)
+        return self
+
+    def close(self) -> None:
+        """Nothing to close: the connection closes with its ``with`` block."""
+
+
 class Connection:
     """A DB-API connection from ``db_connect()``.
 
@@ -261,6 +280,17 @@ class Connection:
 
     def __getattr__(self, attribute: str) -> Any:
         return getattr(self.raw, attribute)
+
+    def cursor(self, *args: Any, **kwargs: Any) -> Any:
+        """A cursor on this connection.
+
+        DuckDB's own ``cursor()`` opens a second connection with its own transaction, so
+        ``db_transaction()`` could not roll it back. For DuckDB, Framework's cursor runs on
+        this connection, as DB-API cursors do.
+        """
+        if self.driver == "duckdb":
+            return _SharedCursor(self.raw)
+        return self.raw.cursor(*args, **kwargs)
 
     def __enter__(self) -> Connection:
         return self
@@ -380,6 +410,20 @@ def db_execute(
             cursor.close()
 
 
+def _begin(connection: Connection) -> None:
+    """Start a transaction where the driver would not, so rollback covers the whole block.
+
+    DuckDB autocommits each statement. Python's sqlite3 starts a transaction only before
+    INSERT, UPDATE, and DELETE, so a CREATE TABLE would be kept. PostgreSQL and SQL Server
+    drivers already open one. MySQL commits DDL implicitly, whatever the client does.
+    """
+    raw = connection.raw
+    if connection.driver == "duckdb":
+        raw.begin()
+    elif connection.driver == "sqlite" and not raw.in_transaction:
+        raw.execute("BEGIN")
+
+
 @contextmanager
 def db_transaction(connection: Connection) -> Iterator[Connection]:
     """Commit the block's statements together, or roll all of them back on an error.
@@ -404,6 +448,7 @@ def db_transaction(connection: Connection) -> Iterator[Connection]:
         return
     connection._in_transaction = True
     try:
+        _begin(connection)
         yield connection
         connection.commit()
     except Exception as error:
@@ -479,7 +524,7 @@ def db_drivers_status() -> pd.DataFrame:
                 "package": distribution or "sqlite3 (built in)",
                 "installed": version is not None,
                 "version": version,
-                "install": f"pip install framework-py[{extra}]" if extra else "",
+                "install": f'pip install "framework-py[{extra}]"' if extra else "",
             }
         )
     return pd.DataFrame(rows, columns=["drivers", "package", "installed", "version", "install"])

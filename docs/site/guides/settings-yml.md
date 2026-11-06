@@ -44,7 +44,7 @@ FW_CONFIG_ACTIVE=production uv run python scripts/load.py
 
 The active section is merged over `default`. Mappings merge key by key, a `null` value removes a key, and any other value, including a list, replaces the default value whole. An environment name that the file does not define falls back to `default` with a warning.
 
-## Split Files
+## Split files
 
 Standard and privacy-sensitive projects keep most sections in separate files under `settings/`. The main file names each split file in place of the section's content.
 
@@ -88,7 +88,7 @@ These rules govern split files.
 
 ## Expressions
 
-Settings can read environment variables, so credentials stay in the project's `.env` file. Framework loads `.env` before it reads split files.
+Settings can read environment variables, so credentials stay in the project's `.env` file. Framework reads `.env` before it reads split files. A variable set in your shell wins, and empty values are skipped.
 
 `env("VAR")` is replaced with the variable's value, or with an empty string when it is not set. `env("VAR", "default")` supplies a fallback. Both forms need double quotes.
 
@@ -117,11 +117,11 @@ A Python project's settings contain these sections.
 | `extra_directories` | Folders added with [project_add_directory()](ref:project_add_directory). |
 | `author` | `name`, `email`, and `affiliation`, used in notebook front matter. |
 | `git` | `enabled` and the pre-commit `hooks`. See [Git](guide:git). |
-| `ai` | `enabled`, `canonical_file` (`AGENTS.md`), and `assistants`. See [AI Assistants](guide:ai-assistants). |
+| `ai` | `enabled`, `canonical_file` (`AGENTS.md`), and `assistants`. See [AI assistants](guide:ai-assistants). |
 | `scaffold` | `seed_on_scaffold`, `seed`, `source_all_functions`, and `notebook_format` (`quarto` or `jupyter`). |
 | `quarto` | HTML and reveal.js rendering options. |
 | `connections` | Databases and storage buckets. See [Connections](guide:connections). |
-| `data` | The data catalog. See [Data Management](guide:data-management). |
+| `data` | The data catalog. See [Data management](guide:data-management). |
 | `security` | `sensitive: true` in privacy-sensitive projects. |
 
 Python packages are listed in `pyproject.toml`. The R package's `packages` section has no effect on a Python project. See [Packages](guide:packages).
@@ -149,9 +149,9 @@ directories:
   logs: logs
 ```
 
-The `save_*()` functions find their folder through these keys, and `data_save()` uses the `inputs_*` keys. The [Project Types](guide:project-types) guide lists the defaults of each type.
+The `save_*()` functions find their folder through these keys, and `data_save()` uses the `inputs_*` keys. The [Project types](guide:project-types) guide lists the defaults of each type.
 
-### The Data Catalog
+### The data catalog
 
 The catalog maps dot-notation names to files. Each part of a name is one level of nesting, and an entry is either a path or a mapping with a `path`.
 
@@ -168,7 +168,7 @@ data:
 
 This catalog defines `inputs.raw.survey` and `inputs.raw.sites`. [data_add()](ref:data_add) and [data_save()](ref:data_save) write every level as nested YAML. A key may also contain dots, such as `raw.survey:` under `inputs:`, and the name resolves the same way.
 
-### Random Seeds
+### Random seeds
 
 Seeding is off by default. With `seed_on_scaffold: true`, [scaffold()](ref:scaffold) seeds Python's `random` module and NumPy with `seed`.
 
@@ -193,7 +193,7 @@ The `options` section holds less common settings.
 
 The top-level `dotenv_location` key points `scaffold()` and the settings reader at a different `.env` file or at a folder that holds one.
 
-## Reading Settings
+## Reading settings
 
 [settings()](ref:settings) returns one value by its dot-notation key. A missing key returns `default`, which is `None` unless you pass one.
 
@@ -214,7 +214,7 @@ config = fw.settings_read(environment="production")
 config["connections"]
 ```
 
-## Writing Settings
+## Writing settings
 
 The settings files are plain YAML, and editing them by hand is the usual way to change them. Framework's own functions update the parts they manage: `data_add()` and `data_save()` write catalog entries, and the `git_hooks_*()` functions write the `hooks` section.
 

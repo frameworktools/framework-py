@@ -246,3 +246,37 @@ def test_write_section_wraps_an_older_unwrapped_split_file(project: Path) -> Non
     write(project / "settings/git.yml", "use_git: true\nhooks: {}\n")
     fw.settings_write({"use_git": False}, section="git")
     assert _yaml.read(project / "settings/git.yml") == {"git": {"use_git": False, "hooks": {}}}
+
+
+def test_one_projects_env_never_reaches_the_next(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Audit 2026-11-05 (shared with R): settings_read() left .env values in os.environ, so
+    # the next project read the first one's token; empty lines blanked shell values
+    first, second = tmp_path / "first", tmp_path / "second"
+    for root, token in ((first, "fwp_first0123"), (second, "")):
+        root.mkdir()
+        (root / "settings.yml").write_text(
+            'default:\n  token: env("FW_PROJECT_TOKEN", "none")\n  key: env("S3_ACCESS_KEY")\n',
+            encoding="utf-8",
+        )
+        (root / ".env").write_text(f"FW_PROJECT_TOKEN={token}\nS3_ACCESS_KEY=\n", encoding="utf-8")
+    os.environ["S3_ACCESS_KEY"] = "from-shell"
+    monkeypatch.chdir(first)
+    assert fw.settings("token") == "fwp_first0123"
+    assert fw.settings("key") == "from-shell"
+    assert "FW_PROJECT_TOKEN" not in os.environ
+    monkeypatch.chdir(second)
+    assert fw.settings("token") == "none"
+    assert fw.cloud.project_token() is None
+    assert os.environ["S3_ACCESS_KEY"] == "from-shell"
+
+
+def test_shell_values_win_over_the_project_env(project: Path) -> None:
+    (project / "settings.yml").write_text(
+        'default:\n  url: env("FW_TEST_VALUE")\n', encoding="utf-8"
+    )
+    (project / ".env").write_text("FW_TEST_VALUE=from-file\n", encoding="utf-8")
+    assert fw.settings("url") == "from-file"
+    os.environ["FW_TEST_VALUE"] = "from-shell"
+    assert fw.settings("url") == "from-shell"

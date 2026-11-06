@@ -1,7 +1,7 @@
 ---
 id: scaffold
 title: scaffold()
-description: Preparing a Python session for work in a project
+description: Python session setup for project work
 section: features
 position: 1
 ---
@@ -22,12 +22,12 @@ It returns the project root as a `pathlib.Path`, which is useful when code needs
 root = fw.scaffold()
 ```
 
-## What scaffold() Does
+## Steps
 
 Each call runs these steps in order.
 
 1. **Finds the project.** It looks for `settings.yml`, or the older `config.yml`, in the current folder and up to ten parent folders.
-2. **Loads the settings and the environment.** It reads the project's `.env` file into `os.environ` and resolves the settings, including split files and `env()` expressions.
+2. **Loads the settings and the environment.** It reads the project's `.env` file into `os.environ` and resolves the settings, including split files and `env()` expressions. Variables already set in your shell win, and empty values are skipped.
 3. **Prepares the database.** It creates `framework.db` if it is missing and records the first and latest scaffold times in its `meta` table.
 4. **Sets the random seed**, when the settings turn seeding on.
 5. **Extends the import path.** It puts the project's functions folder at the front of `sys.path`.
@@ -35,7 +35,7 @@ Each call runs these steps in order.
 
 The working directory is not changed. Framework resolves catalog paths, output folders, and the cache folder from the project root, so code behaves the same from `notebooks/`, from `scripts/`, and from the root.
 
-## Project Discovery
+## Project discovery
 
 Because `scaffold()` searches parent folders, it works from any subfolder of the project.
 
@@ -60,7 +60,7 @@ fw.scaffold(Path.home() / "projects" / "vaccine-study" / "settings.yml")
 
 [project_root()](ref:project_root) returns the root without the other steps.
 
-## The Functions Folder
+## The functions folder
 
 `scaffold()` adds the folder named by `directories.functions` to `sys.path`. Modules in that folder can then be imported by name.
 
@@ -99,7 +99,7 @@ scaffold:
   source_all_functions: false
 ```
 
-## Random Seeds
+## Random seeds
 
 Seeding is off by default. When it is on, `scaffold()` seeds Python's `random` module and NumPy's global generator.
 
@@ -126,7 +126,7 @@ pd.set_option("display.max_columns", 50)
 
 The file runs in its own namespace. Changes to shared state, such as matplotlib styles and pandas options, carry over to the notebook. Variables it defines do not. Put shared functions and values in the functions folder and import them instead.
 
-## Project Status
+## Project status
 
 Two functions describe a project without changing it.
 

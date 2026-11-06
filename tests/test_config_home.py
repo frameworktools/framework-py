@@ -110,3 +110,14 @@ def test_config_sync_skips_cloud_sync_state(tmp_path: Path) -> None:
     copied = fw.config_sync(source).copied
     assert "sync-state.yml" not in copied
     assert "cloud-settings.yml" not in copied
+
+
+def test_audit_2026_11_05_config_messages(tmp_path: Path) -> None:
+    # A missing source folder was reported as "up to date"; invalid YAML raised a bare
+    # yaml error
+    result = fw.config_sync(tmp_path / "missing")
+    assert str(result) == f"Nothing to copy: {tmp_path / 'missing'} does not exist."
+    fw.config_dir().mkdir(parents=True, exist_ok=True)
+    (fw.config_dir() / "settings.yml").write_text("a: [unclosed\n", encoding="utf-8")
+    with pytest.raises(fw.SettingsError, match="global settings"):
+        fw.global_settings()

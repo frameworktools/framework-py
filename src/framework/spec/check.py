@@ -29,7 +29,7 @@ REQUIRED = (
     "files",
     "skills",
 )
-OPTIONAL = ("quarto", "source", "tools", "core_files", "settings_layout")
+OPTIONAL = ("quarto", "source", "tools", "core_files", "settings_layout", "publish")
 
 # Assistant -> (skills folder, stub file). Adding an assistant is one row.
 ASSISTANTS: dict[str, tuple[str, str | None]] = {
@@ -157,6 +157,36 @@ def spec_check(spec: dict[str, Any]) -> list[str]:
             add(f"tools.{tool} must be true or false")
     if spec.get("language") != "python":
         add(f"language must be 'python' for the Python package, got '{spec.get('language')}'")
+
+    if spec.get("publish") is not None:
+        publish = spec["publish"]
+        if not isinstance(publish, dict):
+            add("publish must be an object")
+        else:
+            from framework.errors import SettingsError
+            from framework.settings import _check_publish_credentials
+
+            try:
+                _check_publish_credentials(publish)
+            except SettingsError as error:
+                add(str(error))
+            destinations = publish.get("destinations", {})
+            if not isinstance(destinations, dict):
+                add("publish.destinations must be an object keyed by name")
+            else:
+                default = publish.get("default")
+                if default is not None and (
+                    not isinstance(default, str) or default not in destinations
+                ):
+                    add("publish.default must name a configured destination")
+                for name, entry in destinations.items():
+                    if not isinstance(entry, dict) or entry.get("driver") not in (
+                        "cloud",
+                        "github",
+                        "folder",
+                        "s3",
+                    ):
+                        add(f"publish.destinations.{name}: unknown publishing driver")
 
     for map_path in MAP_PATHS:
         value = _get(spec, map_path)

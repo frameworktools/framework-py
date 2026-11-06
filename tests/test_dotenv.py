@@ -40,11 +40,43 @@ def test_unparseable_line() -> None:
         dotenv.parse("not a pair\n")
 
 
-def test_load_replaces_existing_values(tmp_path: Path) -> None:
-    os.environ["FW_DOTENV_TEST"] = "before"
-    (tmp_path / ".env").write_text("FW_DOTENV_TEST=after\n", encoding="utf-8")
-    dotenv.load(tmp_path / ".env")
-    assert os.environ["FW_DOTENV_TEST"] == "after"
+def test_load_keeps_shell_values_and_skips_empty_ones(tmp_path: Path) -> None:
+    # Audit 2026-11-05: a .env value replaced a shell value, and an empty one blanked it
+    os.environ["FW_DOTENV_TEST"] = "shell"
+    os.environ["FW_DOTENV_KEY"] = "exported"
+    os.environ["FW_DOTENV_BLANK"] = ""
+    (tmp_path / ".env").write_text(
+        "FW_DOTENV_TEST=file\nFW_DOTENV_KEY=\nFW_DOTENV_BLANK=filled\nFW_DOTENV_NEW=new\n",
+        encoding="utf-8",
+    )
+    assert dotenv.load(tmp_path / ".env") == {"FW_DOTENV_BLANK": "filled", "FW_DOTENV_NEW": "new"}
+    assert os.environ["FW_DOTENV_TEST"] == "shell"
+    assert os.environ["FW_DOTENV_KEY"] == "exported"
+    assert os.environ["FW_DOTENV_BLANK"] == "filled"
+    assert os.environ["FW_DOTENV_NEW"] == "new"
+
+
+def test_loading_another_project_takes_back_the_last_ones_values(tmp_path: Path) -> None:
+    os.environ["FW_DOTENV_BLANK"] = ""
+    first, second = tmp_path / "a.env", tmp_path / "b.env"
+    first.write_text("FW_DOTENV_A=a\nFW_DOTENV_BLANK=a\nFW_DOTENV_BOTH=a\n", encoding="utf-8")
+    second.write_text("FW_DOTENV_BOTH=b\n", encoding="utf-8")
+    dotenv.load(first)
+    dotenv.load(second)
+    assert "FW_DOTENV_A" not in os.environ
+    assert os.environ["FW_DOTENV_BLANK"] == ""
+    assert os.environ["FW_DOTENV_BOTH"] == "b"
+
+
+def test_scoped_values_leave_the_environment_as_it_was() -> None:
+    os.environ["FW_DOTENV_TEST"] = "shell"
+    with dotenv.scoped({"FW_DOTENV_TEST": "file", "FW_DOTENV_NEW": "new", "FW_EMPTY": ""}) as set_:
+        assert set_ == {"FW_DOTENV_NEW": "new"}
+        assert os.environ["FW_DOTENV_NEW"] == "new"
+        assert os.environ["FW_DOTENV_TEST"] == "shell"
+        assert "FW_EMPTY" not in os.environ
+    assert "FW_DOTENV_NEW" not in os.environ
+    assert os.environ["FW_DOTENV_TEST"] == "shell"
 
 
 def test_value_and_missing_file(tmp_path: Path) -> None:

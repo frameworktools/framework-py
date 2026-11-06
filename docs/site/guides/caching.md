@@ -1,7 +1,7 @@
 ---
 id: caching
 title: Caching
-description: Caching the results of expensive computations between sessions
+description: Cached results of expensive computations, reused between sessions
 section: features
 position: 8
 ---
@@ -15,7 +15,7 @@ DataFrames are stored as Parquet. Other values are stored with pickle.
 > [!WARNING]
 > Loading a pickle can run arbitrary code. Load caches only from projects you trust.
 
-## The Cache Folder
+## The cache folder
 
 The cache folder is chosen in this order.
 
@@ -35,7 +35,7 @@ The project types set these defaults.
 
 The folder is created the first time a value is cached. Every project type's `.gitignore` excludes `cache/` folders.
 
-## Remembering a Result
+## Remembering a result
 
 [cache_remember()](ref:cache_remember) returns the cached value when one exists. Otherwise it calls a function, caches the result, and returns it. The function takes no arguments.
 
@@ -104,7 +104,7 @@ model = fw.cache_remember(
 )
 ```
 
-## Storing and Retrieving Values
+## Storing and retrieving values
 
 [cache()](ref:cache) stores a value and returns it. [cache_get()](ref:cache_get) returns a stored value, or `default` when the value is missing, expired, or unreadable.
 
@@ -117,7 +117,7 @@ lookup = fw.cache_get("site_lookup", default={})
 
 The `file` argument of these functions stores the value in a specific file instead of the cache folder.
 
-## Removing Values
+## Removing values
 
 [cache_forget()](ref:cache_forget) removes one value and its record. [cache_flush()](ref:cache_flush) removes every cached file in the cache folder and every record.
 
@@ -126,7 +126,7 @@ fw.cache_forget("site_lookup")
 fw.cache_flush()
 ```
 
-## Listing the Cache
+## Listing the cache
 
 [cache_list()](ref:cache_list) returns every cache record with its expiry, creation, update, and last-read times, and a `status` of `active` or `expired`.
 
@@ -138,10 +138,10 @@ fw.cache_list()
 
 Framework records each cached file's SHA-256 hash. When a file no longer matches its hash, the lookup issues a `CacheWarning` and treats the value as missing, so `cache_remember()` computes it again.
 
-## Caches Shared with R
+## Caches shared with R
 
 R and Python share the `cache` table. R stores values as `.rds` files, which Python cannot read. A name that R cached is a miss in Python, with a `CacheWarning`, and R's file is left in place. `cache_forget()` and `cache_flush()` in Python remove entries from either language.
 
-## When to Cache
+## Caching guidance
 
 Cache computations that take long enough to slow down iteration, such as model fits, large joins, and database or API queries. Use descriptive names, such as `sales_2024_by_region`, so that `cache_list()` shows what each entry holds. Give values that come from outside sources an expiry, so they are fetched again.

@@ -87,34 +87,36 @@ def test_publish_commits_only_the_page_and_pushes(
     page = repo / "published/final-report-v2"
     assert (page / "index.html").is_file()
     assert (page / "Final Report (v2)_files/a.png").read_bytes() == b"png"
-    assert git(repo, "show", "--name-only", "--format=%s", "HEAD").splitlines() == [
-        "Publish final-report-v2",
-        "",
-        "published/final-report-v2/Final Report (v2)_files/a.png",
-        "published/final-report-v2/index.html",
-    ]
+    committed = git(repo, "show", "--name-only", "--format=%s", "HEAD").splitlines()
+    assert committed[0] == "Publish final-report-v2"
+    assert "published/final-report-v2/artifact.json" in committed
+    assert "published/final-report-v2/v/1/index.html" in committed
+    assert "published/index.html" in committed
+    assert "notes.txt" not in committed
     # What the user had staged stays staged and out of the commit
     assert git(repo, "diff", "--cached", "--name-only") == "notes.txt"
     assert bare_log(repo) == ["Publish final-report-v2", "init"]
 
-    # The same page again: nothing to commit
+    # Every publish preserves its own immutable version.
     fw.publish(report, to="github")
-    assert "No change in published/final-report-v2" in caplog.text
-    assert bare_log(repo) == ["Publish final-report-v2", "init"]
+    assert (page / "v/2/index.html").is_file()
+    assert bare_log(repo) == ["Publish final-report-v2", "Publish final-report-v2", "init"]
 
     # A new version replaces the folder completely
     shutil.rmtree(repo / "outputs/Final Report (v2)_files")
     report.write_text("<p>v3</p>", encoding="utf-8")
     fw.publish(report, to="github", slug="final-report-v2")
-    assert sorted(p.name for p in page.iterdir()) == ["index.html"]
+    assert (page / "v/1/Final Report (v2)_files/a.png").read_bytes() == b"png"
+    assert not (page / "Final Report (v2)_files").exists()
+    assert (page / "v/3/index.html").read_text() == "<p>v3</p>"
 
 
 def test_folder_needs_an_index(repo: Path) -> None:
     site = repo / "outputs/site"
     site.mkdir(parents=True)
     (site / "page.html").write_text("<p>hi</p>", encoding="utf-8")
-    with pytest.raises(fw.FrameworkError, match=r"needs an index\.html"):
-        fw.publish(site, to="github")
+    assert fw.publish(site, to="github") == "https://owner.github.io/study/site/"
+    assert 'href="page.html"' in (repo / "published/site/index.html").read_text()
     (site / "index.html").write_text("<p>home</p>", encoding="utf-8")
     assert fw.publish(site, to="github") == "https://owner.github.io/study/site/"
     assert (repo / "published/site/page.html").is_file()
@@ -125,7 +127,6 @@ def test_folder_needs_an_index(repo: Path) -> None:
     [
         ({"dest": "x"}, 'Not used with to="github": dest'),
         ({"slug": True}, "slug=True/False"),
-        ({"slug": "Bad Slug"}, "must start with a lowercase letter"),
         ({"to": "gitlab"}, 'to must be "cloud", "bucket", "github", or None'),
     ],
 )
@@ -199,3 +200,42 @@ def test_publish_notebook_html_only(repo: Path) -> None:
     notebook.write_text("# hi\n", encoding="utf-8")
     with pytest.raises(fw.FrameworkError, match="HTML only"):
         fw.publish_notebook(notebook, to="github", format="pdf")
+
+
+def test_pages_size_counts_existing_archives(tmp_path: Path) -> None:
+    from framework._pages import _directory_bytes
+
+    (tmp_path / "artifact/v/1").mkdir(parents=True)
+    (tmp_path / "artifact/index.html").write_bytes(b"new")
+    (tmp_path / "artifact/v/1/index.html").write_bytes(b"older version")
+    assert _directory_bytes(tmp_path) == len(b"newolder version")
+
+
+def test_pages_size_limit_prevents_writes_commit_and_push(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = repo / "report.html"
+    report.write_text("<p>hello</p>", encoding="utf-8")
+    original_head = git(repo, "rev-parse", "HEAD")
+    monkeypatch.setattr(
+        "framework._pages._directory_bytes",
+        lambda path: 1_000_000_001 if path == repo / "published" else 50,
+    )
+    with pytest.raises(fw.FrameworkError, match="exceed the 1 GB"):
+        fw.publish(report, to="github")
+    assert not (repo / "published").exists()
+    assert git(repo, "rev-parse", "HEAD") == original_head
+    bare = git(repo, "config", "test.bare")
+    assert git(repo, "--git-dir", bare, "for-each-ref", "--format=%(refname)") == ""
+
+
+def test_pages_size_warns_before_publishing(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    report = repo / "report.html"
+    report.write_text("<p>hello</p>", encoding="utf-8")
+    monkeypatch.setattr(
+        "framework._pages._directory_bytes",
+        lambda path: 800_000_000 if path == repo / "published" else 50,
+    )
+    with pytest.warns(fw.FrameworkWarning, match="approaching its 1 GB"):
+        assert fw.publish(report, to="github") == "https://owner.github.io/study/report/"
+    assert (repo / "published/report/v/1/index.html").is_file()

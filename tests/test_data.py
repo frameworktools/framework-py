@@ -254,3 +254,25 @@ def test_add_updates_an_entry_written_with_dotted_keys(data_project: Path) -> No
             }
         }
     }
+
+
+def test_reads_a_sas_file_that_r_haven_wrote(project: Path) -> None:
+    # Audit 2026-11-05: pandas.read_sas gave blank names and wrong values for this file
+    pytest.importorskip("pyreadstat")
+    fixture = Path(__file__).parent / "fixtures" / "haven.sas7bdat"
+    frame = fw.data_read(str(fixture))
+    assert list(frame.columns) == ["id", "species", "mass"]
+    assert frame["species"].tolist() == ["Adelie", "Gentoo", "Chinstrap"]
+    assert frame["mass"].tolist() == [3700.5, 5000.0, 3600.0]
+
+
+def test_xls_without_xlrd_names_the_package(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.util
+
+    real = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util, "find_spec", lambda name, *a: None if name == "xlrd" else real(name, *a)
+    )
+    (project / "old.xls").write_bytes(b"not really excel")
+    with pytest.raises(fw.FrameworkError, match="pip install xlrd"):
+        fw.data_read("old.xls")
