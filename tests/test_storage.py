@@ -341,7 +341,7 @@ def test_legacy_bucket_tracks_metadata_without_paths_or_content(
     def api(path: str, token: str, server: str, **kwargs: Any) -> dict[str, Any]:
         if path == "/api/v1/me":
             return {"project": "study"}
-        assert path == "/api/v2/projects/study/artifacts/external"
+        assert path == "/api/v1/projects/study/artifacts/external"
         calls.append(kwargs["body"])
         if len(calls) > 1:
             raise RuntimeError("409 Conflict: version already exists")

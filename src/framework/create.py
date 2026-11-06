@@ -932,7 +932,7 @@ def _build_and_register(
         # As offline: a bare project has no .env for a project token, so it stays local
         return root
     try:
-        created = api("/api/v2/projects", token, server, method="POST", body=body)
+        created = api("/api/v1/projects", token, server, method="POST", body=body)
     except CloudError as error:
         inform(f"Cloud project registration skipped: {error}")
         return root

@@ -307,12 +307,12 @@ def skills_sync(
         remote = None
         if identity:
             remote = api(
-                f"/api/v2/skills/sync/{quote(identity, safe='')}?variant={variant}", token, server
+                f"/api/v1/skills/sync/{quote(identity, safe='')}?variant={variant}", token, server
             )
         elif entry.get("origin"):
             origin = entry["origin"]
             remote = api(
-                f"/api/v2/skills/sync/{quote(origin['skill_id'], safe='')}"
+                f"/api/v1/skills/sync/{quote(origin['skill_id'], safe='')}"
                 f"?variant={variant}&hash={origin['hash']}",
                 token,
                 server,
@@ -367,7 +367,7 @@ def skills_sync(
             state["skills"][key] = entry
             _save(root, state)  # Retry identity survives a lost HTTP response.
             remote = api(
-                "/api/v2/skills/sync",
+                "/api/v1/skills/sync",
                 token,
                 server,
                 method="POST",

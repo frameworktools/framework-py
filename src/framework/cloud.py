@@ -400,7 +400,7 @@ def resolve_choices(
 
     Each Framework-Notice header is shown as a message.
     """
-    response = _request("/api/v2/resolve", token, url, method="POST", body=body)
+    response = _request("/api/v1/resolve", token, url, method="POST", body=body)
     for notice in response.headers.get_list("Framework-Notice"):
         inform(notice)
     envelope = response.json()
@@ -1010,7 +1010,7 @@ def _publish_collection(
 ) -> dict[str, Any]:
     if isinstance(collection, bool) or not isinstance(collection, (str, int)):
         raise CloudError("collection must be a collection ID or slug.")
-    rows = api("/api/v2/collections", token, url)["collections"]
+    rows = api("/api/v1/collections", token, url)["collections"]
     matches = [
         row for row in rows if str(row["id"]) == str(collection) or row["slug"] == str(collection)
     ]
@@ -1184,7 +1184,7 @@ def cloud_publish(
             if not result.get("id"):
                 raise CloudError("The server did not return an artifact ID.")
             api(
-                f"/api/v2/collections/{selected['id']}/items",
+                f"/api/v1/collections/{selected['id']}/items",
                 token,
                 url,
                 method="POST",
@@ -1239,7 +1239,7 @@ def registration_body(
     package_sets: Sequence[str] = (),
     skill_sets: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """The choices a project built offline was made from, for ``/api/v2/projects``.
+    """The choices a project built offline was made from, for ``/api/v1/projects``.
 
     Each of Framework's five types is a structure of the same name.
     """
@@ -1276,7 +1276,7 @@ def register_project(
     """Register a new local project on the cloud when logged in. Never fails creation.
 
     The cloud records the structure, tools, sets, and settings the project
-    was built from. A server without ``/api/v2/projects`` gets the older
+    was built from. A server without ``/api/v1/projects`` gets the older
     registration.
     """
     server = cloud_server().url
@@ -1287,7 +1287,7 @@ def register_project(
         if spec is not None:
             body = registration_body(name, type, spec, package_sets, skill_sets)
             try:
-                result = api("/api/v2/projects", token, server, method="POST", body=body)
+                result = api("/api/v1/projects", token, server, method="POST", body=body)
                 slug, project_token = result.get("slug"), result.get("token")
             except _MissingEndpointError:
                 spec = None
@@ -1308,7 +1308,7 @@ def fetch_layers(key: str, url: str | None = None) -> tuple[dict[str, Any], str]
     """A project's layers file from the cloud, by its project token."""
     server = cloud_server(url).url
     inform(f"Fetching this project's definition from {server} (what is shared: {server}/privacy)")
-    envelope = api("/api/v2/projects/pull", key, server)
+    envelope = api("/api/v1/projects/pull", key, server)
     if not isinstance(envelope, dict):
         raise CloudError("The server returned an unexpected project definition.")
     return envelope, server

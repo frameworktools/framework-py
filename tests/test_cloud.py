@@ -452,7 +452,7 @@ def envelope(language: str = "python") -> dict[str, Any]:
 
 
 def test_new_from_a_cloud_key(tmp_path: Path, server: FakeCloud) -> None:
-    server.route("GET", "/api/v2/projects/pull", lambda r: httpx.Response(200, json=envelope()))
+    server.route("GET", "/api/v1/projects/pull", lambda r: httpx.Response(200, json=envelope()))
     root = fw.new(key="fwp_project0123", location=tmp_path / "cloud-study", interactive=False)
     assert server.requests[0].headers["Authorization"] == "Bearer fwp_project0123"
     env = dotenv.read(root / ".env")
@@ -464,7 +464,7 @@ def test_new_from_a_cloud_key(tmp_path: Path, server: FakeCloud) -> None:
 
 
 def test_new_from_a_cloud_key_refuses_r_projects(tmp_path: Path, server: FakeCloud) -> None:
-    server.route("GET", "/api/v2/projects/pull", lambda r: httpx.Response(200, json=envelope("r")))
+    server.route("GET", "/api/v1/projects/pull", lambda r: httpx.Response(200, json=envelope("r")))
     with pytest.raises(fw.SpecError, match="This is an R project"):
         fw.new(key="fwp_project0123", location=tmp_path / "x", interactive=False)
 
@@ -499,8 +499,8 @@ def test_new_from_cloud_choices(tmp_path: Path, server: FakeCloud) -> None:
         sent["create"] = json.loads(request.content)
         return httpx.Response(201, json={"slug": "lab", "token": "fwp_lab0123456"})
 
-    server.route("POST", "/api/v2/resolve", resolve)
-    server.route("POST", "/api/v2/projects", create)
+    server.route("POST", "/api/v1/resolve", resolve)
+    server.route("POST", "/api/v1/projects", create)
     root = fw.new(
         "Lab",
         tmp_path / "lab",
@@ -534,7 +534,7 @@ def test_new_from_cloud_choices_needs_a_login_and_reports_422(
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
     server.route(
         "POST",
-        "/api/v2/resolve",
+        "/api/v1/resolve",
         lambda r: httpx.Response(
             422,
             json={"message": "The given data was invalid.", "errors": {"blueprint": ["Unknown."]}},
@@ -566,9 +566,9 @@ def test_new_resolves_your_defaults_and_caches_them(
         ]
         return httpx.Response(200, json=choices_envelope(), headers=headers)
 
-    server.route("POST", "/api/v2/resolve", resolve)
+    server.route("POST", "/api/v1/resolve", resolve)
     server.route(
-        "POST", "/api/v2/projects", lambda r: httpx.Response(201, json={"token": "fwp_d0123456"})
+        "POST", "/api/v1/projects", lambda r: httpx.Response(201, json={"token": "fwp_d0123456"})
     )
     caplog.set_level("INFO", logger="framework")
     root = fw.new("Lab", tmp_path / "lab", interactive=False)
@@ -597,7 +597,7 @@ def test_new_offline_uses_the_cached_defaults(
     write_cached_defaults(cloud.cloud_server().url, "python", choices_envelope(), "rev-7")
     server.route(
         "POST",
-        "/api/v2/resolve",
+        "/api/v1/resolve",
         offline if failure == "network" else (lambda r: httpx.Response(503)),
     )
     caplog.set_level("INFO", logger="framework")
@@ -610,7 +610,7 @@ def test_new_offline_without_a_cache_never_falls_back_silently(
     tmp_path: Path, server: FakeCloud, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
-    server.route("POST", "/api/v2/resolve", offline)
+    server.route("POST", "/api/v1/resolve", offline)
     with pytest.raises(fw.FrameworkError, match=r"Pass offline=True"):
         fw.new("Lab", tmp_path / "lab", interactive=False)
     assert not (tmp_path / "lab").exists()
@@ -638,7 +638,7 @@ def test_new_reports_auth_errors_instead_of_going_offline(
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
     write_cached_defaults(cloud.cloud_server().url, "python", choices_envelope(), "rev-7")
     server.route(
-        "POST", "/api/v2/resolve", lambda r: httpx.Response(401, json={"message": "Bad token"})
+        "POST", "/api/v1/resolve", lambda r: httpx.Response(401, json={"message": "Bad token"})
     )
     with pytest.raises(fw.CloudError, match="Bad token"):
         fw.new("Lab", tmp_path / "lab", interactive=False)
@@ -654,13 +654,16 @@ def test_defaults_cache_folders_replace_colons() -> None:
 def test_older_servers_ask_before_using_the_built_ins(
     tmp_path: Path, server: FakeCloud, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Without /api/v2/resolve, Python builds from the built-ins only after saying so."""
+    """Without /api/v1/resolve, Python builds from the built-ins only after saying so."""
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
     with pytest.raises(fw.FrameworkError, match="doesn't resolve projects yet"):
         fw.new("Plain", tmp_path / "plain", "project", interactive=False)
 
     def create(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
+        # An older server registers by name and type only; it doesn't know resolved choices
+        if "project_type" not in body:
+            return httpx.Response(404, json={"message": "Not found"})
         assert body == {"name": "Registered", "project_type": "project", "language": "python"}
         return httpx.Response(
             201, json={"project": {"slug": "registered"}, "pull_token": "fwp_new0123456"}
@@ -696,8 +699,8 @@ def test_a_type_resolves_as_its_system_blueprint(tmp_path: Path, server: FakeClo
         sent["create"] = json.loads(request.content)
         return httpx.Response(201, json={"slug": "pieces", "token": "fwp_pieces0123"})
 
-    server.route("POST", "/api/v2/resolve", resolve)
-    server.route("POST", "/api/v2/projects", create)
+    server.route("POST", "/api/v1/resolve", resolve)
+    server.route("POST", "/api/v1/projects", create)
     root = fw.new(
         "Pieces",
         tmp_path / "pieces",
@@ -726,7 +729,7 @@ def test_explicit_choices_offline_ask_first(tmp_path: Path, server: FakeCloud) -
 
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
     write_cached_defaults(cloud.cloud_server().url, "python", choices_envelope(), "rev-7")
-    server.route("POST", "/api/v2/resolve", offline)
+    server.route("POST", "/api/v1/resolve", offline)
     with pytest.raises(fw.FrameworkError, match="these choices need Framework Cloud"):
         fw.new("Lab", tmp_path / "lab", "project", interactive=False)
 
@@ -771,7 +774,7 @@ def test_publish_collection_attachment(
 ) -> None:
     server.route(
         "GET",
-        "/api/v2/collections",
+        "/api/v1/collections",
         lambda r: httpx.Response(
             200,
             json={
@@ -792,7 +795,7 @@ def test_publish_collection_attachment(
         attached.append(json.loads(request.content))
         return httpx.Response(201 if attach_ok else 422, json={"message": "Attachment denied"})
 
-    server.route("POST", "/api/v2/collections/7/items", attach)
+    server.route("POST", "/api/v1/collections/7/items", attach)
     path = cloud_project / "figure.png"
     path.write_bytes(b"png")
     kwargs = {"to": "cloud", "slug": False, "collection": "findings", "share_unlisted": True}
@@ -831,7 +834,7 @@ def test_collection_preflight_before_upload(
     share: bool,
 ) -> None:
     server.route(
-        "GET", "/api/v2/collections", lambda r: httpx.Response(200, json={"collections": rows})
+        "GET", "/api/v1/collections", lambda r: httpx.Response(200, json={"collections": rows})
     )
     path = cloud_project / "figure.png"
     path.write_bytes(b"png")
@@ -999,7 +1002,7 @@ def test_hidden_visibility_with_a_slug_fails_a_public_collection_first(
 ) -> None:
     rows = [{"id": 7, "slug": "findings", "title": "F", "visibility": "public"}]
     server.route(
-        "GET", "/api/v2/collections", lambda r: httpx.Response(200, json={"collections": rows})
+        "GET", "/api/v1/collections", lambda r: httpx.Response(200, json={"collections": rows})
     )
     path = cloud_project / "figure.png"
     path.write_bytes(b"png")
@@ -1099,10 +1102,10 @@ def test_logged_in_bare_projects_stay_local(tmp_path: Path, server: FakeCloud) -
         ],
         "source": {"origin": "cloud"},
     }
-    server.route("POST", "/api/v2/resolve", lambda r: httpx.Response(200, json=envelope))
+    server.route("POST", "/api/v1/resolve", lambda r: httpx.Response(200, json=envelope))
     root = fw.new("Plain", tmp_path / "plain", "bare", interactive=False)
     assert (root / "settings.yml").is_file()
-    assert "POST /api/v2/projects" not in server.paths()
+    assert "POST /api/v1/projects" not in server.paths()
 
 
 def test_new_shows_its_first_messages(
@@ -1121,7 +1124,7 @@ def test_new_shows_its_first_messages(
     try:
         os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
         write_cached_defaults(cloud.cloud_server().url, "python", choices_envelope(), "rev-7")
-        server.route("POST", "/api/v2/resolve", offline)
+        server.route("POST", "/api/v1/resolve", offline)
         fw.new("Lab", tmp_path / "lab", interactive=False)
         assert "Using your Framework Cloud defaults from 20" in capsys.readouterr().err
     finally:
@@ -1138,14 +1141,14 @@ def test_a_string_slug_does_not_fail_a_public_collection_pre_check(
     # The pre-check took a string slug as public, so it never asked for share_unlisted
     rows = [{"id": 7, "slug": "findings", "title": "F", "visibility": "unlisted"}]
     server.route(
-        "GET", "/api/v2/collections", lambda r: httpx.Response(200, json={"collections": rows})
+        "GET", "/api/v1/collections", lambda r: httpx.Response(200, json={"collections": rows})
     )
     path = cloud_project / "figure.png"
     path.write_bytes(b"png")
     server.route(
         "POST", "/api/v1/documents", lambda r: httpx.Response(201, json={"id": 1, "url": "u"})
     )
-    server.route("POST", "/api/v2/collections/7/items", lambda r: httpx.Response(201, json={}))
+    server.route("POST", "/api/v1/collections/7/items", lambda r: httpx.Response(201, json={}))
     assert fw.publish(path, to="cloud", slug="fig", collection="findings") == "u"
     fields = _fields(server.requests[1].content)
     assert b"readable" not in fields and b"visibility" not in fields
@@ -1334,14 +1337,14 @@ def test_null_keyring_backend_skips_the_macos_keychain(monkeypatch: pytest.Monke
 
 
 def test_new_from_a_cloud_key_on_a_named_server(tmp_path: Path, server: FakeCloud) -> None:
-    server.route("GET", "/api/v2/projects/pull", lambda r: httpx.Response(200, json=envelope()))
+    server.route("GET", "/api/v1/projects/pull", lambda r: httpx.Response(200, json=envelope()))
     root = fw.new(
         key="fwp_project0123",
         url="https://cloud.example.edu/",
         location=tmp_path / "cloud-study",
         interactive=False,
     )
-    assert str(server.requests[0].url) == "https://cloud.example.edu/api/v2/projects/pull"
+    assert str(server.requests[0].url) == "https://cloud.example.edu/api/v1/projects/pull"
     assert dotenv.read(root / ".env")["FW_CLOUD_URL"] == "https://cloud.example.edu"
 
 
@@ -1354,7 +1357,7 @@ def test_a_blank_cloud_author_email_is_not_written(tmp_path: Path, server: FakeC
     def pull(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={**envelope(), "author": {"name": "Ada", "email": ""}})
 
-    server.route("GET", "/api/v2/projects/pull", pull)
+    server.route("GET", "/api/v1/projects/pull", pull)
     root = fw.new(key="fwp_project0123", location=tmp_path / "cloud-study", interactive=False)
     spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
     assert spec["author"]["name"] == "Ada"

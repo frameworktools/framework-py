@@ -138,7 +138,7 @@ def test_structure_import(existing: Path, monkeypatch: pytest.MonkeyPatch) -> No
         body = {"key": "ada/old-study", "name": "Old study", "url": "https://x/s/1"}
         return httpx.Response(201, json=body)
 
-    server.route("POST", "/api/v2/structures", create)
+    server.route("POST", "/api/v1/structures", create)
     assert fw.structure_import(existing, name="Old study", yes=True)["key"] == "ada/old-study"
     assert sent["name"] == "Old study"
     assert sent["directories"]["inputs_raw"] == "data/raw"
@@ -168,7 +168,7 @@ def test_registering_an_adopted_project_keeps_the_token_out_of_git(
     server = FakeCloud()
     server.route(
         "POST",
-        "/api/v2/projects",
+        "/api/v1/projects",
         lambda r: httpx.Response(201, json={"slug": "old", "token": "fwp_secret0123"}),
     )
     monkeypatch.setattr(cloud, "_transport", httpx.MockTransport(server))

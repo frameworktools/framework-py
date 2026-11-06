@@ -335,7 +335,7 @@ def track_external(
             visibility=visibility or "public",
         )
         api(
-            f"/api/v2/projects/{quote(str(slug), safe='')}/artifacts/external",
+            f"/api/v1/projects/{quote(str(slug), safe='')}/artifacts/external",
             token,
             server,
             method="POST",

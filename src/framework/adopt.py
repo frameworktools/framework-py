@@ -357,7 +357,7 @@ def _send_structure(name: str, plan: AdoptPlan) -> dict[str, Any]:
     if plan.extra_directories:
         body["extra_directories"] = plan.extra_directories
     try:
-        created = api("/api/v2/structures", token, server, method="POST", body=body)
+        created = api("/api/v1/structures", token, server, method="POST", body=body)
     except _MissingEndpointError as error:
         raise CloudError("This Framework Cloud server doesn't support structures yet.") from error
     if not isinstance(created, dict):

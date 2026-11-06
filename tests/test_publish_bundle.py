@@ -117,7 +117,7 @@ def test_tracking_metadata_no_local_path(tmp_path: Path, monkeypatch: pytest.Mon
     def api(path: str, token: str, server: str, **kwargs: Any) -> dict[str, Any]:
         if path == "/api/v1/me":
             return {"project": "project-one"}
-        assert path == "/api/v2/projects/project-one/artifacts/external"
+        assert path == "/api/v1/projects/project-one/artifacts/external"
         calls.append(kwargs["body"])
         return {}
 
