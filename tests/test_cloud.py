@@ -5,6 +5,7 @@ import os
 import stat
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -147,6 +148,28 @@ def test_saved_server_falls_back_to_r(project: Path) -> None:
     r_config_dir().mkdir(parents=True)
     _yaml.write(r_config_dir() / "cloud.yml", {"server": "https://from-r.example.org"})
     assert cloud.cloud_server().url == "https://from-r.example.org"
+
+
+def test_saved_server_comes_from_the_newest_login(project: Path) -> None:
+    fw_file, r_file = fw.config_dir() / "cloud.yml", r_config_dir() / "cloud.yml"
+    fw.config_dir().mkdir(parents=True, exist_ok=True)
+    r_config_dir().mkdir(parents=True, exist_ok=True)
+    _yaml.write(fw_file, {"server": "https://fw.example.org"})
+    _yaml.write(r_file, {"server": "https://from-r.example.org"})
+    now = time.time()
+
+    # R logged in last
+    os.utime(fw_file, (now - 3600, now - 3600))
+    os.utime(r_file, (now, now))
+    assert cloud.cloud_server().url == "https://from-r.example.org"
+
+    # fw or Python logged in last
+    os.utime(fw_file, (now + 60, now + 60))
+    assert cloud.cloud_server().url == "https://fw.example.org"
+
+    # A tie goes to fw's folder
+    os.utime(r_file, (now + 60, now + 60))
+    assert cloud.cloud_server().url == "https://fw.example.org"
 
 
 def test_token_resolution(project: Path, keyring: dict[str, str]) -> None:

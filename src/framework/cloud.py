@@ -116,14 +116,24 @@ def is_default(url: str) -> bool:
 
 
 def _saved_url() -> str | None:
-    for folder in (config_dir(), r_config_dir()):
+    """The default server a login saved, from the newer of fw's and R's cloud.yml.
+
+    The most recently written file wins, so the last login in any tool counts.
+    On a tie fw's folder comes first. fw and R use the same rule.
+    """
+    best: str | None = None
+    best_time = -1
+    for folder in dict.fromkeys((config_dir(), r_config_dir())):
         path = folder / "cloud.yml"
-        if path.is_file():
-            data = _yaml.read(path)
-            server = data.get("server") if isinstance(data, dict) else None
-            if isinstance(server, str) and server:
-                return server
-    return None
+        if not path.is_file():
+            continue
+        data = _yaml.read(path)
+        server = data.get("server") if isinstance(data, dict) else None
+        if isinstance(server, str) and server:
+            written = path.stat().st_mtime_ns
+            if written > best_time:
+                best, best_time = server, written
+    return best
 
 
 def _project_dir(project_dir: str | Path | None) -> Path | None:
