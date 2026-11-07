@@ -94,8 +94,8 @@ def test_save_adds_a_missing_extension(data_project: Path) -> None:
 @pytest.mark.parametrize(
     ("path", "kwargs", "message"),
     [
-        ("inputs.intermediate.x", {"type": "rds"}, "R-only"),
-        ("inputs/raw/x.rds", {}, "R-only"),
+        ("inputs.intermediate.x", {"type": "rds"}, "does not write .rds"),
+        ("inputs/raw/x.rds", {}, "does not write .rds"),
         ("inputs.nowhere.x", {}, r"Unknown directory in 'inputs\.nowhere\.x'"),
         ("inputs.raw", {}, r"Unknown directory in 'inputs\.raw'"),
         ("plain", {}, "has no directory"),
@@ -197,9 +197,6 @@ def test_description_is_shown(data_project: Path, caplog: pytest.LogCaptureFixtu
 
 
 def test_read_errors(data_project: Path) -> None:
-    (data_project / "inputs/raw/model.rds").write_bytes(b"RDS")
-    with pytest.raises(fw.UnsupportedFormatError, match="only R can read"):
-        fw.data_read("inputs/raw/model.rds")
     (data_project / "inputs/raw/notes.docx").write_bytes(b"")
     with pytest.raises(fw.UnsupportedFormatError, match="docx"):
         fw.data_read("inputs/raw/notes.docx")
@@ -599,3 +596,46 @@ def test_saving_over_locked_data_warns_when_the_contents_change(data_project: Pa
 
     fw.data_save(FRAME, "inputs.intermediate.rebuilt", locked=False)
     fw.data_save(changed, "inputs.intermediate.rebuilt", locked=False)
+
+
+# Made in R: saveRDS(data.frame(id = 1:3, flag = c(TRUE, NA, FALSE),
+#   day = as.Date("2020-01-01") + 0:2, group = factor(c("a", "b", "a")),
+#   note = c("x", NA, "y")), "frame.rds") and saveRDS(list(a = 1, b = "x"), "list.rds")
+RDS_FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def test_reads_an_rds_data_frame_by_name_with_integrity_tracking(data_project: Path) -> None:
+    pytest.importorskip("pyreadr")
+    target = data_project / "inputs/raw/frame.rds"
+    target.write_bytes((RDS_FIXTURES / "frame.rds").read_bytes())
+    fw.data_add(target, name="inputs.raw.frame")
+
+    frame = fw.data_read("inputs.raw.frame")
+    assert frame["id"].tolist() == [1, 2, 3]
+    assert frame["flag"].tolist()[0] is True and pd.isna(frame["flag"].tolist()[1])
+    assert str(frame["group"].dtype) == "category"
+    assert frame["note"].isna().tolist() == [False, True, False]
+    record = db.get_data_record("inputs.raw.frame")
+    assert record is not None and record.hash == file_hash(target)
+
+    target.write_bytes((RDS_FIXTURES / "list.rds").read_bytes())
+    with pytest.raises(fw.IntegrityError):
+        fw.data_read("inputs.raw.frame")
+
+
+def test_rds_that_is_not_a_data_frame_is_refused(data_project: Path) -> None:
+    pytest.importorskip("pyreadr")
+    (data_project / "inputs/raw/list.rds").write_bytes((RDS_FIXTURES / "list.rds").read_bytes())
+    with pytest.raises(fw.UnsupportedFormatError, match="other than a data frame"):
+        fw.data_read("inputs/raw/list.rds")
+
+
+def test_rds_without_the_extra_names_it(
+    data_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    (data_project / "inputs/raw/frame.rds").write_bytes((RDS_FIXTURES / "frame.rds").read_bytes())
+    monkeypatch.setitem(sys.modules, "pyreadr", None)
+    with pytest.raises(fw.FrameworkError, match=r"framework-py\[rds\]"):
+        fw.data_read("inputs/raw/frame.rds")

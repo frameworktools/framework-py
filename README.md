@@ -21,8 +21,8 @@ pip install framework-py
 ```
 
 Optional extras add database drivers, S3 storage, and more file formats:
-`postgres`, `mysql`, `duckdb`, `sqlserver`, `s3`, `excel`, `spss`, and `sas`
-(version 8 SAS transport files).
+`postgres`, `mysql`, `duckdb`, `sqlserver`, `s3`, `excel`, `spss`, `sas`
+(version 8 SAS transport files), and `rds` (R's `.rds` data frames).
 
 ```sh
 uv add "framework-py[postgres,s3]"

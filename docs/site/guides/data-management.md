@@ -171,10 +171,11 @@ framework-py reads these formats. It writes CSV and Parquet, which both language
 | `spss_por` | `.por` | `pyreadstat.read_por()` | `spss` |
 | `sas` | `.sas7bdat` | `pandas.read_sas()` | |
 | `sas_xpt` | `.xpt` | `pandas.read_sas()`, or pyreadstat for version 8 files | `sas` for version 8 |
+| `rds` | `.rds` | `pyreadr.read_r()`, data frames only | `rds` |
 
 A catalog entry with an extension Framework does not recognize is read as comma-separated text, with a warning, unless the entry or the call names a delimiter.
 
-`.rds` files are R-only. Reading one raises `UnsupportedFormatError`, with a message that suggests saving the data from R as Parquet or CSV. The catalog records each file's type, so either language reads the CSV and Parquet entries the other wrote.
+`.rds` files that hold a data frame (or tibble, vector, or matrix) are read with pyreadr, from the `rds` extra (`uv add "framework-py[rds]"`). They are integrity-checked like any other catalog file, so an `.rds` intermediate R wrote reads in Python under the same name and hash. Without the extra, reading one raises an error with the install command. An `.rds` file that holds something else, such as a model or a list, raises `UnsupportedFormatError`. Python does not write `.rds` files; save CSV or Parquet, which both languages read. The catalog records each file's type, so either language reads the entries the other wrote.
 
 ## Data integrity
 

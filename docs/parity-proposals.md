@@ -121,3 +121,12 @@ Saving identical contents is silent, so rerunning a deterministic pipeline does 
 Python raises it as `DataChangedWarning`; R should use `warning()`.
 
 R today: the second save overwrites silently.
+
+## data_read(): `.rds` data frames in Python [D5]
+
+Python only; R needs no change. `data_read()` reads an `.rds` file through the optional
+`rds` extra (`framework-py[rds]`, pyreadr) when it holds a data frame, tibble, vector, or
+matrix, with the same catalog integrity checks as other formats (hash recorded on first
+read, `IntegrityError` for a changed locked file). Without the extra, the error names
+`pip install "framework-py[rds]"`. An `.rds` holding anything else (a model, a list)
+raises `UnsupportedFormatError`. Python still does not write `.rds`.

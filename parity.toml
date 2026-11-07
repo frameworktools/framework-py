@@ -136,7 +136,7 @@ status = "ported"
 [functions.data_read]
 python = "data_read"
 status = "ported"
-note = "`.rds` raises `UnsupportedFormatError`. A relative file path is looked for from the project root, then the working directory. CSV, TSV, and Excel follow readr's and readxl's missing-value and whitespace rules, and take R's argument names (`na`, `trim_ws`, `col_names`, `col_types`, `skip`, `n_max`, `sheet`). R's `trim_ws = TRUE` default for text files is proposed in docs/parity-proposals.md"
+note = "`.rds` data frames are read with pyreadr (the `rds` extra); other `.rds` objects raise `UnsupportedFormatError`. A relative file path is looked for from the project root, then the working directory. CSV, TSV, and Excel follow readr's and readxl's missing-value and whitespace rules, and take R's argument names (`na`, `trim_ws`, `col_names`, `col_types`, `skip`, `n_max`, `sheet`). R's `trim_ws = TRUE` default for text files is proposed in docs/parity-proposals.md"
 
 [functions.data_save]
 python = "data_save"

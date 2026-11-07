@@ -5,8 +5,9 @@ framework.db: a locked file that changed is an error, and an unlocked file
 that changed is a warning. ``data_save()`` and ``data_add()`` record the hash.
 Hashes match R's, so a file saved in one language verifies in the other.
 
-Python reads CSV, TSV, Parquet, Excel, Stata, SPSS, and SAS files. It writes
-CSV and Parquet, which R reads too. ``.rds`` files are R-only.
+Python reads CSV, TSV, Parquet, Excel, Stata, SPSS, and SAS files, and ``.rds`` files
+that hold a data frame (with the ``rds`` extra). It writes CSV and Parquet, which R reads
+too.
 """
 
 from __future__ import annotations
@@ -94,10 +95,10 @@ _R_ARGUMENT_TYPES: dict[str, tuple[str, ...]] = {
     "xls": (*_READR_ARGUMENTS, "sheet"),
 }
 
-_R_ONLY = (
-    "{path} is an .rds file, which only R can read. "
-    "Save it from R as Parquet or CSV to use it in Python, for example "
-    "data_save(df, 'inputs.intermediate.name', type = 'parquet')."
+_RDS_NOT_A_FRAME = (
+    "{path} is an .rds file that holds something other than a data frame, such as a model "
+    "or a list, which only R can read. Python reads .rds files that hold a data frame "
+    "(or tibble), a vector, or a matrix."
 )
 
 
@@ -147,6 +148,24 @@ def _reader(
 
     def parquet(path: Path, _d: str | None, _k: bool, kwargs: dict[str, Any]) -> Any:
         return pd.read_parquet(path, **kwargs)
+
+    def rds(path: Path, _d: str | None, _k: bool, kwargs: dict[str, Any]) -> Any:
+        _require("pyreadr", "rds", ".rds files")
+        import pyreadr
+
+        try:
+            with warnings.catch_warnings():
+                # pyreadr warns when the file holds nothing it reads (the error below says
+                # so), and numpy warns about how pyreadr converts dates
+                warnings.simplefilter("ignore", UserWarning)
+                warnings.simplefilter("ignore", DeprecationWarning)
+                result = pyreadr.read_r(str(path), **kwargs)
+        except pyreadr.custom_errors.LibrdataError as error:
+            raise UnsupportedFormatError(_RDS_NOT_A_FRAME.format(path=path)) from error
+        frame = result.get(None) if len(result) == 1 else None
+        if not isinstance(frame, pd.DataFrame):
+            raise UnsupportedFormatError(_RDS_NOT_A_FRAME.format(path=path))
+        return frame
 
     def excel(path: Path, _d: str | None, _k: bool, kwargs: dict[str, Any]) -> Any:
         if path.suffix.lower() == ".xlsx":
@@ -199,6 +218,7 @@ def _reader(
         "csv": csv,
         "tsv": tsv,
         "parquet": parquet,
+        "rds": rds,
         "excel": excel,
         "xlsx": excel,
         "xls": excel,
@@ -326,8 +346,9 @@ def data_read(
 
     Raises:
         DataNotFoundError: The name is not in the catalog, or the file is missing.
-        UnsupportedFormatError: The file is an ``.rds`` file or another
-            format Python cannot read.
+        UnsupportedFormatError: The file is an ``.rds`` file that holds something other than
+            a data frame, such as a model, or another format Python cannot read.
+        FrameworkError: An ``.rds`` file and the ``rds`` extra (pyreadr) is not installed.
         IntegrityError: A locked file changed since its hash was recorded.
     """
     path = str(path)
@@ -354,8 +375,6 @@ def data_read(
 
     if not info.path.is_file():
         raise _missing_file(path, info, by_name=info.name is not None)
-    if info.type == "rds":
-        raise UnsupportedFormatError(_R_ONLY.format(path=info.path))
 
     if tracked:
         _check_integrity(path, info)
@@ -491,7 +510,8 @@ def data_save(
     target, file_type, name = _save_target(path, type)
     if file_type == "rds":
         raise UnsupportedFormatError(
-            ".rds files are R-only. Save as 'parquet' or 'csv' so both languages can read it."
+            "Python does not write .rds files. Save as 'parquet' or 'csv', which both "
+            "languages read."
         )
     if file_type not in _SAVE_TYPES:
         raise UnsupportedFormatError(f"data_save() writes csv or parquet, not {file_type}")

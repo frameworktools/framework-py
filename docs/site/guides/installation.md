@@ -54,6 +54,7 @@ The core package reads CSV, Parquet, Stata, and SAS files, writes CSV and Parque
 | `excel` | openpyxl | Reading and writing `.xlsx` files |
 | `spss` | pyreadstat | Reading SPSS files |
 | `sas` | pyreadstat | Reading version 8 SAS transport files |
+| `rds` | pyreadr | Reading R's `.rds` files that hold a data frame |
 
 Name the extras in brackets when you add the package.
 
