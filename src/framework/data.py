@@ -14,7 +14,7 @@ from __future__ import annotations
 import importlib.util
 import re
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -85,9 +85,13 @@ _GENERIC_TYPES = {("spss", ".por"): "spss_por", ("sas", ".xpt"): "sas_xpt"}
 _SAVE_TYPES = ("csv", "parquet")
 
 # R's argument names data_read() takes, by the reader types that use them
+_READR_ARGUMENTS = ("na", "trim_ws", "col_names", "col_types", "skip", "n_max")
 _R_ARGUMENT_TYPES: dict[str, tuple[str, ...]] = {
-    "csv": ("na", "trim_ws"),
-    "tsv": ("na", "trim_ws"),
+    "csv": _READR_ARGUMENTS,
+    "tsv": _READR_ARGUMENTS,
+    "excel": (*_READR_ARGUMENTS, "sheet"),
+    "xlsx": (*_READR_ARGUMENTS, "sheet"),
+    "xls": (*_READR_ARGUMENTS, "sheet"),
 }
 
 _R_ONLY = (
@@ -151,7 +155,7 @@ def _reader(
             raise FrameworkError(
                 "Older .xls Excel files need the xlrd package. Install it with: pip install xlrd"
             )
-        return pd.read_excel(path, **kwargs)
+        return _tabular.read_excel(path, kwargs=kwargs, **r_args)
 
     def stata(path: Path, _d: str | None, keep: bool, kwargs: dict[str, Any]) -> Any:
         kwargs.setdefault("convert_categoricals", keep)
@@ -263,9 +267,18 @@ def data_read(
     *,
     na: str | Sequence[str] | None = None,
     trim_ws: bool | None = None,
+    col_names: bool | Sequence[str] | None = None,
+    col_types: str | Sequence[str] | Mapping[str, str] | None = None,
+    skip: int | None = None,
+    n_max: int | None = None,
+    sheet: str | int | None = None,
     **kwargs: Any,
 ) -> pd.DataFrame:
     """Read data by catalog name or file path.
+
+    CSV, TSV, and Excel files are read with R's rules and take R's argument names
+    (``na``, ``trim_ws``, ``col_names``, ``col_types``, ``skip``, ``n_max``, and
+    ``sheet``), so a call copied from R reads the same data.
 
     Files found by catalog name are integrity-checked: Framework records the
     file's SHA-256 in framework.db the first time and compares it on every
@@ -279,14 +292,27 @@ def data_read(
             Default: the catalog's ``delimiter``, then the file extension.
         keep_attributes: Keep value labels from Stata and SPSS files as
             categories. By default the stored codes are returned, as in R.
-        na: Strings read as missing in CSV and TSV files. Default: ``""`` and ``"NA"``
-            only, as R's readr reads them. pandas would also read "None", "N/A", "null",
-            and others as missing. pandas' own ``na_values`` and ``keep_default_na`` are
-            used as given instead, when passed.
-        trim_ws: Trim leading and trailing whitespace from text values and column names
-            in CSV and TSV files, as readr's ``trim_ws = TRUE`` does. Default: True. A value
-            that is missing after trimming (``"  NA"``) is missing, and a text column whose
-            values are all numbers after trimming is numeric.
+        na: Strings read as missing. Default: ``""`` and ``"NA"`` in CSV and TSV files, as
+            R's readr reads them, and only empty cells in Excel files, as readxl reads them.
+            pandas would also read "None", "N/A", "null", and others as missing. pandas'
+            own ``na_values`` and ``keep_default_na`` are used as given instead, when
+            passed.
+        trim_ws: Trim leading and trailing whitespace from text values and column names,
+            as readr's and readxl's ``trim_ws = TRUE`` does. Default: True. A value that is
+            missing after trimming (``"  NA"``) is missing. In CSV and TSV files, a text
+            column whose values are all numbers after trimming is numeric.
+        col_names: True (default) reads names from the first row. False names the columns
+            as R does (``X1, X2, ...`` for text, ``...1, ...2, ...`` for Excel) and reads
+            the first row as data. A list of names does the same with those names.
+        col_types: Column types. For CSV and TSV, readr's compact string, such as
+            ``"cid_"`` (c text, i integer, d or n double, l logical, f factor, D date,
+            T date-time, t time as text, ? guess, _ or - skip), or a mapping of column names
+            to those codes. For Excel, readxl's types: one of "guess", "text", "numeric",
+            "logical", "date", "list", or "skip", or a list with one per column.
+        skip: Rows to skip before reading anything, including the column names.
+        n_max: The most data rows to read.
+        sheet: Excel only: the sheet's name, or its position counting from 1, as in R.
+            Default: the first sheet.
         **kwargs: Passed to the pandas (or pyreadstat) reader.
 
     Raises:
@@ -296,9 +322,16 @@ def data_read(
         IntegrityError: A locked file changed since its hash was recorded.
     """
     path = str(path)
-    r_args = {
-        name: value for name, value in (("na", na), ("trim_ws", trim_ws)) if value is not None
+    given = {
+        "na": na,
+        "trim_ws": trim_ws,
+        "col_names": col_names,
+        "col_types": col_types,
+        "skip": skip,
+        "n_max": n_max,
+        "sheet": sheet,
     }
+    r_args = {name: value for name, value in given.items() if value is not None}
     direct = _existing_file(path)
     if direct is not None:
         extension = direct.suffix.lower().lstrip(".")
@@ -330,9 +363,9 @@ def data_read(
     unused = [f"{name}=" for name in r_args if name not in accepted]
     if unused:
         raise FrameworkError(
-            f"{', '.join(unused)} does not apply to {file_type} files, only to the "
-            f"{', '.join(kind for kind in _R_ARGUMENT_TYPES)} files R reads with readr "
-            "or readxl."
+            f"{', '.join(unused)} does not apply to {file_type} files. R's reader arguments "
+            "apply to CSV and TSV files (readr) and Excel files (readxl); sheet= to Excel "
+            "only."
         )
     try:
         data: pd.DataFrame = _reader(file_type, r_args)(

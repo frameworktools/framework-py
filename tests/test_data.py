@@ -382,7 +382,7 @@ def test_csv_na_argument_replaces_the_missing_strings(data_project: Path) -> Non
 def test_csv_whitespace_is_trimmed_as_readr_does(data_project: Path) -> None:
     path = data_project / "inputs/raw/padded.tsv"
     path.write_text(
-        " id \t value\t label\n    1 \t          NA\t  hi \n   22\t   3.5 \t\"  in  \"\n",
+        ' id \t value\t label\n    1 \t          NA\t  hi \n   22\t   3.5 \t"  in  "\n',
         encoding="utf-8",
     )
     frame = fw.data_read("inputs/raw/padded.tsv")
@@ -408,3 +408,78 @@ def test_r_reader_arguments_are_refused_for_other_formats(data_project: Path) ->
     FRAME.to_parquet(data_project / "inputs/raw/x.parquet")
     with pytest.raises(fw.FrameworkError, match="na= does not apply to parquet"):
         fw.data_read("inputs/raw/x.parquet", na="")
+
+
+@pytest.fixture
+def workbook(data_project: Path) -> Path:
+    openpyxl = pytest.importorskip("openpyxl")
+    book = openpyxl.Workbook()
+    first = book.active
+    first.title = "visits"
+    for row in (["id", " name ", "note"], [1, "  bob ", "NA"], [2, "None", None], [3, "  ", "x"]):
+        first.append(row)
+    second = book.create_sheet("labs")
+    for row in (["title row"], ["code", "value"], ["a", 5]):
+        second.append(row)
+    path = data_project / "inputs/raw/book.xlsx"
+    book.save(path)
+    return path
+
+
+def test_excel_missing_values_and_whitespace_follow_readxl(workbook: Path) -> None:
+    frame = fw.data_read("inputs/raw/book.xlsx")
+    assert list(frame.columns) == ["id", "name", "note"]
+    # readxl: "NA" and "None" are text, empty and blank cells are missing, text is trimmed
+    assert frame["name"].tolist()[:2] == ["bob", "None"]
+    assert frame["name"].isna().tolist() == [False, False, True]
+    assert frame["note"].tolist()[0] == "NA"
+
+
+def test_excel_takes_r_argument_names(workbook: Path) -> None:
+    labs = fw.data_read("inputs/raw/book.xlsx", sheet="labs", skip=1)
+    assert labs.to_dict("list") == {"code": ["a"], "value": [5]}
+    assert fw.data_read("inputs/raw/book.xlsx", sheet=2, skip=1).equals(labs)
+
+    raw = fw.data_read("inputs/raw/book.xlsx", sheet=2, col_names=False, n_max=1)
+    assert list(raw.columns) == ["...1", "...2"]
+    assert raw["...1"].tolist() == ["title row"]
+
+    named = fw.data_read("inputs/raw/book.xlsx", skip=1, col_names=["a", "b", "c"], n_max=1)
+    assert named.to_dict("list") == {"a": [1], "b": ["bob"], "c": ["NA"]}
+
+    typed = fw.data_read("inputs/raw/book.xlsx", col_types=["text", "text", "skip"])
+    assert typed.to_dict("list")["id"] == ["1", "2", "3"]
+    assert list(typed.columns) == ["id", "name"]
+
+    with pytest.raises(fw.FrameworkError, match="positions start at 1"):
+        fw.data_read("inputs/raw/book.xlsx", sheet=0)
+    with pytest.raises(fw.FrameworkError, match="not both"):
+        fw.data_read("inputs/raw/book.xlsx", sheet=1, sheet_name=0)
+
+
+def test_csv_takes_readr_argument_names(data_project: Path) -> None:
+    path = data_project / "inputs/raw/export.csv"
+    path.write_text(
+        "# exported 2026-11-07\nid,zip,flag,drop\n7,02139,TRUE,x\n8,21205,F,y\n",
+        encoding="utf-8",
+    )
+    frame = fw.data_read("inputs/raw/export.csv", skip=1, col_types="ccl_")
+    assert frame.to_dict("list") == {
+        "id": ["7", "8"],
+        "zip": ["02139", "21205"],
+        "flag": [True, False],
+    }
+    assert str(frame["flag"].dtype) == "boolean"
+
+    mapped = fw.data_read("inputs/raw/export.csv", skip=1, col_types={"zip": "c", "id": "i"})
+    assert mapped["zip"].tolist() == ["02139", "21205"]
+    assert str(mapped["id"].dtype) == "Int64"
+
+    headless = fw.data_read("inputs/raw/export.csv", skip=2, col_names=False, n_max=1)
+    assert list(headless.columns) == ["X1", "X2", "X3", "X4"]
+    assert headless["X1"].tolist() == [7]
+
+    with pytest.raises(fw.FrameworkError, match="3 types, but the file has 4"):
+        fw.data_read("inputs/raw/export.csv", skip=1, col_types="ccl")
+    with pytest.raises(fw.FrameworkError, match="sheet= does not apply to csv"):
+        fw.data_read("inputs/raw/export.csv", sheet=1)

@@ -94,10 +94,10 @@ For Stata and SPSS files, `keep_attributes=True` returns value labels as categor
 
 ### Missing values and whitespace
 
-CSV and TSV files follow R's rules (readr's), so one file gives the same rows in both languages:
+CSV, TSV, and Excel files follow R's rules (readr's and readxl's), so one file gives the same rows in both languages:
 
-- Only empty fields and `NA` are missing. pandas on its own also reads `None`, `N/A`, `null`, `NaN`, and others as missing, which would silently drop rows R keeps.
-- Leading and trailing whitespace is trimmed from values and column names. A padded `"   NA"` is missing, and a padded number is a number.
+- In CSV and TSV files, only empty fields and `NA` are missing. In Excel files, only empty cells are missing, and a cell holding the text `NA` is text. pandas on its own also reads `None`, `N/A`, `null`, `NaN`, and others as missing, which would silently drop rows R keeps.
+- Leading and trailing whitespace is trimmed from values and column names. A padded `"   NA"` in a text file is missing, and a padded number is a number.
 
 `na=` replaces the list of missing-value strings, and `trim_ws=False` keeps the whitespace.
 
@@ -107,6 +107,26 @@ fw.data_read("inputs.raw.fixed_width_export", trim_ws=False)
 ```
 
 pandas' own `na_values` and `keep_default_na` still work, and are used as given.
+
+### R's reader arguments
+
+For CSV, TSV, and Excel files, `data_read()` takes the argument names R passes to readr and readxl, so a call copied from R reads the same data:
+
+| Argument | Meaning |
+|----------|---------|
+| `sheet` | Excel only: the sheet's name, or its position counting from 1 |
+| `col_names` | `True` reads names from the first row. `False` reads the first row as data and names the columns as R does (`X1, X2, ...` for text, `...1, ...2, ...` for Excel). A list gives the names |
+| `col_types` | Text files: readr's compact string such as `"cid_"`, or a mapping such as `{"zip": "c"}`. Excel: readxl's types, one for all columns or one per column |
+| `skip` | Rows to skip before reading anything, including the names |
+| `n_max` | The most data rows to read |
+| `na`, `trim_ws` | Missing values and whitespace, as above |
+
+```python
+fw.data_read("inputs/raw/labs.xlsx", sheet="results", skip=1, col_names=False)
+fw.data_read("inputs/raw/zips.csv", col_types={"zip": "c"})
+```
+
+readr's codes are `c` text, `i` integer, `d` or `n` double, `l` logical, `f` factor (a pandas category), `D` date, `T` date-time, `t` time (kept as text), `?` guess, and `_` or `-` to skip the column. readxl's types are `"guess"`, `"text"`, `"numeric"`, `"logical"`, `"date"`, `"list"` (guessed), and `"skip"`. Passing an R name and its pandas equivalent together, such as `sheet` and `sheet_name`, is an error.
 
 ## Saving data
 
@@ -140,10 +160,10 @@ framework-py reads these formats. It writes CSV and Parquet, which both language
 
 | Type | Extensions | Reader | Extra |
 |------|------------|--------|-------|
-| `csv` | `.csv`, `.tsv` | `pandas.read_csv()` | |
-| `tsv` | `.tsv`, `.txt`, `.dat` | `pandas.read_csv()` | |
+| `csv` | `.csv`, `.tsv` | `pandas.read_csv()`, with readr's rules | |
+| `tsv` | `.tsv`, `.txt`, `.dat` | `pandas.read_csv()`, with readr's rules | |
 | `parquet` | `.parquet` | `pandas.read_parquet()` | |
-| `excel` | `.xlsx`, `.xls` | `pandas.read_excel()` | `excel` for `.xlsx` |
+| `excel` | `.xlsx`, `.xls` | `pandas.read_excel()`, with readxl's rules | `excel` for `.xlsx` |
 | `stata` | `.dta` | `pandas.read_stata()` | |
 | `spss` | `.sav`, `.zsav` | `pyreadstat.read_sav()` | `spss` |
 | `spss_por` | `.por` | `pyreadstat.read_por()` | `spss` |
