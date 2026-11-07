@@ -175,7 +175,10 @@ def ai_skills_update(project_path: str | Path = ".") -> list[str]:
     """Refresh clean Framework skills. Preserve local edits and account forks.
 
     Only skills that ship with Framework are updated. Skills from a blueprint
-    or facet, and skills you wrote, are left alone. The skills and assistants
+    or facet, and skills you wrote, are left alone. A skill installed before
+    ``.framework/skills.lock.json`` existed counts as clean when it matches a
+    SKILL.md framework-py has shipped (``templates/skill-history.json``), and
+    is updated, backed up first to ``.framework/skills-backups/``. The skills and assistants
     come from ``.framework/spec.json``, or from the settings for projects
     without one.
 

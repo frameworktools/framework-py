@@ -399,39 +399,85 @@ def skills_sync(
         return result
 
 
-def _install_package(source: Traversable, root: Path, relative: str, name: str) -> bool:
-    """Refresh a clean package installation. Unknown or edited copies are preserved."""
+def _source_files(folder: Traversable, prefix: str = "") -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for file in folder.iterdir():
+        if _excluded(file.name):
+            continue
+        path = prefix + file.name
+        if file.is_dir():
+            out.extend(_source_files(file, path + "/"))
+        else:
+            out.append(
+                {
+                    "path": path,
+                    "content": base64.b64encode(file.read_bytes()).decode("ascii"),
+                    "executable": False,
+                }
+            )
+    return out
+
+
+def _shipped_history() -> dict[str, list[str]]:
+    from importlib import resources
+
+    record = resources.files("framework").joinpath("templates/skill-history.json")
+    try:
+        data = json.loads(record.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    skills = data.get("skills") if isinstance(data, dict) else None
+    return skills if isinstance(skills, dict) else {}
+
+
+def shipped_release(target: Path, name: str) -> bool:
+    """Whether a skill folder is an unedited copy of a SKILL.md framework-py shipped: its
+    only file is SKILL.md, and its SHA-256 (as stored, or with CRLF turned into LF) is in
+    ``templates/skill-history.json``. Projects made before ``skills.lock.json`` have such
+    copies with no lock entry."""
+    files = scan(target) if target.is_dir() else []
+    if [f["path"] for f in files] != ["SKILL.md"]:
+        return False
+    raw = base64.b64decode(files[0]["content"])
+    known = set(_shipped_history().get(name) or [])
+    return any(
+        hashlib.sha256(data).hexdigest() in known for data in (raw, raw.replace(b"\r\n", b"\n"))
+    )
+
+
+def package_status(source: Traversable, root: Path, relative: str, name: str) -> str:
+    """What installing a package skill would do: ``create`` (missing), ``update`` (a clean
+    copy of an older version), ``current``, ``edited`` (changed locally, kept), or
+    ``account`` (synced from an account skill, kept)."""
     target = _path(root, relative)
     state = _load(root)
     found = next((e for e in state["skills"].values() if relative in e["paths"]), None)
     if found and found.get("skill_id") and not found["skill_id"].startswith("framework:"):
+        return "account"
+    fresh = bundle_hash(validate(_source_files(source)))
+    current = bundle_hash(scan(target)) if target.exists() else None
+    if current is None:
+        return "create"
+    if current == fresh:
+        return "current"
+    if found:
+        return "update" if current == found.get("hash") else "edited"
+    return "update" if shipped_release(target, name) else "edited"
+
+
+def _install_package(source: Traversable, root: Path, relative: str, name: str) -> bool:
+    """Refresh a clean package installation. Unknown or edited copies are preserved; a copy
+    of a released SKILL.md with no lock entry is clean."""
+    status = package_status(source, root, relative, name)
+    if status in ("account", "edited"):
         return False
-
-    def source_files(folder: Traversable, prefix: str = "") -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        for file in folder.iterdir():
-            if _excluded(file.name):
-                continue
-            path = prefix + file.name
-            if file.is_dir():
-                out.extend(source_files(file, path + "/"))
-            else:
-                out.append(
-                    {
-                        "path": path,
-                        "content": base64.b64encode(file.read_bytes()).decode("ascii"),
-                        "executable": False,
-                    }
-                )
-        return out
-
-    files = validate(source_files(source))
+    target = _path(root, relative)
+    files = validate(_source_files(source))
     fresh = bundle_hash(files)
     current = bundle_hash(scan(target)) if target.exists() else None
-    if current and current != (found.get("hash") if found else fresh):
-        return False
     if current != fresh:
         _install(root, [relative], files, current)
+    state = _load(root)
     # Exact shipped snapshots identify the canonical source even when SKILL.md has no version.
     key = next((k for k, e in state["skills"].items() if relative in e["paths"]), "package:" + name)
     entry = state["skills"].setdefault(key, {"paths": [], "variant": "python"})

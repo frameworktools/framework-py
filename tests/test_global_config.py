@@ -96,3 +96,46 @@ def test_ai_skills_update_refuses_a_folder_that_is_not_a_project(tmp_path: Path)
     with pytest.raises(fw.ProjectNotFoundError, match="not a Framework project"):
         fw.ai_skills_update(tmp_path)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_ai_skills_update_updates_skills_from_an_older_release(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+
+    from framework import skill_sync
+
+    old = "---\nname: framework-data\n---\nAn older release.\n"
+    shipped = hashlib.sha256(old.encode()).hexdigest()
+    monkeypatch.setattr(skill_sync, "_shipped_history", lambda: {"framework-data": [shipped]})
+    (project / "settings.yml").write_text(
+        "default:\n  project_type: project\n  ai: {assistants: [claude]}\n", encoding="utf-8"
+    )
+    skills = project / ".claude/skills"
+    # Installed before skills.lock.json: no lock entry. Windows line endings count too.
+    (skills / "framework-data").mkdir(parents=True)
+    (skills / "framework-data/SKILL.md").write_bytes(old.replace("\n", "\r\n").encode())
+    (skills / "framework-outputs").mkdir()
+    (skills / "framework-outputs/SKILL.md").write_text("my own notes\n", encoding="utf-8")
+    updated = fw.ai_skills_update(project)
+    assert ".claude/skills/framework-data" in updated
+    assert "older release" not in (skills / "framework-data/SKILL.md").read_text(encoding="utf-8")
+    assert list((project / ".framework/skills-backups").iterdir())
+    assert ".claude/skills/framework-outputs" not in updated
+    text = (skills / "framework-outputs/SKILL.md").read_text(encoding="utf-8")
+    assert text == "my own notes\n"
+
+
+def test_the_skill_history_is_current() -> None:
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        [sys.executable, "scripts/skill_history.py", "--check"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout
