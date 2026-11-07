@@ -382,8 +382,12 @@ connection entry for the same file without `read_only: true`.
   and stop: `Statement <n> of <total> in <file name> (line <line of its first word>)
   failed: <driver message> The file was rolled back.` `transaction = FALSE`: commit after
   each statement; the same message without the last sentence.
-- Refuses a read-only connection (`Connection '<name>' is read-only. db_execute_file()
-  needs a writable connection.`).
+- Refuses a read-only connection, saying where the mode came from: `Connection '<name>'
+  is read-only (read_only: true in its settings). db_execute_file() needs a writable
+  connection, from a connection entry without read_only: true.` or `Connection '<name>'
+  is read-only (read_only=True in this call). db_execute_file() needs a writable
+  connection: db_connect('<name>').` `db_execute()` and `db_transaction()` use the same
+  messages with their own names.
 - Returns the number of statements (batches for SQL Server) run.
 
 #### db_copy_from(conn, table, csv, delim = "comma", na = c("", "NA"))

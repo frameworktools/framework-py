@@ -294,14 +294,24 @@ class Connection:
         name: The connection name in the settings.
         driver: sqlite, postgres, mysql, duckdb, or sqlserver.
         raw: The driver's connection object.
-        read_only: Whether it was opened with ``read_only: true`` (sqlite and duckdb).
+        read_only: Whether it was opened read-only (sqlite and duckdb), by its
+            ``read_only: true`` setting or a call's ``read_only=True``.
     """
 
-    def __init__(self, name: str, driver: str, raw: Any, read_only: bool = False) -> None:
+    def __init__(
+        self,
+        name: str,
+        driver: str,
+        raw: Any,
+        read_only: bool = False,
+        read_only_from: str = "settings",
+    ) -> None:
         self.name = name
         self.driver = driver
         self.raw = raw
         self.read_only = read_only
+        # "settings" or "call": where read_only came from, for messages
+        self._read_only_from = read_only_from
         self._in_transaction = False
 
     def __getattr__(self, attribute: str) -> Any:
@@ -365,6 +375,7 @@ def db_connect(name: str, read_only: bool | None = None) -> Connection:
     if driver_name not in DRIVERS:
         raise FrameworkError(f"Unsupported database driver for '{name}': {entry['driver']}")
     driver = DRIVERS[driver_name][0]
+    from_call = False
     if read_only is not None:
         if driver not in _FILE_DRIVERS:
             if read_only:
@@ -378,6 +389,7 @@ def db_connect(name: str, read_only: bool | None = None) -> Connection:
                 "override that."
             )
         else:
+            from_call = read_only and not bool(entry.get("read_only"))
             entry = {**entry, "read_only": read_only}
     try:
         raw = _CONNECTORS[driver](entry)
@@ -386,7 +398,7 @@ def db_connect(name: str, read_only: bool | None = None) -> Connection:
     except Exception as error:
         raise FrameworkError(f"Failed to connect to '{name}': {error}") from error
     read_only_open = driver in _FILE_DRIVERS and bool(entry.get("read_only"))
-    return Connection(name, driver, raw, read_only_open)
+    return Connection(name, driver, raw, read_only_open, "call" if from_call else "settings")
 
 
 # Queries ------------------------------------------------------------------------------
@@ -460,11 +472,7 @@ def db_execute(
             statement fails.
     """
     with db_connect(connection_name) as connection:
-        if connection.read_only:
-            raise FrameworkError(
-                f"Connection '{connection_name}' is read-only (read_only: true in its "
-                "settings). db_execute() can't change it."
-            )
+        _writable_connection(connection, "db_execute()")
         cursor = connection.cursor()
         try:
             cursor.execute(query, params) if params is not None else cursor.execute(query)
@@ -512,11 +520,7 @@ def db_transaction(connection: Connection) -> Iterator[Connection]:
         FrameworkError: When the connection is read-only, or the block raises an exception.
             The transaction is rolled back and the original exception is chained as the cause.
     """
-    if connection.read_only:
-        raise FrameworkError(
-            f"Connection '{connection.name}' is read-only (read_only: true in its settings). "
-            "db_transaction() needs a writable connection."
-        )
+    _writable_connection(connection, "db_transaction()")
     if connection._in_transaction:
         yield connection
         return
@@ -549,10 +553,19 @@ def _opened(connection: Connection | str) -> Iterator[Connection]:
 
 
 def _writable_connection(connection: Connection, what: str) -> None:
-    if connection.read_only:
+    """Refuse a read-only connection, saying where its mode came from."""
+    if not connection.read_only:
+        return
+    if connection._read_only_from == "call":
         raise FrameworkError(
-            f"Connection '{connection.name}' is read-only. {what} needs a writable connection."
+            f"Connection '{connection.name}' is read-only (read_only=True in this call). "
+            f"{what} needs a writable connection: db_connect('{connection.name}')."
         )
+    raise FrameworkError(
+        f"Connection '{connection.name}' is read-only (read_only: true in its settings). "
+        f"{what} needs a writable connection, from a connection entry without "
+        "read_only: true."
+    )
 
 
 def _project_file(path: str | Path) -> Path:

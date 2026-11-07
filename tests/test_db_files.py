@@ -201,4 +201,26 @@ def test_settings_read_only_wins_over_the_call(db_project: Path, name: str) -> N
     # Adding read-only is always allowed
     with fw.db_connect("ro", read_only=True) as conn:
         assert conn.read_only
+        with (
+            pytest.raises(fw.FrameworkError, match=r"read_only: true in its settings"),
+            fw.db_transaction(conn),
+        ):
+            pass
     assert fw.db_query("SELECT count(*) AS n FROM t", "ro")["n"].tolist() == [0]
+
+
+def test_read_only_messages_say_where_the_mode_came_from(db_project: Path) -> None:
+    fw.db_execute("CREATE TABLE t (a INTEGER)", "local")
+    (db_project / "sql/x.sql").write_text("INSERT INTO t VALUES (2);", encoding="utf-8")
+    (db_project / "data/t.csv").write_text("a\n3\n", encoding="utf-8")
+    from_call = r"'local' is read-only \(read_only=True in this call\)"
+    with fw.db_connect("local", read_only=True) as conn:
+        with (
+            pytest.raises(fw.FrameworkError, match=from_call + r".*db_transaction"),
+            fw.db_transaction(conn),
+        ):
+            pass
+        with pytest.raises(fw.FrameworkError, match=from_call + r".*db_execute_file"):
+            fw.db_execute_file(conn, "sql/x.sql")
+        with pytest.raises(fw.FrameworkError, match=from_call + r".*db_copy_from"):
+            fw.db_copy_from(conn, "t", "data/t.csv")

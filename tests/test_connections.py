@@ -85,7 +85,9 @@ def test_read_only_sqlite(db_project: Path) -> None:
         encoding="utf-8",
     )
     assert fw.db_query("SELECT a FROM t", "study")["a"].tolist() == [1]
-    with pytest.raises(fw.FrameworkError, match=r"'study' is read-only.*db_execute"):
+    with pytest.raises(
+        fw.FrameworkError, match=r"'study' is read-only \(read_only: true in its settings\)"
+    ):
         fw.db_execute("DELETE FROM t", "study")
     with fw.db_connect("study") as conn:
         assert conn.read_only
