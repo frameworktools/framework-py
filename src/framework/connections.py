@@ -24,6 +24,7 @@ writes fail, and ``db_execute()`` and ``db_transaction()`` refuse it.
 
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 from collections.abc import Iterator, Mapping, Sequence
@@ -159,10 +160,20 @@ def _file_path(config: Mapping[str, Any], what: str) -> str:
     return str(path)
 
 
+def _writable(path: str) -> str:
+    """``path``, after checking that an existing file can be written, as R checks."""
+    if Path(path).is_file() and not os.access(path, os.W_OK):
+        raise FrameworkError(
+            f"No write permission for database: {path}. Add read_only: true to the "
+            "connection to open it read-only."
+        )
+    return path
+
+
 def _connect_sqlite(config: Mapping[str, Any]) -> Any:
     path = _file_path(config, "SQLite")
     if not config.get("read_only"):
-        return sqlite3.connect(path)
+        return sqlite3.connect(_writable(path))
     # mode=ro opens the file without write access, so every write fails and a file
     # without write permission opens
     if not Path(path).is_file():
@@ -209,8 +220,11 @@ def _connect_duckdb(config: Mapping[str, Any]) -> Any:
     options = {
         key: config[key] for key in ("memory_limit", "threads") if config.get(key) is not None
     }
+    read_only = bool(config.get("read_only"))
+    path = _file_path(config, "DuckDB")
+    # A read-only database needs no write permission
     return duckdb.connect(
-        _file_path(config, "DuckDB"), read_only=bool(config.get("read_only")), config=options
+        path if read_only else _writable(path), read_only=read_only, config=options
     )
 
 

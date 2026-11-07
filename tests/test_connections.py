@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import types
 from pathlib import Path
@@ -310,3 +311,27 @@ def test_missing_driver_hint_works_in_zsh(project: Path, monkeypatch: pytest.Mon
     monkeypatch.setattr(connections, "import_module", missing)
     with pytest.raises(fw.FrameworkError, match=r'pip install "framework-py\[postgres\]"'):
         connections._require("psycopg", "postgres", "PostgreSQL")
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="needs POSIX file permissions and a non-root user",
+)
+@pytest.mark.parametrize("name", ["local", "duck"])
+def test_a_file_without_write_permission_needs_read_only(db_project: Path, name: str) -> None:
+    fw.db_execute("CREATE TABLE t AS SELECT 1 AS x", name)
+    suffix = "db" if name == "local" else "duckdb"
+    path = db_project / f"data/local.{suffix}"
+    path.chmod(0o444)
+    try:
+        with pytest.raises(fw.FrameworkError, match="Add read_only: true"):
+            fw.db_connect(name)
+        driver = "sqlite" if name == "local" else "duckdb"
+        (db_project / "settings/connections.yml").write_text(
+            "connections:\n  databases:\n"
+            f"    ro: {{driver: {driver}, database: data/local.{suffix}, read_only: true}}\n",
+            encoding="utf-8",
+        )
+        assert fw.db_query("SELECT x FROM t", "ro")["x"].tolist() == [1]
+    finally:
+        path.chmod(0o644)
