@@ -18,6 +18,8 @@ Framework sets up git for new projects and guards against committing restricted 
 2. It makes sure `.gitignore` ignores `.env`. If git would still track `.env`, creation stops with an error before anything is committed.
 3. It stages every file and makes the first commit, `Initial commit from Framework`. When git's `user.name` or `user.email` is not set, it skips the commit and prints a note.
 
+A project created inside an existing git work tree, such as a folder of example projects, is left to that repository: Framework skips `git init` and the first commit, and prints a line naming the enclosing repository.
+
 ## .gitignore templates
 
 Each project type gets its own `.gitignore`. All of them ignore the same core set of files.

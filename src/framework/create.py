@@ -375,9 +375,15 @@ def _git_init(root: Path) -> None:
             ["git", "-C", str(root), *args], capture_output=True, text=True, check=False
         )
 
+    from framework.hooks import git_hooks_install, outer_repository
+
+    top = outer_repository(root)
+    if top is not None:
+        # git init would hide the project from the repository it sits in
+        inform(f"  Project is tracked by the enclosing git repository at {top}")
+        return
     git("init")
     inform("  Initialized git repository")
-    from framework.hooks import git_hooks_install
 
     if git_hooks_install(root / "settings.yml", verbose=False):
         inform("  Installed git hooks")

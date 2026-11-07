@@ -420,3 +420,31 @@ def test_new_prompt_suggests_project(tmp_path: Path, monkeypatch: pytest.MonkeyP
     root = fw.new("Prompted", tmp_path / "prompted", interactive=True, offline=True)
     assert json.loads((root / ".framework/spec.json").read_text("utf-8"))["type"] == "project"
     assert prompts[-1].endswith("[project]: ")
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_a_project_inside_a_repository_is_left_to_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Shared with R: no git init or initial commit inside an existing work tree
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    (tmp_path / "gitconfig").write_text(
+        "[user]\n  name = Test\n  email = test@example.org\n", encoding="utf-8"
+    )
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    subprocess.run(["git", "-C", str(outer), "init", "-q"], check=True)
+    caplog.set_level("INFO", logger="framework")
+
+    spec = fw.spec_resolve(python_layer(), "Inner").spec
+    created = fw.project_create(spec, outer / "python" / "inner")
+    made = fw.new("Newer", outer / "newer", "project", interactive=False)
+
+    top = outer.resolve()
+    for root in (created, made):
+        assert not (root / ".git").exists()
+    assert caplog.text.count(f"tracked by the enclosing git repository at {top}") == 2
+    assert "Initialized git repository" not in caplog.text
+    log = subprocess.run(["git", "-C", str(outer), "log"], capture_output=True, text=True)
+    assert log.returncode != 0  # still no commits
