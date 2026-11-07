@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import json
 import os
 import shutil
 from pathlib import Path
@@ -525,7 +526,7 @@ def test_data_dir_and_list_follow_publish_default(
     url = fw.publish_data(frame, "tables/arm_counts.csv")
     assert url == "https://files.example.org/r/arm-counts/"
     artifact = project / "local-site/arm-counts"
-    assert pd.read_csv(artifact / "arm_counts.csv")["n"].tolist() == [10, 12]
+    assert pd.read_csv(artifact / "data.csv")["n"].tolist() == [10, 12]
 
     figures = project / "figures"
     (figures / "sub").mkdir(parents=True)
@@ -555,3 +556,31 @@ def test_data_keeps_the_bucket_with_connection_or_s3(
     fw.publish_data(pd.DataFrame({"x": [1]}), "d/y.csv", to="s3")
     assert set(s3.uploads) == {"project-x/d/x.csv", "project-x/d/y.csv"}
     assert not (project / "local-site").exists()
+
+
+def test_data_of_a_frame_publishes_a_typed_table_with_metadata(
+    project: Path, s3: FakeS3, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Hand testing 2026-11-07: publish_data() of a DataFrame published kind "file", and
+    # publish_data() and publish_dir() had no title or description
+    _with_site(project)
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    frame = pd.DataFrame({"arm": ["a", "b"], "n": [10, 12]})
+    fw.publish_data(frame, "counts.csv", title="Arm counts", description="By arm")
+    fw.publish(frame, to="site", slug="via-publish")
+    by_data = json.loads((project / "local-site/counts/artifact.json").read_text("utf-8"))
+    by_publish = json.loads((project / "local-site/via-publish/artifact.json").read_text("utf-8"))
+    assert by_data["kind"] == by_publish["kind"] == "table"
+    assert (by_data["title"], by_data["description"]) == ("Arm counts", "By arm")
+
+    folder = project / "figures"
+    folder.mkdir()
+    (folder / "a.png").write_bytes(b"png")
+    fw.publish_dir(folder, title="Figures", description="All of them")
+    manifest = json.loads((project / "local-site/figures/artifact.json").read_text("utf-8"))
+    assert (manifest["title"], manifest["description"]) == ("Figures", "All of them")
+
+    with pytest.raises(fw.FrameworkError, match="requires publishing to Framework Cloud"):
+        fw.publish_data(frame, "x.csv", to="s3", title="T")
+    with pytest.raises(fw.FrameworkError, match="requires publishing to Framework Cloud"):
+        fw.publish_dir(folder, to="s3", description="D")

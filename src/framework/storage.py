@@ -901,6 +901,11 @@ def _publish_route(to: str | None, connection: str | None) -> tuple[Any, str | N
     return selected, None
 
 
+def _data_slug(dest: str) -> str:
+    """publish_data()'s slug: ``dest``'s file name without its extension."""
+    return Path(Path(dest).name.removesuffix(".gz")).stem
+
+
 def publish_data(
     data: pd.DataFrame | str | Path,
     dest: str,
@@ -911,6 +916,8 @@ def publish_data(
     *,
     to: str | None = None,
     allow_private: bool | None = None,
+    title: str | None = None,
+    description: str | None = None,
 ) -> str:
     """Upload a DataFrame (as CSV, Parquet, or JSON) or a data file.
 
@@ -918,15 +925,17 @@ def publish_data(
 
     Like ``publish()``, it follows ``to``, then ``publish.default``. An S3 destination, an
     explicit ``connection``, or a project without ``publish.default`` gets a plain upload
-    to the bucket at ``dest``. Folder, GitHub, and Cloud destinations publish the file with
-    ``publish()``, under ``dest``'s file name, which (without its extension) is the slug.
+    to the bucket at ``dest``. Folder, GitHub, and Cloud destinations publish with
+    ``publish()``: a DataFrame becomes the same typed table ``publish()`` makes of it, and a
+    file is published under ``dest``'s file name, which (without its extension) is the
+    slug.
 
     Args:
         data: A DataFrame to write in ``format``, or the path of a file to upload as is.
         dest: The object's path in the bucket, including any extension. For other
-            destinations, its file name names the file and the slug.
-        format: How a DataFrame is written. One of "csv", "parquet", or "json" (records).
-            Default: "csv". It is checked for files too, but does not change them.
+            destinations, its file name names a published file and the slug.
+        format: How a DataFrame is written to a bucket. One of "csv", "parquet", or "json"
+            (records). Default: "csv". It is checked for files too, but does not change them.
         connection: A storage bucket name from the settings. Default: the project's default
             bucket, then one marked ``default: true``, then the first.
         compress: Gzip the file before uploading.
@@ -935,18 +944,37 @@ def publish_data(
         to: A destination name from ``publish.destinations``, or a driver name, as in
             ``publish()``. Default: ``publish.default``.
         allow_private: Deprecated name for ``include_private``.
+        title: The published title, on Framework Cloud and named destinations. Default: the
+            slug.
+        description: A short description, on Framework Cloud and named destinations.
 
     Returns:
         The public URL (for a folder destination without a ``url``, its location).
 
     Raises:
         FrameworkError: When ``format`` is not allowed, the file is missing or has "private"
-            in its path and is not confirmed, no bucket is configured, or the upload fails.
+            in its path and is not confirmed, no bucket is configured, the upload fails, or
+            a title or description is given for a plain bucket upload.
     """
     if format not in ("csv", "parquet", "json"):
         raise FrameworkError("format must be csv, parquet, or json (rds is R-only)")
     include = include_private_arg(include_private, allow_private)
     selected, bucket_name = _publish_route(to, connection)
+    if selected is None and (title is not None or description is not None):
+        raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
+    if selected is not None and isinstance(data, pd.DataFrame):
+        # The same typed table publish() makes of a DataFrame
+        slug = _data_slug(dest)
+        published = publish(
+            data,
+            to=selected.name,
+            slug=slug,
+            include_private=True,
+            title=title,
+            description=description,
+        )
+        assert isinstance(published, str)
+        return published
     with tempfile.TemporaryDirectory(prefix="publish_data_") as temp:
         if isinstance(data, pd.DataFrame):
             source = Path(temp) / f"data.{format}"
@@ -972,8 +1000,15 @@ def publish_data(
             staged = Path(temp) / "stage" / Path(dest).name
             staged.parent.mkdir()
             shutil.copy2(source, staged)
-            slug = Path(Path(dest).name.removesuffix(".gz")).stem
-            published = publish(staged, to=selected.name, slug=slug, include_private=True)
+            slug = _data_slug(dest)
+            published = publish(
+                staged,
+                to=selected.name,
+                slug=slug,
+                include_private=True,
+                title=title,
+                description=description,
+            )
             assert isinstance(published, str)
             return published
         url = upload_file(source, dest, resolve_bucket(bucket_name))
@@ -991,6 +1026,8 @@ def publish_dir(
     *,
     to: str | None = None,
     allow_private: bool | None = None,
+    title: str | None = None,
+    description: str | None = None,
 ) -> list[str]:
     """Upload the files in a folder. ``pattern`` is a regular expression on the paths.
 
@@ -1015,6 +1052,9 @@ def publish_dir(
         to: A destination name from ``publish.destinations``, or a driver name, as in
             ``publish()``. Default: ``publish.default``.
         allow_private: Deprecated name for ``include_private``.
+        title: The published title, on Framework Cloud and named destinations. Default: the
+            slug.
+        description: A short description, on Framework Cloud and named destinations.
 
     Returns:
         The public URL of each file uploaded. The list is empty when no file matched. For
@@ -1022,7 +1062,8 @@ def publish_dir(
 
     Raises:
         FrameworkError: When the folder is missing, a file has "private" in its path and is
-            not confirmed, no bucket is configured, or an upload fails.
+            not confirmed, no bucket is configured, an upload fails, or a title or description
+            is given for a plain bucket upload.
     """
     folder = Path(dir)
     if not folder.is_dir():
@@ -1034,11 +1075,20 @@ def publish_dir(
         return []
     confirm_private_upload(files, include)
     selected, bucket_name = _publish_route(to, connection)
+    if selected is None and (title is not None or description is not None):
+        raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
     dest = dest or folder.resolve().name
     if selected is not None:
         slug = Path(dest.rstrip("/")).name
         if pattern is None and recursive:
-            published = publish(folder, to=selected.name, slug=slug, include_private=True)
+            published = publish(
+                folder,
+                to=selected.name,
+                slug=slug,
+                include_private=True,
+                title=title,
+                description=description,
+            )
         else:
             # Publish only the selected files, keeping their paths inside the folder
             with tempfile.TemporaryDirectory(prefix="fw_publish_dir_") as temp:
@@ -1047,7 +1097,14 @@ def publish_dir(
                     target = stage / file.relative_to(folder)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(file, target)
-                published = publish(stage, to=selected.name, slug=slug, include_private=True)
+                published = publish(
+                    stage,
+                    to=selected.name,
+                    slug=slug,
+                    include_private=True,
+                    title=title,
+                    description=description,
+                )
         return [published] if isinstance(published, str) else list(published)
     bucket = resolve_bucket(bucket_name)
     inform(f"Uploading {len(files)} files...")
