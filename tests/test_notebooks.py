@@ -36,6 +36,16 @@ def test_make_notebook_quarto(notebooks_project: Path) -> None:
     fw.make_qmd("data cleaning", overwrite=True)
 
 
+def test_explicit_dir_is_relative_to_the_project_root(
+    notebooks_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (notebooks_project / "notebooks").mkdir()
+    monkeypatch.chdir(notebooks_project / "notebooks")
+    path = fw.make_qmd("talk", dir="slides")
+    assert path == notebooks_project / "slides/talk.qmd"
+    assert fw.make_script("job", dir="scripts") == notebooks_project / "scripts/job.py"
+
+
 def test_make_notebook_jupyter_is_valid_json(notebooks_project: Path) -> None:
     path = fw.make_notebook("explore.ipynb", subdir="eda")
     assert path == notebooks_project / "notebooks/eda/explore.ipynb"

@@ -175,7 +175,7 @@ data-science-101/
 
 In a course, `directories.notebooks` points at `modules/`, so [make_notebook()](ref:make_notebook) creates files there by default. Slides render as reveal.js presentations and the other folders as HTML. Course settings are kept inline in `settings.yml`, without split files.
 
-Create materials with the `dir` and `subdir` arguments. An explicit `dir` is relative to the current folder, so run these calls from the project root.
+Create materials with the `dir` and `subdir` arguments. An explicit `dir` is relative to the project root, wherever Python runs.
 
 ```python
 fw.make_presentation("Introduction to Python", dir="slides", subdir="week-01")

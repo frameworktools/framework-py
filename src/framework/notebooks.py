@@ -26,6 +26,7 @@ from typing import Any, Literal
 import pandas as pd
 
 from framework._log import inform, show_messages
+from framework._paths import in_root
 from framework.config_home import global_settings
 from framework.errors import FrameworkError
 from framework.global_config import templates_dir
@@ -217,8 +218,8 @@ def make_notebook(
         type: ``"quarto"`` (the default), ``"jupyter"``, or ``"script"``.
             Without it, ``scaffold: notebook_format`` in the settings decides, so a
             Scripts-only project (``script``) gets a ``.py`` script.
-        dir: The folder. Defaults to ``directories: notebooks`` in the
-            settings, relative to the project root.
+        dir: The folder, relative to the project root unless absolute. Defaults to
+            ``directories: notebooks`` in the settings.
         stub: The stub to start from, such as ``"default"`` or ``"minimal"``.
         overwrite: Replace an existing file.
         subdir: A subfolder of ``dir``.
@@ -238,7 +239,8 @@ def make_notebook(
             else _default_dir(config, root, ("notebooks", "work"), "notebook_dir")
         )
     else:
-        folder = Path(dir)
+        # Relative to the project root, as the settings' folders are, wherever Python runs
+        folder = in_root(dir, root)
     if subdir:
         folder = folder / subdir
     if not folder.exists():
@@ -282,9 +284,10 @@ def make_qmd(
         name: The file name before slugifying, such as "Data Cleaning", which becomes
             ``data-cleaning.qmd``. Another extension wins, as in R: "x.ipynb" creates a
             Jupyter notebook and "x.py" a script.
-        dir: The folder. Default: ``directories: notebooks`` or ``directories: work`` in the
-            settings, then ``options: notebook_dir``, then an existing ``notebooks/`` or
-            ``work/`` folder, then the project root. The folder is created when missing.
+        dir: The folder, relative to the project root unless absolute. Default:
+            ``directories: notebooks`` or ``directories: work`` in the settings, then
+            ``options: notebook_dir``, then an existing ``notebooks/`` or ``work/`` folder,
+            then the project root. The folder is created when missing.
         stub: The stub to start from, such as "default" or "minimal". The project's
             ``stubs/notebook-{stub}.qmd`` is used first, then your template, then Framework's.
         overwrite: Replace an existing file.
@@ -310,9 +313,10 @@ def make_revealjs(
     Args:
         name: The file name before slugifying, such as "Data Cleaning", which becomes
             ``data-cleaning.qmd``.
-        dir: The folder. Default: ``directories: notebooks`` or ``directories: work`` in the
-            settings, then ``options: notebook_dir``, then an existing ``notebooks/`` or
-            ``work/`` folder, then the project root. The folder is created when missing.
+        dir: The folder, relative to the project root unless absolute. Default:
+            ``directories: notebooks`` or ``directories: work`` in the settings, then
+            ``options: notebook_dir``, then an existing ``notebooks/`` or ``work/`` folder,
+            then the project root. The folder is created when missing.
         overwrite: Replace an existing file.
         subdir: A subfolder of ``dir``.
 
@@ -334,9 +338,10 @@ def make_presentation(
     Args:
         name: The file name before slugifying, such as "Data Cleaning", which becomes
             ``data-cleaning.qmd``.
-        dir: The folder. Default: ``directories: notebooks`` or ``directories: work`` in the
-            settings, then ``options: notebook_dir``, then an existing ``notebooks/`` or
-            ``work/`` folder, then the project root. The folder is created when missing.
+        dir: The folder, relative to the project root unless absolute. Default:
+            ``directories: notebooks`` or ``directories: work`` in the settings, then
+            ``options: notebook_dir``, then an existing ``notebooks/`` or ``work/`` folder,
+            then the project root. The folder is created when missing.
         overwrite: Replace an existing file.
         subdir: A subfolder of ``dir``.
 
@@ -358,9 +363,10 @@ def make_script(
     Args:
         name: The file name before slugifying, such as "Load Data", which becomes
             ``load-data.py``. A ``.py`` extension is added when missing.
-        dir: The folder. Default: ``directories: scripts`` in the settings, then
-            ``options: script_dir``, then an existing ``scripts/`` folder, then the project
-            root. The folder is created when missing.
+        dir: The folder, relative to the project root unless absolute. Default:
+            ``directories: scripts`` in the settings, then ``options: script_dir``, then an
+            existing ``scripts/`` folder, then the project root. The folder is created when
+            missing.
         stub: The stub to start from, such as "default". The project's
             ``stubs/script-{stub}.py`` is used first, then your template, then Framework's.
         overwrite: Replace an existing file.

@@ -31,7 +31,7 @@ fw.make_notebook("explore", type="jupyter")
 The arguments control the file.
 
 - `type` is `"quarto"`, `"jupyter"`, or `"script"`. Without it, `notebook_format` in the `scaffold` settings decides, and the default is `quarto`. An extension in the name, such as `"explore.ipynb"`, also sets the type.
-- `dir` names the folder. The default is `directories.notebooks`, resolved from the project root. An explicit `dir` is relative to the current folder.
+- `dir` names the folder. The default is `directories.notebooks`, resolved from the project root. An explicit `dir` is relative to the project root too, unless it is absolute.
 - `subdir` adds a subfolder of that folder.
 - `stub` names the stub to start from. The default is `"default"`.
 - `overwrite=True` replaces an existing file. Without it, an existing file is an error.
