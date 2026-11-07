@@ -328,3 +328,40 @@ def test_enable_in_a_nested_project_changes_nothing(
         fw.git_hooks_enable("check_notebook_outputs")
     assert settings.read_text(encoding="utf-8") == before
     assert "Enabled" not in capsys.readouterr().err
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="runs the POSIX hook script")
+def test_first_commit_in_a_new_sensitive_project_does_not_flag_framework_skills(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Ports 2026-11-07: with check_sensitive_dirs on in new sensitive projects, every commit
+    # warned about Framework's own .claude/skills/framework-sensitive-data
+    from tests.test_create import GOLDEN
+
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    (tmp_path / "gitconfig").write_text(
+        "[user]\n  name = Test\n  email = test@example.org\n", encoding="utf-8"
+    )
+    root = fw.project_create_from_layers(
+        GOLDEN / "project-sensitive/layers.json", tmp_path / "study", interactive=True
+    )
+    assert (root / ".claude/skills/framework-sensitive-data").is_dir()
+    assert (root / ".git/hooks/pre-commit").is_file()
+    # The hook looks for .venv/bin/python first; point it at this interpreter
+    shim = root / ".venv/bin/python"
+    shim.parent.mkdir(parents=True)
+    shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+    shim.chmod(0o755)
+    (root / "notebooks/first.md").write_text("# First\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "notebooks/first.md"], check=True)
+    commit = subprocess.run(
+        ["git", "-C", str(root), "commit", "-m", "First"],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        check=False,
+    )
+    assert commit.returncode == 0, commit.stderr
+    assert "framework-sensitive-data" not in commit.stderr + commit.stdout
+    assert "NOT gitignored" not in commit.stderr
