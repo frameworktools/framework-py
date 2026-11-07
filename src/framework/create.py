@@ -294,9 +294,16 @@ def _package_key(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def _pyproject(spec: Mapping[str, Any]) -> str:
+def pyproject_dependencies(spec: Mapping[str, Any]) -> list[tuple[str, str]]:
+    """The dependencies a new project's pyproject.toml lists, as (name, requirement) pairs.
+
+    AGENTS.md lists the same names, so both come from here.
+    """
     packages = (spec.get("packages") or {}).get("default_packages") or {}
-    dependencies = ["framework-py", *(_dependency(n, e) for n, e in packages.items())]
+    dependencies = [
+        ("framework-py", "framework-py"),
+        *((name, _dependency(name, entry or {})) for name, entry in packages.items()),
+    ]
     # A project renders and edits with its workflow's tools out of the box. The spec's
     # packages win when they name one of these, with a version for example.
     tools = [
@@ -304,7 +311,14 @@ def _pyproject(spec: Mapping[str, Any]) -> str:
         *(_JUPYTER_PACKAGES if spec_tool_on(spec, "jupyter") else ()),
     ]
     named = {_package_key(name) for name in packages}
-    dependencies += [name for name in dict.fromkeys(tools) if _package_key(name) not in named]
+    dependencies += [
+        (name, name) for name in dict.fromkeys(tools) if _package_key(name) not in named
+    ]
+    return dependencies
+
+
+def _pyproject(spec: Mapping[str, Any]) -> str:
+    dependencies = [requirement for _, requirement in pyproject_dependencies(spec)]
     lines = [
         "[project]",
         f'name = "{kebab_case(spec["name"])}"',

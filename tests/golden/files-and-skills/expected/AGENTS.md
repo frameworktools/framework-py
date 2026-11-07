@@ -39,7 +39,7 @@ MUST begin with `import framework as fw` and `fw.scaffold()`**, which initialize
 
 ## Installed Packages <!-- @framework:regenerate -->
 
-**Dependencies** (in pyproject.toml): framework-py, statsmodels, tidyframe
+**Dependencies** (in pyproject.toml): framework-py, statsmodels, tidyframe, ipykernel, nbformat, nbclient
 
 Add packages with `fw.package_add("name")`.
 

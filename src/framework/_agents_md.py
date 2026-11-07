@@ -117,12 +117,11 @@ def _environment(spec: dict[str, Any]) -> str:
 
 
 def _packages(spec: dict[str, Any]) -> str:
-    names = list((spec.get("packages") or {}).get("default_packages") or {})
+    from framework.create import pyproject_dependencies
+
+    names = [name for name, _ in pyproject_dependencies(spec)]
     lines = [f"## Installed Packages {REGENERATE}", ""]
-    if names:
-        lines += [f"**Dependencies** (in pyproject.toml): framework-py, {', '.join(names)}", ""]
-    else:
-        lines += ["**Dependencies** (in pyproject.toml): framework-py", ""]
+    lines += [f"**Dependencies** (in pyproject.toml): {', '.join(names)}", ""]
     lines.append('Add packages with `fw.package_add("name")`.')
     return "\n".join(lines)
 
