@@ -461,7 +461,9 @@ def adopt(
         existing.append(".framework/spec.json")
     if existing:
         raise FrameworkError(
-            f"{root} is already a Framework project (found {existing[0]}). Nothing was changed."
+            f"{root} is already a Framework project (found {existing[0]}). Run "
+            "framework.upgrade() (python -m framework upgrade) to bring it to the current "
+            "layout. Nothing was changed."
         )
     language, source = detect_language(root)
     if language not in (None, "python"):

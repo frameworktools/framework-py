@@ -178,21 +178,60 @@ uv sync
 
 ## Adopting an existing project
 
-[adopt()](ref:adopt) turns a folder you already have into a Framework project, in place. It lists the folder's subfolders, at most three levels deep, and proposes a role for each: a Framework directory key such as `inputs_raw`, or a folder of its own under `extra_directories`. It reads folder names only, never files or their contents. Hidden folders, version control, environments such as `.venv` and `renv`, and caches are left out.
+[adopt()](ref:adopt) turns a folder you already have into a Framework project, in place. It lists the folder's subfolders, at most three levels deep, and proposes a role for each: a Framework directory key such as `inputs_raw`, a folder of its own under `extra_directories`, or a folder of rendered notebooks under `render_dirs`. It reads folder names only, never files or their contents. Hidden folders, version control, environments such as `.venv` and `renv`, caches, Framework's `settings/` folder, and Quarto's `*_files/` and `*_cache/` folders are left out.
 
 ```python
-fw.adopt("~/projects/old-study")
+fw.adopt("~/projects/old-study")  # review the mapping
+fw.adopt("~/projects/old-study", yes=True)  # accept it as proposed
+fw.adopt("~/projects/cohort", yes=True, sensitive=True)  # the project holds sensitive data
+fw.adopt("~/teaching/methods", yes=True, type="course")  # choose the type
+fw.adopt("~/projects/old-study", yes=True, cloud=True)  # register and link it too
 ```
 
-You review the proposal before anything is written. Press Enter to accept it, type a folder's number to change its role, or type `-` and the number to leave it out. Then `adopt()` writes `settings.yml` and `.framework/spec.json`. It moves nothing and creates nothing else, and it refuses a folder that is already a Framework project. The project is `bare`, with flat settings and no tools.
+The type follows from the folders unless you pass `type`: `course` when the folder has at least two course folders (`slides/`, `modules/`, `assignments/`, `readings/`, and similar), `project_sensitive` when the private and public layout is present (`inputs/private/raw/`, `outputs/public/figures/`), `project` when any folder maps to a Framework directory, and `bare` otherwise. A folder with no subfolders, such as one `analysis.qmd`, is adopted with no folders.
 
-A folder whose path contains "private" gets a warning: "'data/private' looks private. Keep it out of git and away from AI assistants." The review then asks whether to turn on the sensitive-data setting. In a script, pass `yes=True` to accept the proposal. The sensitive setting stays off. From a shell, run `python -m framework adopt --path DIR`, with `--yes` to skip the review. The R package and `fw` map folders with the same shared rules.
+You review the proposal before anything is written. Press Enter to accept it, type a folder's number to change its role, or type `-` and the number to leave it out. With `yes=True` the mapping is printed and accepted. Then `adopt()` writes `settings.yml` and `.framework/spec.json`, and appends the rules of the type's `.gitignore` template that the folder's `.gitignore` lacks, under `# Added by framework.adopt()`. It never removes a `.gitignore` line, and a rule that would ignore a file git tracks is left out and reported. The spec records the folder as it is: the mapped folders only, no tools, no default packages, AI files off, and git on when the folder is a git repository. Nothing is moved.
 
-When you are logged in, `adopt()` finishes by offering to register the project on Framework Cloud and to save the folder layout as a structure. [structure_import()](ref:structure_import) does the second step on its own. It sends only the folder paths, and the structure is private to you.
+A folder whose path contains "private" gets a warning: "'data/private' looks private. Keep it out of git and away from AI assistants." The review then asks whether the project holds sensitive data. With `yes=True` the setting stays off unless you pass `sensitive=True`. framework-py adopts Python projects: a folder whose files say R or Stata (an `.Rproj`, `renv.lock`, `.R` files) is refused unless you pass `force=True`. A folder that is already a Framework project is refused too; use `upgrade()`. A `config.yml` counts only when it has Framework keys, so a tool's own `config.yml` doesn't block adoption.
+
+From a shell:
+
+```bash
+python -m framework adopt --path ~/projects/old-study --yes [--type TYPE] [--sensitive] [--cloud [--slug SLUG]]
+```
+
+The R package and `fw adopt` map folders with the same shared rules. When you are logged in and decline to register, `adopt()` offers to save the folder layout as a structure. [structure_import()](ref:structure_import) does that on its own. It sends only the folder paths, and the structure is private to you.
 
 ```python
 fw.structure_import("~/projects/old-study", name="Lab layout")
 ```
+
+## Upgrading an older project
+
+[upgrade()](ref:upgrade) brings a project made by an older framework-py (or a 1.x `config.yml` project) to the current layout. It prints a plan and changes nothing until you apply it:
+
+```python
+fw.upgrade("~/projects/old-study")  # print the plan
+fw.upgrade("~/projects/old-study", dry_run=False)  # apply it
+```
+
+```bash
+python -m framework upgrade            # the plan, as fw project upgrade shows it
+python -m framework upgrade --apply    # apply it
+```
+
+The plan adds missing `tools:` and `security:` sections to the settings (a `project_sensitive` project gets `sensitive: true`), rewrites old connection layouts, appends missing `.gitignore` rules, makes AGENTS.md the canonical AI context file with CLAUDE.md a pointer to it, updates Framework skills that match a released version, adds missing Quarto keys without replacing your configuration, and writes `.framework/spec.json`. Keys outside `default:` and passwords written into the settings are reported, not changed. Every file it rewrites is first copied to `.framework/backups/<timestamp>/`, which git ignores (`--no-backup` or `backup=False` skips the copy). Running it again changes nothing.
+
+## Registering on Framework Cloud
+
+[cloud_register()](ref:cloud_register) creates the Framework Cloud project for a project that exists only on your computer, from its `.framework/spec.json`, and links the folder: the project token and server go to `.env`, which git is made to ignore first. The Cloud project gets exactly this folder's type, folders, and tools, not your defaults, and an adopted project is marked as adopted. It is what `fw project link --create` does.
+
+```python
+fw.cloud_register("~/projects/old-study", dry_run=True)  # show the request
+fw.cloud_register("~/projects/old-study", slug="old-study")
+```
+
+A project with no spec needs `upgrade()` first. A project already linked is left alone. When you already have a project with the slug, an interactive session offers to link the folder to it instead (as `fw project link --from SLUG` does); a slug held by a project in your Trash can't be reused.
 
 ## Preparing a cloned project
 

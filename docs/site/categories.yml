@@ -44,7 +44,7 @@
   common: [new_project, project_create]
   names: [new_project, new, project_create, project_create_from_layers, project_add_directory, project_root, project_path, path,
           project_list, project_register, project_unregister, tools_available, adopt,
-          structure_import, cloud_register]
+          structure_import, upgrade, cloud_register]
 
 - id: publishing
   title: Publishing
@@ -89,5 +89,5 @@
   description: Exceptions, warnings, and the result types functions return
   names: [FrameworkError, SettingsError, SpecError, DataNotFoundError, ProjectNotFoundError,
           UnsupportedFormatError, IntegrityError, CloudError, FrameworkWarning, CacheWarning,
-          DataChangedWarning, AuditResult, BootstrapResult, CapturedOutput, Connection, DataInfo,
+          DataChangedWarning, AuditResult, BootstrapResult, UpgradeResult, CapturedOutput, Connection, DataInfo,
           PackagesStatus, ResolvedSpec, TableDisplay]

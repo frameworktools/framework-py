@@ -135,6 +135,30 @@ def _round_trip() -> YAML:
     return handler
 
 
+def round_trip_load(text: str) -> Any:
+    """YAML text as ruamel.yaml's round-trip objects, which keep comments, layout, and tags
+    such as ``!expr``. None for empty text."""
+    handler = _round_trip()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", MantissaNoDotYAML1_1Warning)
+        return handler.load(text) if text.strip() else None
+
+
+def round_trip_dump(data: Any) -> str:
+    """Round-trip objects (or plain values) as YAML text, as ``update()`` writes them."""
+    out = io.StringIO()
+    _round_trip().dump(data, out)
+    return out.getvalue().removeprefix(_DIRECTIVE)
+
+
+def update_text(text: str, change: Callable[[Any], Any]) -> str:
+    """``update()`` on text: the YAML ``text`` after ``change``, keeping its comments and
+    layout."""
+    data = round_trip_load(text)
+    result = change(data)
+    return round_trip_dump(data if result is None else result)
+
+
 def update(path: Path, change: Callable[[Any], Any]) -> None:
     """Edit a YAML file in place, keeping its comments and layout.
 

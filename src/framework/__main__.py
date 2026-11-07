@@ -6,6 +6,7 @@
         [--offline]
     python -m framework adopt [--path DIR] [--yes] [--type TYPE] [--sensitive]
         [--cloud [--slug SLUG]] [--force]
+    python -m framework upgrade [--path DIR] [--apply] [--no-backup]
     python -m framework bootstrap [--path DIR] [--interactive] [--no-packages]
     python -m framework hook pre-commit
 
@@ -100,6 +101,19 @@ def _parser() -> argparse.ArgumentParser:
         help="adopt the folder as Python even when its files say another language",
     )
 
+    upgrade = commands.add_parser(
+        "upgrade", help="bring a project made by an older Framework to the current layout"
+    )
+    upgrade.add_argument("--path", default=".", help="the project folder (default: .)")
+    upgrade.add_argument(
+        "--apply", action="store_true", help="apply the plan (default: print it only)"
+    )
+    upgrade.add_argument(
+        "--no-backup",
+        action="store_true",
+        help="don't copy the files it rewrites to .framework/backups/ first",
+    )
+
     bootstrap = commands.add_parser("bootstrap", help="prepare a cloned project")
     bootstrap.add_argument("--path", default=".", help="the project folder (default: .)")
     bootstrap.add_argument("--interactive", action="store_true", help="ask for empty .env values")
@@ -144,6 +158,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 slug=args.slug,
                 force=args.force,
             )
+        elif args.command == "upgrade":
+            from framework.upgrade import upgrade
+
+            upgrade(args.path, dry_run=not args.apply, backup=not args.no_backup)
+            return 0
         elif args.command == "bootstrap":
             from framework.bootstrap import bootstrap
 

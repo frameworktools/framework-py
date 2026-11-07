@@ -140,6 +140,7 @@ from framework.storage import (
     publish_notebook,
     storage_test,
 )
+from framework.upgrade import UpgradeResult, upgrade
 
 try:
     __version__ = version("framework-py")
@@ -166,6 +167,7 @@ __all__ = [
     "SpecError",
     "TableDisplay",
     "UnsupportedFormatError",
+    "UpgradeResult",
     "__version__",
     "adopt",
     "ai_skills_update",
@@ -272,5 +274,6 @@ __all__ = [
     "stubs_path",
     "stubs_publish",
     "tools_available",
+    "upgrade",
     "write_framework_template",
 ]
