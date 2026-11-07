@@ -231,6 +231,19 @@ def _check_integrity(name: str, info: DataInfo) -> None:
     )
 
 
+def _existing_file(path: str | Path) -> Path | None:
+    """A file given by path: a relative path is looked for from the project root, then
+    from the current folder."""
+    candidate = Path(path).expanduser()
+    if candidate.is_absolute():
+        return candidate if candidate.is_file() else None
+    found = find_settings_file()
+    for base in ([found.parent] if found is not None else []) + [Path.cwd()]:
+        if (base / candidate).is_file():
+            return base / candidate
+    return None
+
+
 def data_read(
     path: str, delim: str | None = None, keep_attributes: bool = False, **kwargs: Any
 ) -> pd.DataFrame:
@@ -242,7 +255,8 @@ def data_read(
     unlocked file issues a ``DataChangedWarning``.
 
     Args:
-        path: A catalog name such as ``"inputs.raw.survey"``, or a file path.
+        path: A catalog name such as ``"inputs.raw.survey"``, or a file path. A relative
+            path is looked for from the project root, then from the current folder.
         delim: Delimiter for delimited text: comma, tab, semicolon, or space.
             Default: the catalog's ``delimiter``, then the file extension.
         keep_attributes: Keep value labels from Stata and SPSS files as
@@ -255,8 +269,8 @@ def data_read(
             format Python cannot read.
         IntegrityError: A locked file changed since its hash was recorded.
     """
-    direct = Path(path).expanduser()
-    if direct.is_file():
+    direct = _existing_file(path)
+    if direct is not None:
         extension = direct.suffix.lower().lstrip(".")
         if extension not in _DIRECT_TYPES:
             raise UnsupportedFormatError(f"Unsupported file extension: {extension}")
@@ -294,31 +308,44 @@ def data_read(
     return data
 
 
-def _save_target(path: str, type: str | None) -> tuple[Path, str, bool]:
-    """The file to write, its type, and whether ``path`` was a catalog name."""
+def _save_target(path: str, type: str | None) -> tuple[Path, str, str | None]:
+    """The file to write, its type, and the catalog name (None when ``path`` is a file path).
+
+    A relative file path starts at the project root, as the catalog's paths do, so a
+    notebook in ``notebooks/`` writes where a script in the root would. A dot name that
+    ends in an extension, such as ``inputs.final.x.csv``, is the name ``inputs.final.x``
+    saved as that type.
+    """
     has_slash = "/" in path or "\\" in path
     extension = re.search(r"\.(csv|parquet|rds)$", path, re.IGNORECASE)
+    root = project_root()
 
-    if has_slash or extension:
+    if has_slash:
         if type is None:
             if extension is None:
                 raise FrameworkError(
                     "Cannot auto-detect file type from path. Please specify 'type'."
                 )
             type = extension.group(1).lower()
-        target = Path(path)
         if not path.lower().endswith(f".{type}"):
-            target = Path(f"{path}.{type}")
+            path = f"{path}.{type}"
             inform(f"Note: Added .{type} extension to path")
-        return target, type, False
+        return in_root(path, root), type, None
+
+    if extension:
+        given = extension.group(1).lower()
+        if type is not None and type.lower() != given:
+            raise FrameworkError(f"'{path}' ends in .{given}, but type is '{type}'.")
+        type = given
+        path = path[: extension.start()]
 
     parts = path.split(".")
-    if len(parts) == 1:
+    if len(parts) == 1 or not all(parts):
         suffix = type or "parquet"
         raise FrameworkError(
-            f"Path '{path}' has no directory. Either:\n"
+            f"'{path}' has no directory. Either:\n"
             f"  - Use dot notation: 'inputs.raw.{path}' or 'inputs.intermediate.{path}'\n"
-            f"  - Provide a full path: 'inputs/raw/{path}.{suffix}'"
+            f"  - Provide a path from the project root: 'inputs/raw/{path}.{suffix}'"
         )
 
     config = settings_read()
@@ -341,8 +368,8 @@ def _save_target(path: str, type: str | None) -> tuple[Path, str, bool]:
             "  data_save(df, 'outputs.private.results')"
         )
     type = type or "parquet"
-    target = in_root(folder, project_root()) / f"{'_'.join(parts[end:])}.{type}"
-    return target, type, True
+    target = in_root(folder, root) / f"{'_'.join(parts[end:])}.{type}"
+    return target, type, path
 
 
 def data_save(
@@ -358,11 +385,14 @@ def data_save(
     Args:
         data: The data to save.
         path: A catalog name such as ``"inputs.intermediate.cleaned"`` or a
-            file path ending in ``.csv`` or ``.parquet``. A name's leading
+            file path with a ``/``, ending in ``.csv`` or ``.parquet``. A name's leading
             parts select a folder from ``directories``: the longest run that
-            names a key, such as ``inputs_intermediate`` or
-            ``inputs_private_raw``. The rest becomes the file name. A name is
-            also added to the data catalog, so ``data_read()`` finds it.
+            names a key, such as ``inputs_intermediate``, ``inputs_private_raw``, or a
+            course's ``data``. The rest becomes the file name. A name is also added to
+            the data catalog, so ``data_read()`` finds it. A name may end in
+            ``.csv`` or ``.parquet`` to choose the type: ``"inputs.final.x.csv"`` is
+            the name ``inputs.final.x`` saved as CSV. A relative file path starts at the
+            project root, wherever Python runs.
         type: ``"parquet"`` or ``"csv"``. Default: from the file extension,
             or Parquet for a catalog name.
         delimiter: Delimiter for CSV files: comma, tab, semicolon, or space.
@@ -374,7 +404,8 @@ def data_save(
     """
     if not isinstance(data, pd.DataFrame):
         raise FrameworkError("data_save() needs a pandas DataFrame")
-    target, file_type, is_name = _save_target(path, type)
+    target, file_type, name = _save_target(path, type)
+    key = name or path
     if file_type == "rds":
         raise UnsupportedFormatError(
             ".rds files are R-only. Save as 'parquet' or 'csv' so both languages can read it."
@@ -396,12 +427,12 @@ def data_save(
         data.to_csv(target, sep=_separator(delimiter), index=False, lineterminator="\n")
     else:
         data.to_parquet(target, index=False)
-    inform(f"Data saved to: {target}")
-
     root = project_root()
+    inform(f"Data saved to: {relative_to_root(target, root)}")
+
     digest = file_hash(target)
     db.set_data_record(
-        path,
+        key,
         path=relative_to_root(target, root),
         type=file_type,
         delimiter=delimiter if file_type == "csv" else None,
@@ -409,20 +440,20 @@ def data_save(
         hash=digest,
         root=root,
     )
-    inform(f"Database updated: {path}")
+    inform(f"Database updated: {key}")
 
     # Mirror the digest to the project's cloud ledger in live mode only;
     # framework.db stays the record.
     from framework.cloud import ledger_push_quietly
 
-    ledger_push_quietly(path, digest, target)
+    ledger_push_quietly(key, digest, target)
 
-    if is_name:
+    if name is not None:
         try:
-            data_add(target, name=path, type=file_type, delimiter=delimiter, locked=locked)
+            data_add(target, name=name, type=file_type, delimiter=delimiter, locked=locked)
         except FrameworkError as error:
             warnings.warn(
-                f"File saved but could not update data catalog for '{path}': {error}",
+                f"File saved but could not update data catalog for '{name}': {error}",
                 FrameworkWarning,
                 stacklevel=2,
             )
@@ -495,7 +526,8 @@ def data_add(
     """Add an existing file to the data catalog and record its hash.
 
     Args:
-        file_path: The file to add. It must exist.
+        file_path: The file to add. It must exist. A relative path is looked for from
+            the project root, then from the current folder.
         name: Catalog name. Default: from the folder (``inputs.raw.<file>``
             for a file in ``inputs_raw``), else the file name.
         type: File type. Default: from the extension.
@@ -507,10 +539,10 @@ def data_add(
         The catalog entry. Its path is relative to the project root, so the
         project still works after it is moved or cloned.
     """
-    path = Path(file_path).expanduser()
-    if not path.is_file():
+    found = _existing_file(file_path)
+    if found is None:
         raise DataNotFoundError(f"File not found: {file_path}")
-    path = path.resolve()
+    path = found.resolve()
     root = project_root()
     if type is None:
         extension = path.suffix.lower().lstrip(".")

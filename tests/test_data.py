@@ -80,6 +80,8 @@ def test_save_adds_a_missing_extension(data_project: Path) -> None:
         ("inputs.nowhere.x", {}, r"Unknown directory in 'inputs\.nowhere\.x'"),
         ("inputs.raw", {}, r"Unknown directory in 'inputs\.raw'"),
         ("plain", {}, "has no directory"),
+        ("plain.csv", {}, "'plain' has no directory"),
+        ("inputs.raw.x.csv", {"type": "parquet"}, r"ends in \.csv, but type is 'parquet'"),
         ("outputs/new/x.csv", {}, "does not exist. Use force=True"),
         ("inputs/raw/x.txt", {}, "Cannot auto-detect"),
     ],
@@ -98,6 +100,34 @@ def test_save_by_name_with_a_one_word_folder_key(project: Path) -> None:
     fw.data_save(FRAME, "data.week1_visits", type="csv")
     assert (project / "data/week1_visits.csv").is_file()
     pd.testing.assert_frame_equal(fw.data_read("data.week1_visits"), FRAME)
+
+
+def test_dot_name_with_an_extension_is_a_catalog_name(
+    data_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    notebooks = data_project / "notebooks"
+    notebooks.mkdir()
+    monkeypatch.chdir(notebooks)
+    fw.data_save(FRAME, "inputs.intermediate.x.csv")
+    assert (data_project / "inputs/intermediate/x.csv").is_file()
+    assert not list(notebooks.iterdir())
+    record = db.get_data_record("inputs.intermediate.x")
+    assert record is not None and record.type == "csv"
+    pd.testing.assert_frame_equal(fw.data_read("inputs.intermediate.x"), FRAME)
+
+
+def test_relative_paths_start_at_the_project_root(
+    data_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    notebooks = data_project / "notebooks"
+    notebooks.mkdir()
+    monkeypatch.chdir(notebooks)
+    fw.data_save(FRAME, "inputs/raw/by_path.csv")
+    assert (data_project / "inputs/raw/by_path.csv").is_file()
+    assert not list(notebooks.iterdir())
+    pd.testing.assert_frame_equal(fw.data_read("inputs/raw/by_path.csv"), FRAME)
+    entry = fw.data_add("inputs/raw/by_path.csv", name="by_path")
+    assert entry["path"] == "inputs/raw/by_path.csv"
 
 
 def test_save_with_force_creates_the_folder(data_project: Path) -> None:

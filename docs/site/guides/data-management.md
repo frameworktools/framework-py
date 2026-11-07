@@ -103,13 +103,13 @@ fw.data_save(clean, "inputs.intermediate.survey_clean")
 
 When the target is a catalog name, its leading parts select a folder from `directories` and the remaining parts become the file name. The longest run of leading parts that names a directory key wins. `inputs.intermediate.survey_clean` uses the `inputs_intermediate` folder and writes `inputs/intermediate/survey_clean.parquet`, and `inputs.private.intermediate.patients_clean` uses `inputs_private_intermediate` in a privacy-sensitive project. A name is also added to the catalog, so `data_read()` finds it under the same name. A one-word key works too: in a course, `data.week1_visits` uses the `data` folder.
 
-Names are saved as Parquet by default. Pass `type="csv"` for CSV, with `delimiter` to choose the separator.
+Names are saved as Parquet by default. Pass `type="csv"` for CSV, with `delimiter` to choose the separator. A name may also end in the extension: `inputs.final.analysis.csv` is the name `inputs.final.analysis` saved as CSV.
 
 ```python
 fw.data_save(clean, "inputs.final.analysis", type="csv")
 ```
 
-When the target is a path ending in `.csv` or `.parquet`, the file is written there and its hash is recorded under that path. A path does not create a catalog entry. Register it afterward with [data_add()](ref:data_add) to read it by name.
+When the target is a path with a `/`, ending in `.csv` or `.parquet`, the file is written there and its hash is recorded under that path. A relative path starts at the project root, wherever Python runs, so a notebook in `notebooks/` writes to the same place as a script in the root. [data_read()](ref:data_read) and [data_add()](ref:data_add) look for a relative path from the project root first, then from the current folder. A path does not create a catalog entry. Register it afterward with [data_add()](ref:data_add) to read it by name.
 
 ```python
 fw.data_save(clean, "exports/patients_clean.parquet")
