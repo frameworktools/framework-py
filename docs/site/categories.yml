@@ -28,7 +28,7 @@
   title: Saving work
   description: Tables, figures, models, reports, notebooks, and the results registry
   common: [save_table, save_figure]
-  names: [save_table, save_figure, save_model, save_report, save_notebook, result_list]
+  names: [save_table, save_figure, save_model, load_model, save_report, save_notebook, result_list]
 
 - id: notebooks
   title: Notebooks and scripts

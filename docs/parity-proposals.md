@@ -298,3 +298,35 @@ Lookup:
    value with the re-hashed dependencies, so tracking continues.
 
 Expiry, `refresh`, and the file hash check work as before and come first.
+
+## load_model(name, public = NULL), and save_model(public = TRUE) warns about data rows [D6]
+
+```r
+load_model(name, public = NULL)
+```
+
+Reads a model `save_model()` saved: `<name>.rds` in R (`readRDS()`), `<name>.pkl` in
+Python. `public = NULL` looks in the private models folder, then the public one (they are
+the same folder in projects without the split); `TRUE`/`FALSE` picks one. Errors: no such
+model (`No saved model named '<name>'. Looked for: <paths>`), or only the other
+language's file (Python: `... is a model R saved (.rds), which Python cannot read.`; R
+should say the same of a `.pkl`). When the file's hash differs from the `results` record
+`save_model()` wrote, it loads with a warning (`<file> changed since save_model() recorded
+it.`). Python's version loads inside a function, so a statsmodels formula result loads at
+the top level of a script.
+
+`save_model(model, name, public = TRUE, ...)`: when the object holds data rows, warn
+before saving:
+
+```text
+save_model(public=True): '<name>' holds <n> data rows, which would be saved to the public
+models folder with it. <hint>
+```
+
+Detection in R: the largest `nrow()` among data frame components (`lm$model`,
+`glm$data`, `lme4`'s `frame`, any list element that is a data frame), or `length(y)` when
+the model keeps `y`; `x = TRUE` and `qr` also hold the design matrix. Hint: refit with
+`model = FALSE` (and without `y`/`x`), or save the estimates with `save_table()`. Python
+checks a statsmodels result's estimation data, the object itself when it is a DataFrame,
+and DataFrame attributes; a statsmodels formula result keeps its data frame even after
+`remove_data()`, and the hint says so. No warning for `public = FALSE`.

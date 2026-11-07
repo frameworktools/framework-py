@@ -98,6 +98,7 @@ from framework.notebooks import (
     stubs_publish,
 )
 from framework.outputs import (
+    load_model,
     result_list,
     save_figure,
     save_model,
@@ -202,6 +203,7 @@ __all__ = [
     "global_settings",
     "ledger_list",
     "ledger_push",
+    "load_model",
     "load_settings_catalog",
     "make_notebook",
     "make_presentation",

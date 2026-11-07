@@ -13,6 +13,7 @@ import pickle
 import shutil
 import subprocess
 import tempfile
+import warnings
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ import pandas as pd
 from framework import db
 from framework._log import inform
 from framework._paths import output_directory, relative_to_root
-from framework.errors import FrameworkError, UnsupportedFormatError
+from framework.errors import FrameworkError, FrameworkWarning, UnsupportedFormatError
 from framework.integrity import file_hash
 from framework.settings import settings_read
 
@@ -32,12 +33,17 @@ _NOTEBOOK_FORMATS = {"html": ".html", "pdf": ".pdf", "docx": ".docx"}
 _RESULT_TYPES = ("table", "figure", "model", "report", "notebook")
 
 
-def _folder(kind: str, public: bool) -> Path:
+def _folder_path(kind: str, public: bool) -> Path:
+    """The output folder for a kind, without creating it."""
     try:
         config = settings_read()
     except FrameworkError:
         config = {}
-    folder = output_directory(config, kind, public)
+    return output_directory(config, kind, public)
+
+
+def _folder(kind: str, public: bool) -> Path:
+    folder = _folder_path(kind, public)
     if not folder.is_dir():
         folder.mkdir(parents=True, exist_ok=True)
         inform(f"Creating {kind} directory: {folder}")
@@ -195,10 +201,39 @@ def save_figure(
     return path
 
 
+def _data_rows(model: Any) -> int:
+    """How many data rows a model object carries, as far as can be told: a statsmodels
+    result's estimation data, or a DataFrame in the object or among its attributes."""
+    if isinstance(model, pd.DataFrame | pd.Series):
+        return len(model)
+    inner = getattr(model, "model", None)
+    data = getattr(inner, "data", None)
+    frame = getattr(data, "frame", None)
+    if isinstance(frame, pd.DataFrame) and len(frame):
+        return len(frame)
+    endog = getattr(inner, "endog", None)
+    if endog is not None and getattr(endog, "ndim", 0) >= 1 and len(endog):
+        return len(endog)
+    attributes = getattr(model, "__dict__", None)
+    if isinstance(attributes, dict):
+        for value in attributes.values():
+            if isinstance(value, pd.DataFrame) and len(value):
+                return len(value)
+    return 0
+
+
 def save_model(model: Any, name: str, public: bool = False, overwrite: bool = True) -> Path:
     """Save a fitted model to the models output folder with pickle (``<name>.pkl``).
 
-    The file is recorded in the results table of framework.db.
+    The file is recorded in the results table of framework.db. ``load_model()`` reads it
+    back.
+
+    Many fitted models keep the data they were fitted on: a statsmodels result holds its
+    estimation data, for example. With ``public=True``, a model that holds data rows is
+    saved with a ``FrameworkWarning``, since the rows go to the public folder with it. For
+    statsmodels, ``result.remove_data()`` before saving drops them, except from a formula
+    result (``smf.ols("y ~ x", data)``), which keeps its data frame to rebuild the formula
+    when it is loaded.
 
     Args:
         model: The model, or any object pickle can save.
@@ -215,6 +250,25 @@ def save_model(model: Any, name: str, public: bool = False, overwrite: bool = Tr
     A model that cannot be pickled raises pickle's error and leaves any existing file and
     its record unchanged.
     """
+    if public:
+        rows = _data_rows(model)
+        if rows:
+            if getattr(getattr(model, "model", None), "formula", None):
+                hint = (
+                    " A statsmodels formula result keeps its data even after remove_data(), "
+                    "to rebuild the formula on load. Save the estimates instead, for example "
+                    "with save_table(), or fit without a formula and call remove_data()."
+                )
+            elif callable(getattr(model, "remove_data", None)):
+                hint = " Call remove_data() on the result first to drop them."
+            else:
+                hint = " Remove them from the object first."
+            warnings.warn(
+                f"save_model(public=True): '{name}' holds {rows} data rows, which would be "
+                f"saved to the public models folder with it.{hint}",
+                FrameworkWarning,
+                stacklevel=2,
+            )
     path = _folder("models", public) / f"{name}.pkl"
     _check_overwrite(path, overwrite)
     # Pickle to a temporary file first, so a failed dump leaves any existing model intact
@@ -229,6 +283,75 @@ def save_model(model: Any, name: str, public: bool = False, overwrite: bool = Tr
     inform(f"Saved model to {path}")
     _record(path, "model", public)
     return path
+
+
+def _unpickle(path: Path) -> Any:
+    """Read a pickle from inside a function.
+
+    statsmodels rebuilds a formula model's design on load by evaluating the formula in a
+    caller's frame. At the top level of a script there is no such frame and the load fails,
+    so it always happens here. numpy and pandas are in this frame for formulas that call
+    them, such as ``np.log(x)``.
+    """
+    import numpy as np  # noqa: F401
+    import pandas as pd  # noqa: F401
+
+    with path.open("rb") as handle:
+        return pickle.load(handle)
+
+
+def load_model(name: str, public: bool | None = None) -> Any:
+    """Load a model ``save_model()`` saved.
+
+    Loading is pickle's, so only load models from projects you trust: a pickle can run code.
+    A statsmodels formula result loads anywhere, including the top level of a script.
+
+    Args:
+        name: The name it was saved under, without extension.
+        public: Which models folder to read in a sensitive project: the public one (True)
+            or the private one (False). Default: the private folder, then the public one.
+
+    Returns:
+        The model.
+
+    Raises:
+        FrameworkError: No model of that name, or only an R model (``.rds``), which Python
+            cannot read.
+
+    A file that no longer matches the hash ``save_model()`` recorded loads with a
+    ``FrameworkWarning``.
+    """
+    sides = [public] if public is not None else [False, True]
+    folders = list(dict.fromkeys(_folder_path("models", side) for side in sides))
+    for folder in folders:
+        path = folder / f"{name}.pkl"
+        if path.is_file():
+            break
+    else:
+        r_models = [
+            folder / f"{name}.rds" for folder in folders if (folder / f"{name}.rds").is_file()
+        ]
+        if r_models:
+            raise FrameworkError(
+                f"{r_models[0]} is a model R saved (.rds), which Python cannot read."
+            )
+        looked = ", ".join(str(folder / f"{name}.pkl") for folder in folders)
+        raise FrameworkError(f"No saved model named '{name}'. Looked for: {looked}")
+    _check_recorded(path)
+    model = _unpickle(path)
+    inform(f"Loaded model from {path}")
+    return model
+
+
+def _check_recorded(path: Path) -> None:
+    with db.connect() as connection:
+        row = connection.execute(
+            "SELECT hash FROM results WHERE name = ?", (_result_name(path),)
+        ).fetchone()
+    if row is not None and row["hash"] and row["hash"] != file_hash(path):
+        warnings.warn(
+            f"{path.name} changed since save_model() recorded it.", FrameworkWarning, stacklevel=3
+        )
 
 
 def save_report(

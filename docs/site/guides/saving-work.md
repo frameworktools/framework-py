@@ -65,8 +65,16 @@ model = LinearRegression().fit(features, outcome)
 fw.save_model(model, "regression_v1")
 ```
 
+[load_model()](ref:load_model) reads it back. In a privacy-sensitive project it looks in the private models folder, then the public one; `public=True` or `public=False` picks one. A statsmodels formula result loads anywhere, including the top level of a script, where a plain `pickle.load()` fails.
+
+```python
+model = fw.load_model("regression_v1")
+```
+
 > [!WARNING]
 > Loading a pickle can run arbitrary code. Load model files only from sources you trust.
+
+Many fitted models keep the data they were fitted on. A statsmodels result holds its estimation data, for example. `save_model(..., public=True)` warns when the model holds data rows, since they would go to the public folder with it. `result.remove_data()` drops them from a statsmodels result fitted from arrays. A formula result (`smf.ols("y ~ x", data)`) keeps its data frame even then, because statsmodels needs it to rebuild the formula on load; publish its estimates with [save_table()](ref:save_table) instead.
 
 R saves models as `.rds`, which Python cannot read. Models do not cross between the languages.
 

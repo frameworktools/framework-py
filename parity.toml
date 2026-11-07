@@ -469,7 +469,7 @@ note = "Any object with `savefig()` (matplotlib, seaborn) or `save()` (plotnine)
 [functions.save_model]
 python = "save_model"
 status = "ported"
-note = "Pickle. The R `.rds` models are R-only"
+note = "Pickle. The R `.rds` models are R-only. `public=True` warns when the model holds data rows (proposed for R)"
 
 [functions.save_notebook]
 python = "save_notebook"
@@ -575,6 +575,7 @@ names = [
     "framework_template_path",
     "tools_available",
     "path",  # proposed: path()
+    "load_model",  # proposed: load_model()
 ]
 
 [functions.skills_sync]
