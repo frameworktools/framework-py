@@ -27,7 +27,7 @@ Every publishing function warns about files with `private` in their path and ask
 `to="cloud"` explicitly selects Framework Cloud, including when a bucket is configured.
 `to="bucket"` explicitly selects storage, and `to="github"` selects GitHub Pages.
 
-[publish_data()](ref:publish_data), [publish_dir()](ref:publish_dir), [publish_list()](ref:publish_list), and [storage_test()](ref:storage_test) work with buckets only.
+[storage_test()](ref:storage_test) works with buckets only. [publish_data()](ref:publish_data), [publish_dir()](ref:publish_dir), and [publish_list()](ref:publish_list) follow `to` and `publish.default` as `publish()` does (see [Named destinations](#named-destinations)), and use the bucket with an S3 destination, a `connection`, or no `publish.default`.
 
 ## Configuring a bucket
 
@@ -155,6 +155,13 @@ fw.publish("outputs/reports/quarterly_report.html", dest="reports/final.html")
 ```python
 fw.publish_list()
 fw.publish_list(prefix="reports")
+```
+
+With a folder, GitHub, or Cloud destination, `publish_data()` and `publish_dir()` publish through `publish()`, with the file or folder name of `dest` as the slug, and `publish_list()` lists a folder destination's artifacts, one row per slug:
+
+```python
+fw.publish_data(results, "tables/results.csv", to="site")  # slug "results"
+fw.publish_list(to="site")
 ```
 
 ## Publishing to Framework Cloud
@@ -371,7 +378,8 @@ Artifact contents and folder paths are never included. A tracking failure produc
 a warning and preserves the delivered artifact.
 
 Legacy bucket uploads, including `to="bucket"`, retain their existing raw-file
-layout. `publish_data()` and `publish_dir()` remain bucket utilities.
+layout. `publish_data()` and `publish_dir()` upload to the bucket file by file with an S3
+destination, a `connection`, or no `publish.default`.
 
 For legacy raw bucket uploads, connected projects record metadata
 with version 1 and a content checksum. A conflicting replacement produces a tracking

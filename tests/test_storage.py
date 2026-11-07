@@ -500,3 +500,58 @@ def test_connection_with_a_destination_bucket_is_refused(
     path.write_bytes(b"png")
     with pytest.raises(fw.FrameworkError, match="sets its own bucket"):
         fw.publish(path, to="results", connection="minio")
+
+
+# publish_data(), publish_dir(), and publish_list() follow publish destinations ------------
+
+
+def _with_site(project: Path) -> None:
+    text = (project / "settings.yml").read_text(encoding="utf-8")
+    (project / "settings.yml").write_text(
+        text
+        + "  publish:\n    default: site\n    destinations:\n"
+        + "      site: {driver: folder, path: local-site, url: 'https://files.example.org/r',"
+        + " visibility: public}\n",
+        encoding="utf-8",
+    )
+
+
+def test_data_dir_and_list_follow_publish_default(
+    project: Path, s3: FakeS3, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _with_site(project)
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    frame = pd.DataFrame({"arm": ["a", "b"], "n": [10, 12]})
+    url = fw.publish_data(frame, "tables/arm_counts.csv")
+    assert url == "https://files.example.org/r/arm-counts/"
+    artifact = project / "local-site/arm-counts"
+    assert pd.read_csv(artifact / "arm_counts.csv")["n"].tolist() == [10, 12]
+
+    figures = project / "figures"
+    (figures / "sub").mkdir(parents=True)
+    for name in ("a.png", "b.txt", "sub/c.png"):
+        (figures / name).write_text(name, encoding="utf-8")
+    assert fw.publish_dir(figures, pattern=r"\.png$") == ["https://files.example.org/r/figures/"]
+    published = {
+        p.relative_to(project / "local-site/figures").as_posix()
+        for p in (project / "local-site/figures").rglob("*")
+    }
+    assert {"a.png", "sub/c.png"} <= published and "b.txt" not in published
+
+    listed = fw.publish_list()
+    assert set(listed["key"]) == {"arm-counts/", "figures/"}
+    assert listed.set_index("key").loc["figures/", "url"] == "https://files.example.org/r/figures/"
+    assert fw.publish_list("fig")["key"].tolist() == ["figures/"]
+    with pytest.raises(fw.FrameworkError, match="lists S3 and folder destinations"):
+        fw.publish_list(to="cloud")
+    assert s3.uploads == {}
+
+
+def test_data_keeps_the_bucket_with_connection_or_s3(
+    project: Path, s3: FakeS3, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _with_site(project)
+    fw.publish_data(pd.DataFrame({"x": [1]}), "d/x.csv", connection="reports")
+    fw.publish_data(pd.DataFrame({"x": [1]}), "d/y.csv", to="s3")
+    assert set(s3.uploads) == {"project-x/d/x.csv", "project-x/d/y.csv"}
+    assert not (project / "local-site").exists()
