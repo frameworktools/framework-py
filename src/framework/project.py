@@ -84,7 +84,8 @@ def path(*parts: str | PathLike[str]) -> Path:
     """
     root = project_root()
     for part in parts:
-        if Path(part).is_absolute() or PureWindowsPath(part).drive:
+        # Rooted on either system: "/etc", "C:\\data", or "\\data"
+        if Path(part).is_absolute() or PureWindowsPath(part).anchor:
             raise ValueError(
                 f"path() parts are relative to the project root, but {str(part)!r} is absolute"
             )
