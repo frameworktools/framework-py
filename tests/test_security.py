@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 import framework as fw
@@ -61,6 +62,7 @@ def test_a_clean_project_passes(repo: Path) -> None:
         "secrets_exposure",
         "published_outputs",
         "connection_secrets",
+        "identifier_columns",
     ]
 
 
@@ -351,12 +353,12 @@ def test_written_out_connection_secrets(repo: Path, capsys: pytest.CaptureFixtur
         "    omop:\n"
         "      driver: postgres\n"
         "      password: a2omop-dev-secret\n"
-        "      user: env(\"DB_USER\")\n"
+        '      user: env("DB_USER")\n'
         "    warehouse:\n"
-        "      password: env(\"WH_PASSWORD\")\n"
-        "      api_key: env(\"WH_KEY\", \"fallback-key\")\n"
+        '      password: env("WH_PASSWORD")\n'
+        '      api_key: env("WH_KEY", "fallback-key")\n'
         "      token: ''\n"
-        "      secret: !expr Sys.getenv(\"WH_SECRET\")\n"
+        '      secret: !expr Sys.getenv("WH_SECRET")\n'
         "      pwd: 1234\n",
         encoding="utf-8",
     )
@@ -376,3 +378,51 @@ def test_written_out_connection_secrets(repo: Path, capsys: pytest.CaptureFixtur
     result = fw.git_security_audit(check_git_history=False, verbose=False)
     assert result.summary.set_index("check").loc["connection_secrets", "status"] == "fail"
     assert not result.passed
+
+
+def test_tracked_data_with_identifier_columns_warns(repo: Path) -> None:
+    # Ports 2026-11-07: real patient rows (DOB, ZIP) were committed in a standard project
+    (repo / "inputs/intermediate").mkdir(parents=True)
+    (repo / "inputs/intermediate/patients.csv").write_text(
+        "patient_id,DOB,zip_code,los\n1,2020-01-01,21205,3\n", encoding="utf-8"
+    )
+    pd.DataFrame({"firstName": ["a"], "birth_date": ["2020-01-01"]}).to_parquet(
+        repo / "inputs/intermediate/names.parquet"
+    )
+    (repo / "inputs/intermediate/sites.csv").write_text("site_name,n\na,1\n", encoding="utf-8")
+    (repo / "outputs/public/tables/summary.csv").write_text("zip3,n\n212,4\n", encoding="utf-8")
+    git(repo, "add", "-f", "inputs/intermediate", "outputs")
+    result = fw.git_security_audit(check_git_history=False, verbose=False)
+    found = result.findings["identifier_columns"].set_index("file")
+    assert set(found.index) == {
+        "inputs/intermediate/patients.csv",
+        "inputs/intermediate/names.parquet",
+    }
+    assert found.loc["inputs/intermediate/patients.csv", "columns"] == "DOB, zip_code"
+    assert found.loc["inputs/intermediate/names.parquet", "kinds"] == "name, dob"
+    assert result.summary.set_index("check").loc["identifier_columns", "status"] == "warning"
+    assert result.passed
+
+
+def test_identifier_names() -> None:
+    from framework._identifiers import identifier_columns
+
+    columns = [
+        "patientDOB", "date_of_birth", "BirthDate", "birth_dt", "birth_year", "ZIP", "zip5",
+        "postal_code", "zip3", "SSN", "mrn", "MedicalRecordNumber", "last_name", "site_name",
+        "zipper", "dobutamine",
+    ]  # fmt: skip
+    assert identifier_columns(columns) == [
+        ("patientDOB", "dob"),
+        ("date_of_birth", "dob"),
+        ("BirthDate", "dob"),
+        ("birth_dt", "dob"),
+        ("ZIP", "zip"),
+        ("zip5", "zip"),
+        ("postal_code", "zip"),
+        ("SSN", "ssn"),
+        ("mrn", "mrn"),
+        ("MedicalRecordNumber", "mrn"),
+        ("last_name", "name"),
+    ]
+    assert identifier_columns(["first_name", "last_name", "site"]) == []

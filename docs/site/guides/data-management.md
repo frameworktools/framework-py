@@ -246,3 +246,23 @@ inputs/
 ```
 
 Raw data stays as it arrived. Each cleaning step reads from one stage and saves to the next, so the pipeline can be rerun from the raw files.
+
+## Real data in the wrong place
+
+Real data about people sometimes ends up in a standard project, where git commits `inputs/` and `outputs/`. Framework looks at column names, never values, for columns that look like direct identifiers:
+
+| Kind | Column names such as |
+|------|----------------------|
+| Date of birth | `dob`, `patientDOB`, `date_of_birth`, `birth_date`, `BirthDate`, `birth_dt` |
+| ZIP or postal code | `zip`, `ZIP`, `zip_code`, `zip5`, `postal_code`, `postcode` (not `zip3`) |
+| Social Security number | `ssn`, `social_security_number` |
+| Medical record number | `mrn`, `medical_record_number` |
+| Name | `first_name`, `lastName`, `surname`, `patient_name`, but only alongside a date of birth |
+
+[data_save()](ref:data_save) warns when it writes such columns outside a private folder (a folder named like `private`, `confidential`, or `sensitive`). The file is still saved:
+
+```text
+FrameworkWarning: inputs/intermediate/patients.parquet has columns that look like direct identifiers (dob, zip_code), and it isn't in a private folder. If this is real data about people, save it in a private folder, which git ignores, and consider a privacy-sensitive project (type project_sensitive).
+```
+
+The [security audit](guide:git) has a matching `identifier_columns` check, which reads only the header of each CSV, TSV, Parquet, Stata, or SPSS file git tracks outside private folders. It warns without failing, and the `data_security` pre-commit check prints the warning and lets the commit go ahead. Synthetic data with these columns gets the same warning: it's a reminder to check, not proof of real data.

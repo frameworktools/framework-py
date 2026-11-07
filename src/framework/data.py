@@ -22,6 +22,7 @@ from typing import Any
 import pandas as pd
 
 from framework import _csv, _tabular, _yaml, db
+from framework._identifiers import warn_identifiers
 from framework._log import inform
 from framework._paths import in_root, relative_to_root
 from framework._private import is_private_data, note_private_read
@@ -557,6 +558,7 @@ def data_save(
     root = project_root()
     relative = relative_to_root(target, root)
     inform(f"Data saved to: {relative}")
+    warn_identifiers(data.columns, target, root)
     # A file path is recorded from the project root, however it was given, so an
     # absolute path and the same path from the root share one record.
     key = name or relative

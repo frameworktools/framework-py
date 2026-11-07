@@ -533,11 +533,14 @@ def hook_run(name: str, settings_file: str | Path | None = None) -> int:
     if enabled["check_notebook_outputs"] and not _check_notebook_outputs(root):
         return 1
     if enabled["data_security"]:
-        from framework.security import _report, git_security_audit
+        from framework.security import _report, git_security_audit, hook_warnings
 
         result = git_security_audit(path, verbose=False)
         if not result.passed:
             print(_report(result), file=sys.stderr)
             print("✗ Data security check failed", file=sys.stderr)
             return 1
+        warnings = hook_warnings(result)
+        if warnings:
+            print(warnings, file=sys.stderr)
     return 0

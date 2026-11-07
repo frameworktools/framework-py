@@ -655,7 +655,8 @@ def test_data_info_columns_summarize_without_values(data_project: Path) -> None:
             "dob": [dt.date(1990, 1, 1), dt.date(1975, 6, 30), None],
         }
     )
-    fw.data_save(frame.drop(columns="dob"), "inputs.raw.patients")
+    with pytest.warns(fw.FrameworkWarning, match=r"direct identifiers \(mrn\)"):
+        fw.data_save(frame.drop(columns="dob"), "inputs.raw.patients")
     info = fw.data_info("inputs.raw.patients", columns=True)
     assert info.rows == 3
     assert info.columns is not None
@@ -682,3 +683,18 @@ def test_data_info_columns_summarize_without_values(data_project: Path) -> None:
 def test_data_info_columns_of_a_missing_file(data_project: Path) -> None:
     with pytest.raises(fw.DataNotFoundError, match=r"File not found: inputs/raw/none\.csv"):
         fw.data_info("inputs/raw/none.csv", columns=True)
+
+
+def test_data_save_warns_about_identifier_columns_outside_private_folders(
+    project: Path,
+) -> None:
+    # Ports 2026-11-07: a standard project saved and committed real patient rows
+    import warnings
+
+    people = pd.DataFrame({"id": [1], "dob": ["2020-01-01"], "zip": ["21205"]})
+    with pytest.warns(fw.FrameworkWarning, match=r"\(dob, zip\).*project_sensitive"):
+        fw.data_save(people, "inputs/intermediate/people.csv", force=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fw.data_save(people, "inputs/private/people.csv", force=True)
+        fw.data_save(pd.DataFrame({"site_name": ["a"]}), "inputs/raw/sites.csv", force=True)

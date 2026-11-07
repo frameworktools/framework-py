@@ -273,3 +273,59 @@ check runs it with the rest of the audit.
 
 R: add `.check_connection_secrets()` to `R/security_audit.R` with the same rule, reading
 the files with `yaml::read_yaml(eval.expr = FALSE)`.
+
+## D8. Identifier-like columns: `data_save()` warning and audit check `identifier_columns`
+
+Column names only, never values; files are read for their header only.
+
+**Name rule.** Split a column name into lowercase tokens at every non-alphanumeric
+character and at camelCase boundaries (`patientDOB` -> `patient`, `dob`;
+`MedicalRecordNumber` -> `medical`, `record`, `number`). `joined` is the tokens run
+together. The first matching kind wins, in this order:
+
+| Kind | Matches |
+|------|---------|
+| `dob` | token `dob`; or token `birth` with `date`, `dt`, or `day`; or `joined` contains `dateofbirth`, `birthdate`, or `birthday` |
+| `zip` | token `zip`, `zipcode`, `zip5`, `zip9`, `postal`, `postcode`, or `postalcode`; or `joined` contains `zipcode` or `postalcode` (`zip3` doesn't match) |
+| `ssn` | token `ssn`; or `joined` contains `socialsecurity` |
+| `mrn` | token `mrn`; or `joined` contains `medicalrecordnumber`, `medicalrecordno`, or `medrec` |
+| `name` | token `name` with `first`, `last`, `given`, `family`, `full`, `middle`, `maiden`, `patient`, or `person`; or `joined` is `firstname`, `lastname`, `surname`, `fullname`, `fname`, or `lname` |
+
+`name` columns count only when the same table has a `dob` column. Results keep column order.
+Test vectors (from `tests/test_security.py::test_identifier_names`): `patientDOB`,
+`date_of_birth`, `BirthDate`, `birth_dt` are dob; `birth_year`, `zip3`, `site_name`,
+`zipper`, `dobutamine` match nothing; `ZIP`, `zip5`, `postal_code` are zip; `SSN` is ssn;
+`mrn` and `MedicalRecordNumber` are mrn; `last_name` is name (with a dob present), and
+`first_name, last_name, site` alone match nothing.
+
+**`data_save()`.** After writing, when the file's folder (relative to the project root) has
+no segment named like private, confidential, or sensitive, and the data frame's columns
+match, warn (the save still happens). At most five columns are listed. In a project that
+isn't `security: sensitive: true`:
+
+```text
+inputs/intermediate/patients.parquet has columns that look like direct identifiers (dob, zip_code), and it isn't in a private folder. If this is real data about people, save it in a private folder, which git ignores, and consider a privacy-sensitive project (type project_sensitive).
+```
+
+In a sensitive project the last sentence is "If this is real data about people, save it in
+a private folder instead."
+
+**Audit check `identifier_columns`** (eighth in the summary, after `connection_secrets`).
+For each file git tracks (including staged files) with extension `.csv`, `.tsv`, `.txt`,
+`.parquet`, `.dta`, or `.sav`, outside folders named like private, read the header (CSV:
+the first line, delimiter tab if `.tsv` or a tab is present, else `;` if it has more `;`
+than `,`, else `,`; Parquet: the schema; Stata/SPSS: metadata only, skipped when the reader
+isn't installed). Finding columns: `file`, `columns` (matching columns, `, `-joined),
+`kinds` (distinct kinds in order). Status `warning` when there are findings, never `fail`:
+a header can't tell real data from synthetic. Report section "Tracked Data With
+Identifier-Like Columns", one line `<file> (<columns>)`.
+
+**Pre-commit hook.** When the `data_security` audit passes, the hook prints the findings of
+`published_outputs`, `connection_secrets`, and `identifier_columns`, headed
+"⚠ Security audit warnings (the commit goes ahead):", and exits 0.
+
+Python: `framework/_identifiers.py` (`identifier_columns()`, `header_columns()`,
+`warn_identifiers()`), `security._check_identifiers()`, `security.hook_warnings()`.
+
+R: the same rule in a helper shared by `data_save()` and `R/security_audit.R`; headers via
+`readLines(n = 1)`, `arrow::read_schema()` (Suggests), and `haven::read_dta(n_max = 0)`.

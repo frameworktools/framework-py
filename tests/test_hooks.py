@@ -156,6 +156,19 @@ def test_hook_run_blocks_tracked_private_data(repo: Path) -> None:
     assert main(["hook", "pre-commit"]) == 1
 
 
+def test_hook_run_prints_audit_warnings_and_goes_ahead(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Ports 2026-11-07: identifier-like columns in tracked data should be flagged
+    fw.git_hooks_enable("data_security")
+    (repo / "patients.csv").write_text("id,date_of_birth\n1,2020-01-01\n", encoding="utf-8")
+    git(repo, "add", "patients.csv")
+    assert hook_run("pre-commit") == 0
+    err = capsys.readouterr().err
+    assert "Security audit warnings (the commit goes ahead)" in err
+    assert "patients.csv (date_of_birth)" in err
+
+
 def test_hook_run_warns_about_sensitive_folders(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

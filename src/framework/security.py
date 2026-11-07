@@ -18,6 +18,11 @@ The checks match R's ``git_security_audit()``:
   tracked settings file fails; an untracked one warns. Python adds this check;
   R will follow.
 
+- identifier_columns: warns about data files git tracks, outside private
+  folders, whose header has columns that look like direct identifiers (dates
+  of birth, ZIP codes, SSNs, medical record numbers, names with dates of
+  birth). Only the header is read. Python adds this check; R will follow.
+
 Folders configured outside the project are skipped, since git can't commit
 them from here, and listed in the report and in ``metadata``.
 
@@ -59,6 +64,7 @@ CHECKS = (
     "secrets_exposure",
     "published_outputs",
     "connection_secrets",
+    "identifier_columns",
 )
 
 _EXCLUDED_DIRS = (
@@ -633,6 +639,38 @@ def _check_connection_secrets(
     return _frame(rows, ["file", "key", "tracked"]), advice
 
 
+def _check_identifiers(root: Path, tracked: list[str]) -> tuple[pd.DataFrame, list[str]]:
+    """Tracked data files outside private folders whose header has identifier-like
+    columns. Only headers are read."""
+    from framework._identifiers import HEADER_TYPES, header_columns, identifier_columns
+
+    rows: list[dict[str, str]] = []
+    for name in tracked:
+        if Path(name).suffix.lower() not in HEADER_TYPES or has_private_segment(Path(name).parent):
+            continue
+        path = root / name
+        columns = header_columns(path) if path.is_file() else None
+        found = identifier_columns(columns or [])
+        if found:
+            rows.append(
+                {
+                    "file": name,
+                    "columns": ", ".join(column for column, _ in found),
+                    "kinds": ", ".join(dict.fromkeys(kind for _, kind in found)),
+                }
+            )
+    advice = (
+        [
+            "Data files tracked by git have columns that look like direct identifiers. If "
+            "they hold real data about people, remove them from git (and its history) and "
+            "keep them in a private folder; consider a privacy-sensitive project"
+        ]
+        if rows
+        else []
+    )
+    return _frame(rows, ["file", "columns", "kinds"]), advice
+
+
 def _walk_files(root: Path) -> list[Path]:
     """Every file under the root, skipping excluded top-level folders, and at any depth
     the ``*_files`` and ``*_cache`` folders Quarto and Jupyter write beside a document."""
@@ -704,22 +742,26 @@ def _auto_fix(root: Path, findings: dict[str, pd.DataFrame]) -> int:
 _ICONS = {"pass": "✓ PASS", "warning": "⚠ WARNING", "fail": "✗ FAIL", "skipped": "- SKIPPED"}
 
 
-def _report(result: AuditResult) -> str:
-    lines = ["", "=== Security Audit Summary ===", ""]
-    for row in result.summary.itertuples():
-        label = str(row.check).replace("_", " ")
-        lines.append(f"{_ICONS[str(row.status)]}: {label} ({row.count} issues)")
+_SECTIONS = {
+    "gitignore_coverage": "Gitignore Coverage Issues",
+    "private_data_exposure": "Private Data Exposure (Git Tracked)",
+    "git_history": "Git History Leaks",
+    "secrets_exposure": "Tracked Secrets Files",
+    "orphaned_files": "Orphaned Data Files",
+    "published_outputs": "Publishing Folders Not Ignored by Git",
+    "connection_secrets": "Secrets Written in Connection Settings",
+    "identifier_columns": "Tracked Data With Identifier-Like Columns",
+}
 
-    sections = {
-        "gitignore_coverage": "Gitignore Coverage Issues",
-        "private_data_exposure": "Private Data Exposure (Git Tracked)",
-        "git_history": "Git History Leaks",
-        "secrets_exposure": "Tracked Secrets Files",
-        "orphaned_files": "Orphaned Data Files",
-        "published_outputs": "Publishing Folders Not Ignored by Git",
-        "connection_secrets": "Secrets Written in Connection Settings",
-    }
-    for check, title in sections.items():
+# Warnings the pre-commit hook prints even when the audit passes
+HOOK_WARNINGS = ("published_outputs", "connection_secrets", "identifier_columns")
+
+
+def _finding_lines(result: AuditResult, checks: tuple[str, ...]) -> list[str]:
+    """The report's section for each of ``checks`` with findings."""
+    lines: list[str] = []
+    for check in checks:
+        title = _SECTIONS[check]
         frame = result.findings[check]
         if frame.empty:
             continue
@@ -737,6 +779,8 @@ def _report(result: AuditResult) -> str:
                 )
             elif check == "secrets_exposure":
                 lines.append(f"  {number}. {row.file} (tracked in git)")
+            elif check == "identifier_columns":
+                lines.append(f"  {number}. {row.file} ({row.columns})")
             elif check == "connection_secrets":
                 where = "tracked in git" if row.tracked else "not tracked"
                 lines.append(f"  {number}. {row.file}: {row.key} ({where})")
@@ -749,6 +793,23 @@ def _report(result: AuditResult) -> str:
                 lines.append(f"  {number}. {row.path} ({round(float(str(row.size)) / 1024, 1)} KB)")
         if len(frame) > 10:
             lines.append(f"     ... and {len(frame) - 10} more")
+    return lines
+
+
+def hook_warnings(result: AuditResult) -> str:
+    """What the pre-commit hook prints about a passing audit's warnings, or ""."""
+    lines = _finding_lines(result, HOOK_WARNINGS)
+    if not lines:
+        return ""
+    return "\n".join(["⚠ Security audit warnings (the commit goes ahead):", *lines, ""])
+
+
+def _report(result: AuditResult) -> str:
+    lines = ["", "=== Security Audit Summary ===", ""]
+    for row in result.summary.itertuples():
+        label = str(row.check).replace("_", " ")
+        lines.append(f"{_ICONS[str(row.status)]}: {label} ({row.count} issues)")
+    lines += _finding_lines(result, tuple(_SECTIONS))
 
     skipped = result.metadata.get("skipped_directories") or {}
     if skipped:
@@ -846,6 +907,7 @@ def git_security_audit(
     record("orphaned_files", _check_orphans(root, folders, exts, rules))
     record("published_outputs", _check_published(root, config, rules, tracked))
     record("connection_secrets", _check_connection_secrets(root, path, set(tracked)))
+    record("identifier_columns", _check_identifiers(root, tracked))
 
     coverage = findings["gitignore_coverage"]
     statuses = {
@@ -867,6 +929,7 @@ def git_security_audit(
         if len(findings["secrets_exposure"])
         else "pass",
         "published_outputs": "warning" if len(findings["published_outputs"]) else "pass",
+        "identifier_columns": "warning" if len(findings["identifier_columns"]) else "pass",
         "connection_secrets": "pass"
         if findings["connection_secrets"].empty
         else "fail"
