@@ -12,6 +12,7 @@
     "output/figures"
   ],
   "expected": {
+    "type": "project",
     "directories": {
       "inputs_raw": "data/raw",
       "inputs_final": "data/clean",
@@ -25,6 +26,7 @@
         "path": "do"
       }
     },
+    "render_dirs": {},
     "warnings": []
   }
 }

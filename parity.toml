@@ -95,6 +95,10 @@ status = "ported"
 python = "cloud_logout"
 status = "ported"
 
+[functions.cloud_register]
+python = "cloud_register"
+status = "ported"
+
 [functions.cloud_settings]
 python = "cloud_settings"
 status = "ported"
@@ -576,6 +580,11 @@ status = "ported"
 [functions.stubs_publish]
 python = "stubs_publish"
 status = "ported"
+
+[functions.upgrade]
+python = "upgrade"
+status = "ported"
+note = "Also `python -m framework upgrade [--apply] [--no-backup]`, which fw project upgrade runs"
 
 [functions.view]
 status = "omitted"

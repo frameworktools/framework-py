@@ -228,3 +228,28 @@ def test_settings_yaml_is_an_existing_project(existing: Path) -> None:
     with pytest.raises(fw.FrameworkError, match=r"settings\.yaml"):
         fw.adopt(existing, yes=True)
     assert not (existing / "settings.yml").exists()
+
+
+def test_scan_skips_generated_folders_and_links(tmp_path: Path) -> None:
+    root = tmp_path / "study"
+    for folder in (
+        "settings",
+        "notebooks/02-summary_files",
+        "notebooks/fit_cache",
+        "_site",
+        "data",
+    ):
+        (root / folder).mkdir(parents=True)
+    (root / "linked").symlink_to(root / "data", target_is_directory=True)
+    assert scan_folders(root) == ["data", "notebooks"]
+
+
+def test_plan_infers_the_type(tmp_path: Path) -> None:
+    plan = adopt_plan(["slides", "Modules", "data", "data/raw"])
+    assert plan.type == "course"
+    assert plan.directories == {"data": "data", "slides": "slides", "notebooks": "Modules"}
+    plan = adopt_plan(["inputs", "inputs/private", "inputs/private/raw", "scripts"])
+    assert plan.type == "project_sensitive"
+    assert adopt_plan(["scripts"]).type == "project"
+    assert adopt_plan(["misc"]).type == "bare"
+    assert adopt_plan(["slides", "Modules"], type="project").directories == {}

@@ -14,6 +14,7 @@
     "scratch"
   ],
   "expected": {
+    "type": "project",
     "directories": {
       "inputs_raw": "data-raw",
       "functions": "R",
@@ -23,6 +24,7 @@
       "scratch": "scratch"
     },
     "extra_directories": {},
+    "render_dirs": {},
     "warnings": []
   }
 }

@@ -36,12 +36,19 @@ class AdoptPlan:
     """The proposed layout: folder -> role, in byte order of path.
 
     A role is a Framework directory key, ``"extra"`` for a folder of its own,
-    or None for a folder that is left out. ``private`` lists every scanned
-    folder whose path contains "private".
+    or None for a folder that is left out. ``render_dirs`` maps render keys
+    to folders that hold rendered notebooks. ``private`` lists every scanned
+    folder whose path contains "private". ``type`` is the project type, given
+    or inferred. ``reserved`` holds the keys of the rules that applied, which
+    extra directories don't take.
     """
 
     roles: dict[str, str | None] = field(default_factory=dict)
     private: list[str] = field(default_factory=list)
+    render_dirs: dict[str, str] = field(default_factory=dict)
+    type: str = "bare"
+    reserved: list[str] = field(default_factory=list)
+    sensitive: bool = False
 
     @property
     def directories(self) -> dict[str, str]:
@@ -50,13 +57,17 @@ class AdoptPlan:
     @property
     def extra_directories(self) -> dict[str, dict[str, str]]:
         extra: dict[str, dict[str, str]] = {}
-        taken = set(self.directories)
+        taken = set(self.directories) | set(self.reserved)
         for path, role in self.roles.items():
             if role == EXTRA:
                 key = _extra_key(path, taken)
                 taken.add(key)
                 extra[key] = {"label": path.rsplit("/", 1)[-1], "path": path}
         return extra
+
+    @property
+    def empty(self) -> bool:
+        return not self.directories and not self.extra_directories and not self.render_dirs
 
 
 @cache
@@ -67,11 +78,26 @@ def adopt_rules() -> dict[str, Any]:
     return rules
 
 
+def _skipped(name: str, skip: list[str]) -> bool:
+    """Whether a folder name is in the rules' skip list, ignoring case. An entry with
+    ``*`` matches any characters within the name (``*_files``)."""
+    lowered = name.lower()
+    for entry in skip:
+        entry = entry.lower()
+        if "*" in entry:
+            pattern = ".*".join(re.escape(part) for part in entry.split("*"))
+            if re.fullmatch(pattern, lowered):
+                return True
+        elif lowered == entry:
+            return True
+    return False
+
+
 def _kept(path: str, rules: Mapping[str, Any]) -> bool:
-    skip = {name.lower() for name in rules.get("skip") or []}
+    skip = list(rules.get("skip") or [])
     parts = path.split("/")
     return len(parts) <= int(rules.get("max_depth") or 3) and not any(
-        part.startswith(".") or part.lower() in skip for part in parts
+        part.startswith(".") or _skipped(part, skip) for part in parts
     )
 
 
@@ -79,8 +105,10 @@ def scan_folders(root: Path, rules: Mapping[str, Any] | None = None) -> list[str
     """Subfolders of ``root``, as relative POSIX paths in byte order.
 
     Hidden folders, the rules' ``skip`` folders (version control,
-    environments, caches), and everything under them are left out, and so are
-    folders more than ``max_depth`` levels deep. Only folder names are read.
+    environments, caches, Framework's ``settings/``, Quarto's render
+    folders), and everything under them are left out, and so are folders
+    more than ``max_depth`` levels deep. Symbolic links are not followed.
+    Only folder names are read.
     """
     rules = rules or adopt_rules()
     found: list[str] = []
@@ -98,40 +126,94 @@ def scan_folders(root: Path, rules: Mapping[str, Any] | None = None) -> list[str
 
 
 def adopt_plan(
-    folders: list[str], language: str = "python", rules: Mapping[str, Any] | None = None
+    folders: list[str],
+    language: str = "python",
+    rules: Mapping[str, Any] | None = None,
+    type: str | None = None,
 ) -> AdoptPlan:
     """Propose a role for each folder with the shared rules.
 
     The algorithm is the one in the R package's ``inst/conformance/README.md``
-    (adopt/): rules apply in order, each giving its key to the first folder
-    that equals one of its patterns, ignoring case. Folders inside an
-    assigned folder are covered by it. Each other folder with no assigned
-    folder inside it gets a role of its own (``"extra"``), unless its parent
-    does too.
+    (adopt/): the type comes first (a course when enough top-level folders
+    are course signals, unless ``type`` is given). Rules for the language and
+    type apply in order, each whose key is still free giving its key to the
+    first folder that equals one of its patterns, ignoring case, and is
+    neither assigned nor inside an assigned folder. The ``render_dirs`` rules
+    follow the same way. Folders inside an assigned folder are covered by it.
+    Each other folder with no assigned folder inside it gets a role of its
+    own (``"extra"``), unless its parent does too. Without ``type``, the
+    type is course, else project_sensitive when a private or public key
+    matched, else project when any key matched, else bare.
     """
     rules = rules or adopt_rules()
-    kept = sorted((f for f in folders if _kept(f, rules)), key=lambda p: p.encode("utf-8"))
-    by_lower: dict[str, str] = {}
-    for folder in kept:
-        by_lower.setdefault(folder.lower(), folder)
-    assigned: dict[str, str] = {}
-    for rule in rules.get("rules") or []:
-        if rule.get("languages") and language not in rule["languages"]:
-            continue
-        for pattern in rule.get("patterns") or []:
-            match = by_lower.get(pattern.lower())
-            if match is not None and match not in assigned:
-                assigned[match] = rule["key"]
-                break
+    kept = sorted(
+        {f.strip("/") for f in folders if f.strip("/") and _kept(f.strip("/"), rules)},
+        key=lambda p: p.encode("utf-8"),
+    )
+    types = rules.get("types") or {}
+    course = types.get("course") or {}
+    top = {f.lower() for f in kept if "/" not in f}
+    signals = sum(1 for signal in course.get("signals") or [] if signal.lower() in top)
+    is_course = signals >= int(course.get("min") or 2)
+    rule_type = type or ("course" if is_course else "project")
+    applicable = [
+        rule
+        for rule in rules.get("rules") or []
+        if (not rule.get("languages") or language in rule["languages"])
+        and (not rule.get("types") or rule_type in rule["types"])
+    ]
+
+    def free(folder: str, assigned: Mapping[str, str]) -> bool:
+        taken = set(assigned.values())
+        return folder not in taken and not any(_inside(folder, a) for a in taken)
+
+    def assign(
+        rule_list: list[dict[str, Any]], assigned: dict[str, str], others: dict[str, str]
+    ) -> None:
+        for rule in rule_list:
+            if rule["key"] in assigned:
+                continue
+            for pattern in rule.get("patterns") or []:
+                hit = next(
+                    (
+                        f
+                        for f in kept
+                        if f.lower() == pattern.lower() and free(f, {**others, **assigned})
+                    ),
+                    None,
+                )
+                if hit is not None:
+                    assigned[rule["key"]] = hit
+                    break
+
+    directories: dict[str, str] = {}
+    assign(applicable, directories, {})
+    render_dirs: dict[str, str] = {}
+    assign(list(rules.get("render_dirs") or []), render_dirs, directories)
+    assigned = {path: key for key, path in directories.items()}
+    covered = list(directories.values()) + list(render_dirs.values())
 
     def qualifies(folder: str) -> bool:
         return (
-            folder not in assigned
-            and not any(_inside(folder, a) for a in assigned)
-            and not any(_inside(a, folder) for a in assigned)
+            folder not in covered
+            and not any(_inside(folder, a) for a in covered)
+            and not any(_inside(a, folder) for a in covered)
         )
 
-    plan = AdoptPlan(private=[f for f in kept if "private" in f.lower()])
+    if type is None:
+        pattern = (types.get("project_sensitive") or {}).get("key_pattern") or "^$"
+        if is_course:
+            type = "course"
+        elif any(re.search(pattern, key) for key in directories):
+            type = "project_sensitive"
+        else:
+            type = "project" if directories else "bare"
+    plan = AdoptPlan(
+        private=[f for f in kept if "private" in f.lower()],
+        render_dirs=render_dirs,
+        type=type,
+        reserved=list(dict.fromkeys(rule["key"] for rule in applicable)),
+    )
     for folder in kept:
         if folder in assigned:
             plan.roles[folder] = assigned[folder]

@@ -8,6 +8,7 @@
     "inputs/raw"
   ],
   "expected": {
+    "type": "project",
     "directories": {
       "inputs_raw": "inputs/raw"
     },
@@ -21,6 +22,7 @@
         "path": "raw"
       }
     },
+    "render_dirs": {},
     "warnings": []
   }
 }

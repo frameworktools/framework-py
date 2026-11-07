@@ -8,6 +8,7 @@
     "Docs"
   ],
   "expected": {
+    "type": "project",
     "directories": {
       "inputs_raw": "Data/Raw",
       "scripts": "Scripts",
@@ -15,6 +16,7 @@
       "docs": "Docs"
     },
     "extra_directories": {},
+    "render_dirs": {},
     "warnings": []
   }
 }

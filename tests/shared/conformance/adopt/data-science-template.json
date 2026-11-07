@@ -17,6 +17,7 @@
     "src/features"
   ],
   "expected": {
+    "type": "project",
     "directories": {
       "inputs_raw": "data/raw",
       "inputs_intermediate": "data/interim",
@@ -34,6 +35,7 @@
         "path": "references"
       }
     },
+    "render_dirs": {},
     "warnings": []
   }
 }

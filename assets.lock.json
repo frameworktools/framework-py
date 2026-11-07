@@ -1,12 +1,12 @@
 {
-  "commit": "804c93e8200d8f3e993b4cddf184c750b65b80c8",
+  "commit": "bbed2d0a96405ef8ff7423a675932caa5c40a825",
   "files": {
     "docs/docs-site.md": {
       "sha256": "2b86e376b11401881ef77a595d20af203ffc50ed95d99a55e895157e8f8dca25",
       "source": "inst/schema/docs-site.md"
     },
     "src/framework/_assets/adopt/rules.json": {
-      "sha256": "6aeed84de1f33a2628b66fa54fc6a9de46f5b755a6380799784828ba621beffe",
+      "sha256": "028ffcade09fc6885b176ee1cd50635c978c50fd84f4cce52ccaab2eeb6fe35a",
       "source": "inst/adopt/rules.json"
     },
     "src/framework/_assets/features/jupyter.json": {
@@ -206,51 +206,67 @@
       "source": "tests/integration/sqlserver/init.sql"
     },
     "tests/shared/NAMESPACE": {
-      "sha256": "b32090b5836201a981eb83e243e84166e723bc60ac11571074b98d1b98a06f37",
+      "sha256": "27a70be7e8154de4a23c01e3a4a191b0b12f6f163d5af89c3ca9995d64d88302",
       "source": "NAMESPACE"
     },
     "tests/shared/conformance/README.md": {
-      "sha256": "719868ba8867552fab21a291b35c3e5fefd757852934983b9a0b350909791e02",
+      "sha256": "32cfb46db670436e474bf96f099e7d205f105ae8395f8a3206c083db008a7512",
       "source": "inst/conformance/README.md"
     },
     "tests/shared/conformance/adopt/case-insensitive.json": {
-      "sha256": "0af7d0ed1362096a64918d68068bfc5b4fc34d0b7c997073c83f7a13da1e7198",
+      "sha256": "f07e8b2018d04160d6172be6dfda117a55a6f822c1d4f30ab9c72aacf5f7fc37",
       "source": "inst/conformance/adopt/case-insensitive.json"
     },
+    "tests/shared/conformance/adopt/course-one-signal.json": {
+      "sha256": "106dff949ec793cbed44407f941aa1e47bafa5fcf019c37e7056f1436d5c163a",
+      "source": "inst/conformance/adopt/course-one-signal.json"
+    },
+    "tests/shared/conformance/adopt/course.json": {
+      "sha256": "8101f781d0dd150f358747f58d15ce7103998988aab82005bf568b6074a2de7d",
+      "source": "inst/conformance/adopt/course.json"
+    },
     "tests/shared/conformance/adopt/data-science-template.json": {
-      "sha256": "902ba71e4a54d00ddd4d7e4383460f5ed416df4ae6cfe09396a2535c6120614f",
+      "sha256": "5085b46996b681b79e2c4cd9b981ca803c1618c640ae844f2b6af7770185ed7b",
       "source": "inst/conformance/adopt/data-science-template.json"
     },
     "tests/shared/conformance/adopt/extra-keys.json": {
-      "sha256": "96a0f4f5d6aeaa24867037e0aa9ef0478f6d90dded5ea41ef4c5124844863266",
+      "sha256": "17dae0015a3601bbd68343a67c4c56b1977737130d638f3596dc75cab62c2638",
       "source": "inst/conformance/adopt/extra-keys.json"
     },
+    "tests/shared/conformance/adopt/generated-folders.json": {
+      "sha256": "d052d037b2115c4e43b207e1684e51070e263ae3d23fe7bd24254cb55cb6b232",
+      "source": "inst/conformance/adopt/generated-folders.json"
+    },
     "tests/shared/conformance/adopt/nested-under-matched.json": {
-      "sha256": "d0909e68a82e24691c369feb7aeb688acda39204cb93e7e92d5616babdd82fe1",
+      "sha256": "d7240002d59f6fa91b3fac8a06a9409f5c385798b0bf70c3ab6456c9ce52f64f",
       "source": "inst/conformance/adopt/nested-under-matched.json"
     },
     "tests/shared/conformance/adopt/pattern-priority.json": {
-      "sha256": "d10a3a5e5ee596b0190fb720f0a8ad750c4477ea7bb244cfa63e9d0ae36f86bc",
+      "sha256": "9a478304305dd32e6951133f5013f3cc0ef611185bb40813912f8c59f58a07db",
       "source": "inst/conformance/adopt/pattern-priority.json"
     },
     "tests/shared/conformance/adopt/private-paths.json": {
-      "sha256": "19fc85cb578040bcaeaf257ca3fbbe4316f39a00884ad308abd7361f5fd24995",
+      "sha256": "f8ad3dc2b18c7b3f9b36571b41f1ef978a0d13344799c69b2c9bba2f907b5167",
       "source": "inst/conformance/adopt/private-paths.json"
     },
     "tests/shared/conformance/adopt/r-analysis.json": {
-      "sha256": "3173c6f45b44def6deb86698ba3a8c8fb8075894b51bffeb19609bfc9225e6e2",
+      "sha256": "b113385198f4871c010921bcb83f1929f1a4111a341348db6d5ad4796a8baffb",
       "source": "inst/conformance/adopt/r-analysis.json"
     },
+    "tests/shared/conformance/adopt/sensitive-layout.json": {
+      "sha256": "f3f743671443aa7bc9d497ce94319c7d1e80ec0db05e5d73475a9d03902e6ee2",
+      "source": "inst/conformance/adopt/sensitive-layout.json"
+    },
     "tests/shared/conformance/adopt/skip-and-depth.json": {
-      "sha256": "83ee8b31ac65fc40549483c78381144c7e70db9bfeee5bf6254407ba0cd695ae",
+      "sha256": "0fa5924ac4c4bab7c10e4f04d29d02e73201952107c1809402769c9f919f57a8",
       "source": "inst/conformance/adopt/skip-and-depth.json"
     },
     "tests/shared/conformance/adopt/stata-folders-in-r.json": {
-      "sha256": "1a92bc5dbc25525c1697e772ad7675d0e8a8e1d9d6811c3c3b261f9b9330c776",
+      "sha256": "48221db4e11082bc2e86fac35bfffada6f4b71e3cc850815ae3d0e26d067d724",
       "source": "inst/conformance/adopt/stata-folders-in-r.json"
     },
     "tests/shared/conformance/adopt/stata.json": {
-      "sha256": "a125211866360109e2e92c87efbbb015dd6096ac41104ed3d515552d40a4ab71",
+      "sha256": "c3be4f8e106c79735e8c66287eda709fdcc2113768b52cf5f33f79397e44c83e",
       "source": "inst/conformance/adopt/stata.json"
     },
     "tests/shared/conformance/create/python/bare-jupyter.json": {
@@ -338,6 +354,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "804c93e8200d8f3e993b4cddf184c750b65b80c8",
+  "ref": "bbed2d0a96405ef8ff7423a675932caa5c40a825",
   "source": "framework (R package)"
 }

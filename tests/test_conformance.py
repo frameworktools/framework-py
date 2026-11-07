@@ -64,6 +64,8 @@ def test_adopt_maps_folders_like_r(case: Path) -> None:
     data = json.loads(case.read_text(encoding="utf-8"))
     plan = adopt_plan(data["folders"], data.get("language", "r"))
     expected = data["expected"]
+    assert plan.type == expected["type"]
     assert plan.directories == expected["directories"]
     assert plan.extra_directories == expected["extra_directories"]
+    assert plan.render_dirs == expected["render_dirs"]
     assert [{"code": "private_path", "path": p} for p in plan.private] == expected["warnings"]
