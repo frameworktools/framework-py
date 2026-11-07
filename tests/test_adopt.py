@@ -80,6 +80,7 @@ def test_adopt_writes_settings_and_nothing_else(
     assert sorted(set(after) - set(before)) == [
         ".framework",
         ".framework/spec.json",
+        ".gitignore",
         "settings.yml",
     ]
     config = _yaml.read(existing / "settings.yml")["default"]
@@ -203,8 +204,7 @@ def test_registering_an_adopted_project_keeps_the_token_out_of_git(
     caplog.set_level("INFO", logger="framework")
     fw.adopt(existing)
     assert "fwp_secret0123" in (existing / ".env").read_text(encoding="utf-8")
-    assert (existing / ".gitignore").read_text(encoding="utf-8").strip().endswith(".env")
-    assert "so the project token stays out of git" in caplog.text
+    assert ".env" in (existing / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert "fwp_secret0123" not in caplog.text
     if shutil.which("git"):
         ignored = subprocess.run(["git", "-C", str(existing), "check-ignore", "-q", ".env"])
@@ -355,3 +355,51 @@ def test_an_r_project_is_not_adopted_as_python(
     assert main(["adopt", "--path", str(existing), "--yes", "--force"]) == 0
     assert "Adopting it as Python" in capsys.readouterr().err
     assert _yaml.read(existing / "settings.yml")["default"]["language"] == "python"
+
+
+def _git(root: Path, *args: str) -> None:
+    import subprocess
+
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "A",
+        "GIT_AUTHOR_EMAIL": "a@b.c",
+        "GIT_COMMITTER_NAME": "A",
+        "GIT_COMMITTER_EMAIL": "a@b.c",
+    }
+    subprocess.run(["git", "-C", str(root), *args], check=True, env=env, capture_output=True)
+
+
+@pytest.mark.skipif(not __import__("shutil").which("git"), reason="git is not installed")
+def test_adopt_merges_its_gitignore_rules(tmp_path: Path) -> None:
+    root = tmp_path / "study"
+    for folder in ("scripts", "report_files", "secret stuff/Private notes"):
+        (root / folder).mkdir(parents=True)
+    (root / "report_files/plot.png").write_bytes(b"png")
+    mine = "# mine\n.Renviron\n/.quarto/\nkeep-me.txt\n"
+    (root / ".gitignore").write_text(mine, encoding="utf-8")
+    (root / "notes").mkdir()
+    (root / "notes/private-ish").mkdir()
+    _git(root, "init", "-q")
+    _git(root, "add", ".gitignore", "report_files/plot.png")
+    _git(root, "commit", "-q", "-m", "init")
+    fw.adopt(root, yes=True)
+    text = (root / ".gitignore").read_text(encoding="utf-8")
+    # The user's lines stay first, untouched; the rest follow in one block
+    assert text.startswith(mine + "\n# Added by framework.adopt()\n")
+    added = text[len(mine) :].splitlines()
+    assert added.count(".Renviron") == 0
+    assert "/.quarto/" not in added
+    assert {".env", "framework.db", "**/*.quarto_ipynb", ".quarto_backups/"} <= set(added)
+    # The folder that looks private, which no template rule covers
+    assert "/secret stuff/Private notes/" in added
+    # *_files/ would hide the tracked plot
+    assert "*_files/" not in added
+    spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
+    assert spec["git"]["gitignore_content"] == text.rstrip("\n")
+    # Running the merge again adds nothing
+    from framework._gitignore import missing_rules
+
+    assert missing_rules(root, spec["git"]["gitignore_content"]).add == []

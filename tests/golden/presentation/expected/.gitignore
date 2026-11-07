@@ -59,6 +59,8 @@ framework.db-shm
 # A folder with its own _quarto.yml gets its own .quarto/
 .quarto/
 _freeze/
+# Backups from quarto_regenerate() before framework-py 0.1.0.dev13
+.quarto_backups/
 *_cache/
 *_files/
 

@@ -390,8 +390,12 @@ def adopt(
     folder and Quarto's ``*_files/`` folders are never proposed. You review the
     proposal (with ``yes=True`` it is printed and accepted), then
     ``settings.yml`` and ``.framework/spec.json`` are written for the folders
-    that are there. Nothing is moved, and nothing else is created. A folder
-    with no subfolders is adopted with no folders.
+    that are there. The rules of the type's ``.gitignore`` template that the
+    folder's ``.gitignore`` lacks (``.env``, ``framework.db``, private folders,
+    Quarto's lines) are appended in one block. No ``.gitignore`` line is
+    removed, and a rule that would ignore files git tracks is left out.
+    Nothing is moved, and nothing else is created. A folder with no
+    subfolders is adopted with no folders.
 
     The type follows from the folders unless ``type`` is given: ``course``
     when there are course folders such as ``slides/`` and ``modules/``,
@@ -494,6 +498,9 @@ def adopt(
     from framework.create import _record, _write_settings
 
     _write_settings(root, spec)
+    # Merge the spec's .gitignore into the folder's, adding lines only, and record the
+    # .gitignore the project now has
+    spec["git"]["gitignore_content"] = _adopt_gitignore(root, spec, plan).rstrip("\n")
     _record(root, spec)
     inform(f"[ok] {root.name} is a Framework project. Run framework.scaffold() in it to start.")
     if plan.private and not plan.sensitive:
@@ -506,6 +513,25 @@ def adopt(
     if not yes:
         _offer_cloud(root, spec, plan)
     return root
+
+
+def _adopt_gitignore(root: Path, spec: Mapping[str, Any], plan: AdoptPlan) -> str:
+    """Append the rules the spec's ``.gitignore`` template has and the folder's
+    ``.gitignore`` lacks, plus each folder whose path looks private. Returns the
+    ``.gitignore`` text afterwards."""
+    from framework._gitignore import append_rules, missing_rules, rules_summary, unignored_folders
+
+    wanted = [str(spec["git"]["gitignore_content"])]
+    wanted += [f"/{folder}/" for folder in unignored_folders(root, plan.private)]
+    missing = missing_rules(root, wanted)
+    append_rules(root, missing.add, "# Added by framework.adopt()")
+    if missing.add:
+        inform(f"  Added to .gitignore ({len(missing.add)} rules): {rules_summary(missing.add)}")
+    if missing.skipped:
+        shown = ", ".join(f"{rule} ({file})" for rule, file in missing.skipped.items())
+        inform(f"  Left out of .gitignore because git tracks files they match: {shown}")
+    path = root / ".gitignore"
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
 def adopt_spec(name: str, plan: AdoptPlan, use_git: bool = False) -> dict[str, Any]:
