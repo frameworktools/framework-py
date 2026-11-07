@@ -159,3 +159,36 @@ path checks notebooks, and `publish_data()` checks data frames.
 R: R's `publish()`, `publish_notebook()`, and `publish_data()` need the same three checks
 in `.fw_confirm_private()` (`R/publish.R`), which should take the extra reasons, with
 `security$sensitive` read from the settings.
+
+## B2. Warning on public saves after private data was read
+
+Nothing tracks provenance, so knowing that a particular table came from private data
+isn't cheap. The rule uses the session instead:
+
+1. `data_read()` marks the session as having read private data when the file it read is
+   private: its catalog entry is private (`data_info()`'s `private`: a private folder or
+   `private: true`), or, for a file path, a folder between the project root and the file
+   is named like private, confidential, or sensitive (the same segment rule as the audit),
+   or, for a file outside the project, `private` appears anywhere in its full path. It
+   remembers the name as the caller gave it (catalog name or path), once each, in order.
+2. In a project with `security: sensitive: true`, `save_table()`, `save_figure()`, and
+   `save_model()` with `public = TRUE` warn after such a read, once per saved file, after
+   saving and recording it:
+
+   ```text
+   Saved summary.csv as public, and this session read private data (inputs.private.raw.visits, inputs/private/raw/ids.csv, inputs.flagged, and 2 more). Check that it holds only aggregated or de-identified results before sharing it.
+   ```
+
+   At most three names are shown. Private saves, and saves in other projects, never warn.
+3. The mark lasts for the session (the Python process; the R session). There is no public
+   function to clear it.
+
+Not covered: `save_report()` and `save_notebook()` (a notebook renders in its own process,
+which the session can't see; B1 checks notebooks at publish time), and data reached other
+than through `data_read()` (cache, database queries).
+
+Python: `_private.note_private_read()`, `warn_public_save()`; the warning is a
+`FrameworkWarning`.
+
+R: keep the names in `.framework_env$private_reads` from `data_read()`, and warn with
+`cli::cli_warn()` from `save_table()`, `save_figure()`, and `save_model()`.

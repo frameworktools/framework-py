@@ -23,6 +23,7 @@ import pandas as pd
 from framework import db
 from framework._log import inform
 from framework._paths import output_directory, relative_to_root
+from framework._private import private_read_note, warn_public_save
 from framework.errors import FrameworkError, FrameworkWarning, UnsupportedFormatError
 from framework.integrity import file_hash
 from framework.settings import settings_read
@@ -112,7 +113,8 @@ def save_table(
         name: File name without extension. It may name subfolders of the tables folder,
             such as ``"meeting-2026-10-16/cohort"``, which are created.
         format: ``"csv"``, ``"parquet"``, or ``"xlsx"`` (needs the ``excel`` extra).
-        public: In a sensitive project, save to the public tables folder.
+        public: In a sensitive project, save to the public tables folder. It warns when
+            this session has read private data with ``data_read()``.
         overwrite: Replace an existing file.
         **kwargs: Passed to the pandas writer.
 
@@ -139,6 +141,7 @@ def save_table(
         data.to_excel(path, index=False, **kwargs)
     inform(f"Saved table to {path}")
     _record(path, "table", public)
+    warn_public_save(path, public)
     return path
 
 
@@ -279,7 +282,8 @@ def save_figure(
         width: Width in inches.
         height: Height in inches.
         dpi: Resolution for raster formats.
-        public: In a sensitive project, save to the public figures folder.
+        public: In a sensitive project, save to the public figures folder. It warns when
+            this session has read private data with ``data_read()``.
         overwrite: Replace an existing file.
         **kwargs: Passed to ``savefig()`` or ``save()``.
 
@@ -318,6 +322,7 @@ def save_figure(
             )
         inform(f"Saved figure to {path}")
         _record(path, "figure", public)
+        warn_public_save(path, public)
     return paths[0] if isinstance(format, str) else paths
 
 
@@ -358,7 +363,8 @@ def save_model(model: Any, name: str, public: bool = False, overwrite: bool = Tr
     Args:
         model: The model, or any object pickle can save.
         name: The file name without extension. It may name subfolders, which are created.
-        public: In a sensitive project, save to the public models folder.
+        public: In a sensitive project, save to the public models folder. It warns when
+            this session has read private data with ``data_read()``.
         overwrite: Replace an existing file.
 
     Returns:
@@ -370,6 +376,7 @@ def save_model(model: Any, name: str, public: bool = False, overwrite: bool = Tr
     A model that cannot be pickled raises pickle's error and leaves any existing file and
     its record unchanged.
     """
+    rows_warned = False
     if public:
         rows = _data_rows(model)
         if rows:
@@ -383,12 +390,17 @@ def save_model(model: Any, name: str, public: bool = False, overwrite: bool = Tr
                 hint = " Call remove_data() on the result first to drop them."
             else:
                 hint = " Remove them from the object first."
+            # One warning: the session's private reads join the data rows warning
+            note = private_read_note()
+            if note:
+                hint += f" This session also read private data ({note})."
             warnings.warn(
                 f"save_model(public=True): '{name}' holds {rows} data rows, which would be "
                 f"saved to the public models folder with it.{hint}",
                 FrameworkWarning,
                 stacklevel=2,
             )
+            rows_warned = True
     path = _output_file("models", public, f"{name}.pkl")
     _check_overwrite(path, overwrite)
     # Pickle to a temporary file first, so a failed dump leaves any existing model intact
@@ -402,6 +414,8 @@ def save_model(model: Any, name: str, public: bool = False, overwrite: bool = Tr
         raise
     inform(f"Saved model to {path}")
     _record(path, "model", public)
+    if not rows_warned:
+        warn_public_save(path, public)
     return path
 
 

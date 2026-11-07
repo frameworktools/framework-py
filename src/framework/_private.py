@@ -22,7 +22,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-from framework.errors import FrameworkError
+from framework.errors import FrameworkError, FrameworkWarning
 
 # macOS resolves /tmp, /var, and /etc to /private/..., which the user did not name
 _SYSTEM_PREFIX = "/private/"
@@ -34,6 +34,66 @@ def is_private_path(path: Path) -> bool:
     if full.startswith(_SYSTEM_PREFIX):
         full = full[len(_SYSTEM_PREFIX) - 1 :]
     return "private" in full.lower()
+
+
+def is_private_data(path: Path, root: Path | None) -> bool:
+    """Whether a data file is private: a folder below the project root named like private,
+    confidential, or sensitive, or, for a file outside the project, "private" anywhere in
+    its full path (as the publish check reads paths)."""
+    from framework._paths import has_private_segment
+
+    full = path.expanduser().resolve()
+    if root is not None:
+        try:
+            return has_private_segment(full.parent.relative_to(root.resolve()))
+        except ValueError:
+            pass
+    return is_private_path(full)
+
+
+# Private data read in this session ------------------------------------------------------
+
+_private_reads: list[str] = []
+
+
+def note_private_read(name: str) -> None:
+    """Remember that this session read private data, named as the caller gave it."""
+    if name not in _private_reads:
+        _private_reads.append(name)
+
+
+def private_reads() -> list[str]:
+    """The private data this session has read, in order."""
+    return list(_private_reads)
+
+
+def forget_private_reads() -> None:
+    _private_reads.clear()
+
+
+def private_read_note() -> str:
+    """In a sensitive project that read private data this session, the names read, as
+    "inputs.x, inputs/y.csv, and 2 more"; otherwise ""."""
+    if not _private_reads or not project_is_sensitive():
+        return ""
+    shown = ", ".join(_private_reads[:3])
+    if len(_private_reads) > 3:
+        shown += f", and {len(_private_reads) - 3} more"
+    return shown
+
+
+def warn_public_save(path: Path, public: bool) -> None:
+    """Warn when a public output is saved in a sensitive project after private data was
+    read in this session: the output may have been made from it."""
+    shown = private_read_note() if public else ""
+    if not shown:
+        return
+    warnings.warn(
+        f"Saved {path.name} as public, and this session read private data ({shown}). "
+        "Check that it holds only aggregated or de-identified results before sharing it.",
+        FrameworkWarning,
+        stacklevel=3,
+    )
 
 
 def include_private_arg(include_private: bool, allow_private: bool | None) -> bool:

@@ -309,3 +309,58 @@ def test_save_notebook_leaves_an_executed_ipynb_unchanged(
     saved = fw.save_notebook(notebook, quarto_args=["--execute"])
     assert "secret" in saved.read_text(encoding="utf-8")
     assert notebook.read_text(encoding="utf-8") == original
+
+
+def test_public_saves_warn_after_private_reads_in_a_sensitive_project(project: Path) -> None:
+    # Ports 2026-11-07: a table computed from private inputs saved to outputs/public with
+    # no warning
+    (project / "settings.yml").write_text(
+        "default:\n  security:\n    sensitive: true\n"
+        "  data:\n    inputs:\n      flagged: {path: inputs/raw/flagged.csv, private: true}\n",
+        encoding="utf-8",
+    )
+    for folder, name in (("inputs/private/raw", "ids.csv"), ("inputs/raw", "flagged.csv")):
+        (project / folder).mkdir(parents=True)
+        (project / folder / name).write_text("id\n1\n", encoding="utf-8")
+    (project / "inputs/public").mkdir(parents=True)
+    (project / "inputs/public/rates.csv").write_text("r\n1\n", encoding="utf-8")
+
+    fw.data_read("inputs/public/rates.csv")
+    fw.save_table(FRAME, "before", public=True)  # No warning: nothing private was read
+    fw.data_read("inputs/private/raw/ids.csv")
+    fw.save_table(FRAME, "private_detail")  # Private saves never warn
+    with pytest.warns(fw.FrameworkWarning, match=r"this session read private data \("):
+        fw.save_table(FRAME, "summary", public=True)
+    fw.data_read("inputs.flagged")
+    with pytest.warns(fw.FrameworkWarning, match="inputs/private/raw/ids.csv, inputs.flagged"):
+        fw.save_model({"a": 1}, "fit", public=True)
+    figure, _ = plt.subplots()
+    with pytest.warns(fw.FrameworkWarning, match="figure.png as public"):
+        fw.save_figure(figure, "figure", public=True, dpi=10)
+    plt.close("all")
+
+
+def test_public_saves_do_not_warn_in_other_projects(project: Path) -> None:
+    (project / "inputs/private").mkdir(parents=True)
+    (project / "inputs/private/ids.csv").write_text("id\n1\n", encoding="utf-8")
+    fw.data_read("inputs/private/ids.csv")
+    fw.save_table(FRAME, "summary", public=True)
+
+
+def test_a_public_model_with_rows_after_private_reads_warns_once(project: Path) -> None:
+    # The data rows warning and the private-session warning share one message
+    import warnings
+
+    (project / "settings.yml").write_text(
+        "default:\n  security:\n    sensitive: true\n", encoding="utf-8"
+    )
+    (project / "inputs/private").mkdir(parents=True)
+    (project / "inputs/private/ids.csv").write_text("id\n1\n", encoding="utf-8")
+    fw.data_read("inputs/private/ids.csv")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        fw.save_model(pd.DataFrame({"id": [1, 2]}), "rows", public=True)
+    messages = [str(w.message) for w in caught]
+    assert len(messages) == 1
+    assert "holds 2 data rows" in messages[0]
+    assert "also read private data (inputs/private/ids.csv)" in messages[0]

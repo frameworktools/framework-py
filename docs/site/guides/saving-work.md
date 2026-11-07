@@ -122,6 +122,14 @@ fw.save_table(aggregated, "summary", public=True)
 
 Private folders are ignored by git and refused by the publishing functions. Save to a public folder only after the data has been aggregated or de-identified.
 
+Framework doesn't track which data each result was made from, but it does remember whether this Python session has read private data with [data_read()](ref:data_read): a file in a folder named like `private`, `confidential`, or `sensitive`, or a catalog entry marked `private: true`. After such a read, [save_table()](ref:save_table), [save_figure()](ref:save_figure), and [save_model()](ref:save_model) with `public=True` warn, naming what was read:
+
+```text
+FrameworkWarning: Saved summary.csv as public, and this session read private data (inputs.private.raw.visits). Check that it holds only aggregated or de-identified results before sharing it.
+```
+
+The save still happens. The warning is a reminder to check the result, not a judgment of it, and it lasts until Python restarts.
+
 In other project types, every output of a kind goes to the one folder for that kind. The `public` flag is still recorded in `framework.db`, so [result_list()](ref:result_list) can filter on it.
 
 ## Output folders

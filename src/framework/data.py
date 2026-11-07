@@ -24,6 +24,7 @@ import pandas as pd
 from framework import _csv, _tabular, _yaml, db
 from framework._log import inform
 from framework._paths import in_root, relative_to_root
+from framework._private import is_private_data, note_private_read
 from framework.catalog import DataInfo, catalog_locate, data_info
 from framework.errors import (
     DataChangedWarning,
@@ -328,6 +329,11 @@ def _missing_file(path: str, info: DataInfo, *, by_name: bool) -> DataNotFoundEr
     return DataNotFoundError(label + detail)
 
 
+def _root_or_none() -> Path | None:
+    found = find_settings_file()
+    return found.parent if found is not None else None
+
+
 def data_read(
     path: str | Path,
     delim: str | None = None,
@@ -421,6 +427,8 @@ def data_read(
     data = read_file(info, delim, keep_attributes, r_args, kwargs)
     if info.description:
         inform(f"Note: {path}: {info.description}")
+    if info.private or is_private_data(info.path, _root_or_none()):
+        note_private_read(path)
     return data
 
 

@@ -20,9 +20,10 @@ def isolated_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[N
     scaffold() loads .env files into os.environ, so the whole environment is
     restored after each test, along with what the loader remembers it set.
     """
-    from framework import dotenv
+    from framework import _private, dotenv
 
     dotenv._loaded.clear()
+    _private.forget_private_reads()
     saved = dict(os.environ)
     home = tmp_path_factory.mktemp("home")
     for name in (
