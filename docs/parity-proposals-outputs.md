@@ -64,3 +64,16 @@ manifest agree.
 
 R: normalize in R's `publish_data()` slug helper before the message (`.artifact_slug()` or
 its equivalent), and pass the normalized slug on.
+
+## B11. `publish_dir()` keeps the folder part of `dest` in the slug
+
+Rule: for folder, GitHub, and Cloud destinations, `publish_dir()`'s slug is `dest` (default:
+the folder's name) with each `/` turned into `-`, then normalized like every slug. Unlike
+`publish_data()`, no extension is removed, since `dest` names a folder: `"reports/v1.2"`
+becomes `reports-v1-2`. `publish_dir(dir, dest = "figures/meeting")` publishes as
+`figures-meeting`, not `meeting`. It reports `Publishing <dest> as <slug>`, as
+`publish_data()` does. Plain bucket uploads are unchanged: files go under `dest`.
+
+R: `publish_dir()` in `R/publish.R` uses `basename(sub("/+$", "", dest))` (and
+`basename(dest)` for the bundle), so R drops the folder too. Replace both with the same
+`/`-to-`-` join and normalization, and add the message.

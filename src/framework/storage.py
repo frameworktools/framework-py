@@ -917,6 +917,16 @@ def _data_slug(dest: str) -> str:
     return artifact_slug("-".join(part for part in path.parts if part not in ("", ".", "..", "/")))
 
 
+def _dir_slug(dest: str) -> str:
+    """publish_dir()'s slug: ``dest`` with each ``/`` as ``-``, normalized, as
+    publish_data() keeps the folder part. A folder name keeps its dots as hyphens:
+    ``"reports/v1.2"`` becomes ``"reports-v1-2"``."""
+    from framework.publish_bundle import artifact_slug
+
+    parts = PurePosixPath(dest.replace("\\", "/")).parts
+    return artifact_slug("-".join(part for part in parts if part not in ("", ".", "..", "/")))
+
+
 def publish_data(
     data: pd.DataFrame | str | Path,
     dest: str,
@@ -1048,8 +1058,9 @@ def publish_dir(
     Like ``publish()``, it follows ``to``, then ``publish.default``. An S3 destination, an
     explicit ``connection``, or a project without ``publish.default`` gets a file-by-file
     upload under ``dest``. Folder, GitHub, and Cloud destinations publish the folder (only
-    the files ``pattern`` and ``recursive`` select) with ``publish()``, with the last part
-    of ``dest`` (or the folder's name) as the slug.
+    the files ``pattern`` and ``recursive`` select) with ``publish()``. The slug is ``dest``
+    (default: the folder's name) with each ``/`` turned into ``-``, as in ``publish_data()``:
+    ``dest="figures/meeting"`` publishes as ``figures-meeting``.
 
     Args:
         dir: The folder to upload.
@@ -1093,7 +1104,8 @@ def publish_dir(
         raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
     dest = dest or folder.resolve().name
     if selected is not None:
-        slug = Path(dest.rstrip("/")).name
+        slug = _dir_slug(dest)
+        inform(f"Publishing {dest} as {slug}")
         if pattern is None and recursive:
             published = publish(
                 folder,

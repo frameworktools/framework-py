@@ -612,3 +612,23 @@ def test_data_message_shows_the_normalized_slug(
     url = fw.publish_data(pd.DataFrame({"x": [1]}), "tables/BP_by_visit.csv")
     assert url == "https://files.example.org/r/tables-bp-by-visit/"
     assert "Publishing tables/BP_by_visit.csv as tables-bp-by-visit" in caplog.text
+
+
+def test_dir_slug_keeps_the_folder_part(
+    project: Path, s3: FakeS3, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Ports 2026-11-07: publish_dir(dest="figures/meeting") published as "meeting", unlike
+    # publish_data()
+    _with_site(project)
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    folder = project / "figures"
+    folder.mkdir()
+    (folder / "a.png").write_bytes(b"png")
+    caplog.set_level("INFO", logger="framework")
+    assert fw.publish_dir(folder, dest="figures/Meeting_1") == [
+        "https://files.example.org/r/figures-meeting-1/"
+    ]
+    assert "Publishing figures/Meeting_1 as figures-meeting-1" in caplog.text
+    assert fw.publish_dir(folder, dest="figures/Meeting_1", pattern="png") == [
+        "https://files.example.org/r/figures-meeting-1/"
+    ]

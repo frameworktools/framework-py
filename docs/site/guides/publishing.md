@@ -157,7 +157,7 @@ fw.publish_list()
 fw.publish_list(prefix="reports")
 ```
 
-With a folder, GitHub, or Cloud destination, `publish_data()` and `publish_dir()` publish through `publish()`, and `publish_list()` lists a folder destination's artifacts, one row per slug. `publish_data()` uses `dest` without its extension as the slug, with each `/` turned into `-`, and a DataFrame becomes the same typed table `publish()` makes of it. `publish_dir()` uses the last part of `dest`, or the folder's name. Both take a `title` and `description`, as `publish()` does:
+With a folder, GitHub, or Cloud destination, `publish_data()` and `publish_dir()` publish through `publish()`, and `publish_list()` lists a folder destination's artifacts, one row per slug. `publish_data()` uses `dest` without its extension as the slug, with each `/` turned into `-`, and a DataFrame becomes the same typed table `publish()` makes of it. `publish_dir()` does the same with `dest`, or the folder's name, so `dest="figures/2026-q4"` publishes as `figures-2026-q4`. Slugs are lowercase, with each other run of characters turned into `-`, and the message shows the slug the artifact gets. Both take a `title` and `description`, as `publish()` does:
 
 ```python
 fw.publish_data(results, "tables/results.csv", to="site")  # slug "tables-results"
