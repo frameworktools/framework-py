@@ -368,13 +368,48 @@ def test_project_add_directory(r_project: Path) -> None:
         fw.project_add_directory(r_project, "x", "X", "../outside")
 
 
-def test_quarto_regenerate_backs_up(r_project: Path) -> None:
-    (r_project / "_quarto.yml").write_text("# edited\n", encoding="utf-8")
+def test_quarto_regenerate_keeps_custom_config(r_project: Path) -> None:
+    custom = "# edited\nformat:\n  revealjs:\n    theme: [default, assets/jhu.scss]\n"
+    (r_project / "_quarto.yml").write_text(custom, encoding="utf-8")
+    # The per-folder files of an older project stay, and so does everything else
     result = fw.quarto_regenerate(r_project)
+    assert result.kept == ["notebooks/_quarto.yml", "docs/_quarto.yml"]
+    assert result.regenerated == [] and result.backed_up == []
+    assert (r_project / "_quarto.yml").read_text(encoding="utf-8") == custom
+
+    # overwrite=True replaces the files and folds the per-folder ones in, backed up first
+    result = fw.quarto_regenerate(r_project, overwrite=True)
+    assert result.removed == ["notebooks/_quarto.yml", "docs/_quarto.yml"]
     assert "_quarto.yml" in result.backed_up
     assert result.backup_location is not None
-    assert (result.backup_location / "_quarto.yml").read_text(encoding="utf-8") == "# edited\n"
+    assert result.backup_location.parent == r_project / ".framework/backups"
+    assert (result.backup_location / "_quarto.yml").read_text(encoding="utf-8") == custom
+    assert (result.backup_location / "notebooks/_quarto.yml").is_file()
+    assert not (r_project / "notebooks/_quarto.yml").exists()
     assert "type: default" in (r_project / "_quarto.yml").read_text(encoding="utf-8")
+    assert "backups/" in (r_project / ".framework/.gitignore").read_text(encoding="utf-8")
+
+
+def test_quarto_regenerate_adds_only_missing_keys(project: Path) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n  project_type: presentation\n", encoding="utf-8"
+    )
+    custom = "# mine\nproject:\n  title: Talk\nexecute:\n  eval: false\n"
+    (project / "_quarto.yml").write_text(custom, encoding="utf-8")
+    dry = fw.quarto_regenerate(project, dry_run=True)
+    assert dry.regenerated == [project / "_quarto.yml"]
+    assert (project / "_quarto.yml").read_text(encoding="utf-8") == custom
+    fw.quarto_regenerate(project)
+    text = (project / "_quarto.yml").read_text(encoding="utf-8")
+    assert text.startswith("# mine\nproject:\n  type: default\n  title: Talk\nexecute:\n")
+    assert "format:\n  revealjs:" in text
+    assert fw.quarto_regenerate(project).regenerated == []
+
+
+def test_quarto_regenerate_without_backup_never_removes(r_project: Path) -> None:
+    result = fw.quarto_regenerate(r_project, backup=False, overwrite=True)
+    assert result.removed == []
+    assert (r_project / "notebooks/_quarto.yml").is_file()
 
 
 # The command line -------------------------------------------------------------------
