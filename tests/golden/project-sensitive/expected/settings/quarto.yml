@@ -19,4 +19,4 @@ quarto:
     progress: true
     center: true
     highlight_style: github
-  render_dir: outputs/public/docs
+  render_dir: outputs/private/notebooks

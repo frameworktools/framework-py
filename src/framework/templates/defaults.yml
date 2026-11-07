@@ -114,7 +114,7 @@ types:
       scratch: scratch
       logs: logs
     render_dirs: {notebooks: outputs/private/notebooks, docs: outputs/private/docs}
-    render_dir: outputs/public/docs
+    render_dir: outputs/private/notebooks
   course:
     directories:
       data: data

@@ -183,7 +183,7 @@ fw.make_notebook("assignment-01", dir="assignments")
 fw.make_notebook("syllabus", dir="course_docs")
 ```
 
-The course `.gitignore` adds a rule for `/slides/_rendered/`. Rendered output in `rendered/` is not ignored, so you can commit it to share it with students, or add a rule to keep it out of git. Student data belongs in a folder named `private`, which every template ignores.
+Quarto renders a course into `rendered/`, and the course `.gitignore` ignores it. Publish rendered files with `publish()`, or remove that line to commit them. Student data belongs in a folder named `private`, which every template ignores.
 
 ## Presentation
 
