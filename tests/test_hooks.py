@@ -290,3 +290,21 @@ def test_nested_project_refuses_the_outer_repository(
     assert not (outer / ".git/hooks/pre-commit").exists()
     assert not fw.git_hooks_list().attrs["installed"]
     assert not fw.git_hooks_uninstall()
+
+
+def test_enable_in_a_nested_project_changes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    os.environ.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    outer = tmp_path / "outer"
+    project = outer / "inner"
+    project.mkdir(parents=True)
+    git(outer, "init", "-q")
+    settings = project / "settings.yml"
+    before = "default:\n  git:\n    hooks:\n      check_notebook_outputs: false\n"
+    settings.write_text(before, encoding="utf-8")
+    monkeypatch.chdir(project)
+    with pytest.raises(fw.FrameworkError, match="inside the git repository at"):
+        fw.git_hooks_enable("check_notebook_outputs")
+    assert settings.read_text(encoding="utf-8") == before
+    assert "Enabled" not in capsys.readouterr().err

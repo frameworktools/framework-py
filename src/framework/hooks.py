@@ -278,10 +278,14 @@ def git_hooks_enable(
     Raises:
         ValueError: When ``hook_name`` is not a known check, including the removed
             "ai_sync".
-        FrameworkError: When the settings file is not found.
+        FrameworkError: When the settings file is not found, or the project is inside a git
+            repository whose top is a folder above it. The settings are left unchanged then.
     """
     name = _hook_name(hook_name)
     path = _settings_path(settings_file)
+    top = outer_repository(path.parent)
+    if top is not None:
+        raise _nested_error(path.parent, top)
     _set_hook_setting(path, name, True)
     _say(verbose, f"✓ Enabled {name} hook")
     return git_hooks_install(path, force=False, verbose=verbose)
