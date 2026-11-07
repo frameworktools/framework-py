@@ -145,6 +145,8 @@ Names are saved as Parquet by default. Pass `type="csv"` for CSV, with `delimite
 fw.data_save(clean, "inputs.final.analysis", type="csv")
 ```
 
+CSV files are written as R's readr writes them: whole numbers without `.0`, `TRUE` and `FALSE` for logicals, `NA` for missing values, date-times in UTC as `2020-01-02T03:04:05Z`, and `\n` line endings. The same data saved from R and from Python gives the same file, and the same hash.
+
 When the target is a path with a `/`, ending in `.csv` or `.parquet`, the file is written there and its hash is recorded under its path from the project root, however the path was given. A relative path starts at the project root, wherever Python runs, so a notebook in `notebooks/` writes to the same place as a script in the root. [data_read()](ref:data_read) and [data_add()](ref:data_add) look for a relative path from the project root first, then from the current folder. A path does not create a catalog entry. Register it afterward with [data_add()](ref:data_add) to read it by name.
 
 ```python

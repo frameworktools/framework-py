@@ -141,7 +141,7 @@ note = "`.rds` raises `UnsupportedFormatError`. A relative file path is looked f
 [functions.data_save]
 python = "data_save"
 status = "ported"
-note = "CSV and Parquet. A relative file path starts at the project root, and a dot name ending in `.csv` or `.parquet` is a catalog name saved as that type (R writes both relative to the working directory). A file saved by path is recorded under its path from the root"
+note = "CSV and Parquet. A relative file path starts at the project root, and a dot name ending in `.csv` or `.parquet` is a catalog name saved as that type (R writes both relative to the working directory). A file saved by path is recorded under its path from the root. CSV is written in readr's form (`1` not `1.0`, `TRUE`, `NA`)"
 
 [functions.data_verify]
 python = "data_verify"

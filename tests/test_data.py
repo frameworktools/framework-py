@@ -515,3 +515,70 @@ def test_a_file_only_in_the_current_folder_is_still_found(
     (data_project / "notebooks/local/x.csv").write_text("a\n1\n", encoding="utf-8")
     monkeypatch.chdir(data_project / "notebooks")
     assert fw.data_info("local/x.csv").path == (data_project / "notebooks/local/x.csv").resolve()
+
+
+def test_csv_saves_in_readr_form(data_project: Path) -> None:
+    frame = pd.DataFrame(
+        {
+            "n": [1261940.0, 0.5, None],
+            "flag": [True, False, True],
+            "maybe": pd.array([True, None, False], dtype="boolean"),
+            "count": pd.array([1, None, 3], dtype="Int64"),
+            "label": ["a", None, "x,y"],
+        }
+    )
+    fw.data_save(frame, "inputs/raw/table.csv")
+    assert (data_project / "inputs/raw/table.csv").read_text(encoding="utf-8") == (
+        "n,flag,maybe,count,label\n"
+        "1261940,TRUE,TRUE,1,a\n"
+        "0.5,FALSE,NA,NA,NA\n"
+        'NA,TRUE,FALSE,3,"x,y"\n'
+    )
+    back = fw.data_read("inputs/raw/table.csv")
+    assert back["n"].tolist()[:2] == [1261940, 0.5]
+    assert back["label"].isna().tolist() == [False, True, False]
+
+
+@pytest.mark.parametrize(
+    ("value", "written"),
+    [
+        (1.0, "1"),
+        (100000.0, "100000"),
+        (1e14, "100000000000000"),
+        (1e15, "1e15"),
+        (1.5e15, "15e14"),
+        (2.0**60, "1152921504606847e3"),
+        (9007199254740992.0, "9007199254740992"),
+        (0.001, "0.001"),
+        (1e-4, "1e-4"),
+        (0.000123, "1.23e-4"),
+        (1234567890123456.5, "1234567890123456.5"),
+        (2 / 3, "0.6666666666666666"),
+        (-1e5, "-100000"),
+        (-0.0, "-0"),
+        (float("inf"), "Inf"),
+        (float("nan"), "NA"),
+    ],
+)
+def test_doubles_are_written_as_readr_writes_them(value: float, written: str) -> None:
+    # Each expected string is what readr 2.2.0's write_delim() writes for the value
+    from framework._csv import format_double
+
+    assert format_double(value) == written
+
+
+def test_dates_and_times_are_written_as_readr_writes_them() -> None:
+    import datetime as dt
+
+    from framework._csv import format_like_r
+
+    frame = pd.DataFrame(
+        {
+            "when": pd.to_datetime(["2020-01-02 03:04:05", None]).tz_localize("America/New_York"),
+            "day": [dt.date(2020, 1, 2), None],
+        }
+    )
+    assert format_like_r(frame).to_dict("list") == {
+        "when": ["2020-01-02T08:04:05Z", "NA"],
+        "day": ["2020-01-02", "NA"],
+    }

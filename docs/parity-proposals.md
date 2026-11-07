@@ -80,3 +80,17 @@ the same `Looked for:` line.
 
 R today: the message is `File not found: <spec$path>`, with whatever path `data_info()`
 built, which may be absolute or relative to the working directory.
+
+## data_save(): CSV in readr's form [B8]
+
+R needs no change: it writes CSV with `readr::write_delim()`. Python now writes the same
+bytes for the same data (checked against readr 2.2.0): doubles in readr's shortest form
+(`1261940`, `0.5`, `1e15`, `15e14`, `1.5e-4`, `Inf`), `TRUE`/`FALSE`, `NA` for every
+missing value (and for NaN), date-times in UTC as `2020-01-02T03:04:05Z`, dates as
+`2020-01-02`, quotes only where needed, and `\n` line endings.
+
+One deliberate difference: readr drops fractional seconds from date-times; Python keeps
+them (`03:04:05.5Z`), which readr reads back. R could keep them too.
+
+The writer is `framework._csv.write_csv(frame, path, sep=",")` in framework-py, for
+`save_table()` and any other CSV that should match R.

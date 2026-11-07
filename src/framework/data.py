@@ -20,7 +20,7 @@ from typing import Any
 
 import pandas as pd
 
-from framework import _tabular, _yaml, db
+from framework import _csv, _tabular, _yaml, db
 from framework._log import inform
 from framework._paths import in_root, relative_to_root
 from framework.catalog import DataInfo, catalog_locate, data_info
@@ -504,8 +504,9 @@ def data_save(
         inform(f"Created directory: {folder}")
 
     if file_type == "csv":
-        # "\n" on every platform, as readr writes, so hashes match R's.
-        data.to_csv(target, sep=_separator(delimiter), index=False, lineterminator="\n")
+        # In readr's form (1 not 1.0, TRUE, NA, "\n" line endings), so R reads the same
+        # values and the same data hashes the same in both languages
+        _csv.write_csv(data, target, sep=_separator(delimiter))
     else:
         data.to_parquet(target, index=False)
     root = project_root()
