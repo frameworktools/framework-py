@@ -80,7 +80,7 @@ status = "ported"
 [functions.cache_remember]
 python = "cache_remember"
 status = "ported"
-note = "Takes a callable, and works as a decorator"
+note = "Takes a callable, and works as a decorator. `depends_on=` is proposed for R in docs/parity-proposals.md"
 
 [functions.capture_output]
 python = "capture_output"

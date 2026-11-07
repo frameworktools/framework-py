@@ -163,3 +163,90 @@ def test_flush_removes_values_stored_with_file(cache_project: Path) -> None:
     assert not custom.exists()
     assert other.exists()
     assert fw.cache_list().empty
+
+
+@pytest.fixture
+def deps_project(cache_project: Path) -> Path:
+    (cache_project / "settings.yml").write_text(
+        "default:\n"
+        "  directories:\n    cache: outputs/private/cache\n"
+        "  data:\n    inputs:\n      raw:\n        survey: inputs/raw/survey.csv\n",
+        encoding="utf-8",
+    )
+    (cache_project / "inputs/raw").mkdir(parents=True)
+    (cache_project / "inputs/raw/survey.csv").write_text("a\n1\n", encoding="utf-8")
+    (cache_project / "functions").mkdir()
+    (cache_project / "functions/fit.py").write_text("K = 1\n", encoding="utf-8")
+    return cache_project
+
+
+def test_depends_on_recomputes_when_a_dependency_changes(deps_project: Path) -> None:
+    calls: list[int] = []
+
+    def fit() -> int:
+        calls.append(1)
+        return len(calls)
+
+    deps = ["inputs.raw.survey", "functions/fit.py", "functions", {"cutoff": 0}]
+    assert fw.cache_remember("fit", fit, depends_on=deps) == 1
+    assert fw.cache_remember("fit", fit, depends_on=deps) == 1
+
+    (deps_project / "inputs/raw/survey.csv").write_text("a\n2\n", encoding="utf-8")
+    assert fw.cache_remember("fit", fit, depends_on=deps) == 2
+    (deps_project / "functions/fit.py").write_text("K = 2\n", encoding="utf-8")
+    assert fw.cache_remember("fit", fit, depends_on=deps) == 3
+    (deps_project / "functions/new.py").write_text("", encoding="utf-8")
+    assert fw.cache_remember("fit", fit, depends_on=deps) == 4
+    assert fw.cache_remember("fit", fit, depends_on=deps) == 4
+    # A changed value, and a changed list, are new keys too
+    assert fw.cache_remember("fit", fit, depends_on=[*deps[:3], {"cutoff": 1}]) == 5
+    assert fw.cache_remember("fit", fit, depends_on=deps[:2]) == 6
+    # Order does not matter
+    assert fw.cache_remember("fit", fit, depends_on=list(reversed(deps[:2]))) == 6
+
+
+def test_an_entry_without_dependencies_is_out_of_date_once_they_are_given(
+    deps_project: Path,
+) -> None:
+    fw.cache_remember("plain", lambda: "old")
+    assert fw.cache_remember("plain", lambda: "new", depends_on="inputs.raw.survey") == "new"
+
+
+def test_reading_an_entry_older_than_its_dependencies_warns(deps_project: Path) -> None:
+    fw.cache_remember("model", lambda: "v1", depends_on=["inputs.raw.survey", {"k": 4}])
+    assert fw.cache_get("model") == "v1"
+
+    (deps_project / "inputs/raw/survey.csv").write_text("a\n3\n", encoding="utf-8")
+    with pytest.warns(fw.CacheWarning, match="older than its dependencies: inputs.raw.survey"):
+        assert fw.cache_get("model", default="none") == "none"
+    with pytest.warns(fw.CacheWarning, match="older than its dependencies"):
+        assert fw.cache_remember("model", lambda: "v2") == "v2"
+    # The recomputed value kept its dependencies, now up to date
+    assert fw.cache_get("model") == "v2"
+    (deps_project / "inputs/raw/survey.csv").write_text("a\n4\n", encoding="utf-8")
+    with pytest.warns(fw.CacheWarning):
+        fw.cache_get("model")
+
+
+def test_depends_on_strings_must_resolve(deps_project: Path) -> None:
+    with pytest.raises(fw.FrameworkError, match="not a catalog name, file, or folder"):
+        fw.cache_remember("x", lambda: 1, depends_on="inputs.raw.survy")
+    with pytest.raises(fw.FrameworkError, match="not a catalog name, file, or folder"):
+        fw.cache("x", 1, depends_on="functions/missing.py")
+
+
+def test_dependencies_go_with_their_entry(deps_project: Path) -> None:
+    from framework import _depends
+
+    fw.cache("a", 1, depends_on="inputs.raw.survey")
+    fw.cache("b", 2, depends_on=["functions", pd.DataFrame({"x": [1]})])
+    recorded = _depends.recorded("b")
+    assert recorded is not None
+    assert [(d.kind, d.ref) for d in recorded[1]] == [("folder", "functions"), ("value", "value 2")]
+    fw.cache("a", 3)
+    assert _depends.recorded("a") is None
+    fw.cache_forget("b")
+    assert _depends.recorded("b") is None
+    fw.cache("c", 1, depends_on="inputs.raw.survey")
+    fw.cache_flush()
+    assert _depends.recorded("c") is None

@@ -244,3 +244,57 @@ Depends on: the `check_sensitive_dirs` false positive on Framework's own
 `.claude/skills/framework-sensitive-data` folder (B3, in progress separately). Until that
 lands, every commit in a new sensitive project warns about that folder, and asks at a
 terminal.
+
+## cache_remember(depends_on = NULL), cache(depends_on = NULL) [D4]
+
+```r
+cache_remember(name, expr, file = NULL, expire_after = NULL, refresh = FALSE,
+               expire = NULL, depends_on = NULL)
+cache(name, value, file = NULL, expire_after = NULL, depends_on = NULL)
+```
+
+`depends_on` is one item or a list of items. Each item becomes a dependency with a
+`kind`, a `ref`, and a `hash` (lowercase hex SHA-256):
+
+| Item | kind | ref | hash |
+|------|------|-----|------|
+| A string naming an existing folder (from the project root, then the working directory) | `folder` | the string as given | see below |
+| A string naming an existing file (same lookup) | `file` | the string as given | the file's SHA-256, as data integrity computes it |
+| A string without `/` that is a catalog name | `data` | the name | SHA-256 of the catalog file |
+| Anything that is not a string | `value` | `value <n>`, its 1-based position in the list | a hash of the value (language-local) |
+
+Paths are checked before catalog names. A string that resolves to none of these is an
+error: `depends_on: '<s>' is not a catalog name, file, or folder. ...`. A catalog name
+whose file is missing is an error. To hash a string value, wrap it (`list(rule = ">= 0")`
+in R, `{"rule": ">= 0"}` in Python). In R, a character vector of length > 1 is several
+references.
+
+Folder hash: SHA-256 of the concatenation, sorted bytewise, of one line per file below
+the folder, recursively: `<path relative to the folder, / separators>\t<file SHA-256>\n`.
+Files and folders whose names start with `.` and folders named `__pycache__` are
+skipped.
+
+Entry key: SHA-256 of the concatenation, sorted bytewise, of
+`<kind>\t<ref>\t<hash>\n` for every dependency. Order in `depends_on` does not matter.
+
+Storage: framework.db's `meta` table, key `cache_depends:<name>`, value JSON
+`{"key": "<entry key>", "dependencies": [{"kind": ..., "ref": ..., "hash": ...}, ...]}`.
+No schema change. `cache()` and a recomputing `cache_remember()` write it;
+`cache()` without `depends_on` deletes it; `cache_forget()` deletes it, and
+`cache_flush()` deletes every `cache_depends:%` row.
+
+Lookup:
+
+1. `depends_on` given: hash the dependencies before evaluating `expr`. When the entry
+   has no record or its key differs, it is a miss: message
+   `Cache '<name>' is out of date: <refs that differ> changed`, then compute and store
+   with the new dependencies.
+2. `depends_on` not given, and the entry has a record (also `cache_get()`): hash its
+   `data`, `file`, and `folder` dependencies again (values keep their stored hash). If
+   any differs, or no longer resolves, warn
+   `Cache '<name>' is older than its dependencies: <refs> changed since it was stored, so
+   it is treated as a miss. Pass depends_on= to cache_remember() to recompute it without
+   this warning.` and treat it as a miss. `cache_remember()` then stores the recomputed
+   value with the re-hashed dependencies, so tracking continues.
+
+Expiry, `refresh`, and the file hash check work as before and come first.

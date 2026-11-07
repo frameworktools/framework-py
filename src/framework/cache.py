@@ -23,7 +23,7 @@ from typing import Any, TypeVar, overload
 
 import pandas as pd
 
-from framework import db
+from framework import _depends, db
 from framework._log import inform
 from framework._paths import in_root, relative_to_root
 from framework.errors import CacheWarning, FrameworkError
@@ -111,10 +111,15 @@ def _remove(name: str, file: str | Path | None) -> None:
         path.unlink(missing_ok=True)
     with db.connect() as connection:
         connection.execute("DELETE FROM cache WHERE name = ?", (name,))
+    _depends.forget(name)
 
 
 def cache(
-    name: str, value: T, file: str | Path | None = None, expire_after: float | str | None = None
+    name: str,
+    value: T,
+    file: str | Path | None = None,
+    expire_after: float | str | None = None,
+    depends_on: Any = None,
 ) -> T:
     """Store a value in the cache and return it.
 
@@ -125,7 +130,21 @@ def cache(
         expire_after: Hours until the value expires, or a string like
             ``"30 minutes"`` or ``"2 days"``. Default: ``options.data.cache_default_expire`` in the
             settings, else never.
+        depends_on: What the value was computed from, recorded with it: a catalog name, a
+            file or folder path, any other value, or a list of these. See
+            ``cache_remember()``.
     """
+    dependencies = _depends.resolve(depends_on) if depends_on is not None else None
+    return _store(name, value, file, expire_after, dependencies)
+
+
+def _store(
+    name: str,
+    value: T,
+    file: str | Path | None,
+    expire_after: float | str | None,
+    dependencies: list[_depends.Dependency] | None,
+) -> T:
     is_frame = isinstance(value, pd.DataFrame)
     path = (
         Path(file) if file is not None else cache_dir() / f"{name}{_FORMATS[0 if is_frame else 1]}"
@@ -158,13 +177,25 @@ def cache(
                 "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (name, *record, now, now),
             )
+    _depends.record(name, dependencies)
     return value
 
 
 _MISSING: Any = object()
 
 
-def _lookup(name: str, file: str | Path | None) -> Any:
+def _lookup(
+    name: str,
+    file: str | Path | None,
+    dependencies: list[_depends.Dependency] | None = None,
+    carried: list[list[_depends.Dependency]] | None = None,
+) -> Any:
+    """The cached value, or ``_MISSING``.
+
+    With ``dependencies``, an entry recorded with a different key is out of date. Without
+    them, an entry's recorded dependencies are hashed again, and a change is a miss with a
+    warning; the fresh list is appended to ``carried`` so the recomputed value keeps it.
+    """
     row = _row(name)
     if row is None:
         inform(f"Cache '{name}' not found")
@@ -195,6 +226,26 @@ def _lookup(name: str, file: str | Path | None) -> Any:
         )
         return _MISSING
 
+    stored = _depends.recorded(name)
+    if dependencies is not None:
+        if stored is None or stored[0] != _depends.key(dependencies):
+            changed = _depends.changed_between(stored[1] if stored else [], dependencies)
+            inform(f"Cache '{name}' is out of date: {', '.join(changed)} changed")
+            return _MISSING
+    elif stored is not None:
+        fresh, changed = _depends.recheck(stored[1])
+        if carried is not None:
+            carried.append(fresh)
+        if changed:
+            warnings.warn(
+                f"Cache '{name}' is older than its dependencies: {', '.join(changed)} changed "
+                "since it was stored, so it is treated as a miss. Pass depends_on= to "
+                "cache_remember() to recompute it without this warning.",
+                CacheWarning,
+                stacklevel=3,
+            )
+            return _MISSING
+
     try:
         if path.suffix == ".parquet":
             value = pd.read_parquet(path)
@@ -216,7 +267,8 @@ def cache_get(name: str, file: str | Path | None = None, default: Any = None) ->
     """A cached value, or ``default`` when it is missing, expired, or unreadable.
 
     An expired value is removed. A value saved by R (``.rds``) or one whose file hash no longer
-    matches its record counts as missing.
+    matches its record counts as missing. So does a value stored with ``depends_on`` when a
+    file or catalog entry it depends on has changed since, with a ``CacheWarning``.
 
     Args:
         name: The cache name.
@@ -238,6 +290,7 @@ def cache_remember(
     file: str | Path | None = ...,
     expire_after: float | str | None = ...,
     refresh: bool | Callable[[], bool] = ...,
+    depends_on: Any = ...,
 ) -> T: ...
 
 
@@ -249,6 +302,7 @@ def cache_remember(
     file: str | Path | None = ...,
     expire_after: float | str | None = ...,
     refresh: bool | Callable[[], bool] = ...,
+    depends_on: Any = ...,
 ) -> Callable[[Callable[[], T]], Callable[[], T]]: ...
 
 
@@ -259,6 +313,7 @@ def cache_remember(
     file: str | Path | None = None,
     expire_after: float | str | None = None,
     refresh: bool | Callable[[], bool] = False,
+    depends_on: Any = None,
 ) -> T | Callable[[Callable[[], T]], Callable[[], T]]:
     """Return the cached value, or compute it, cache it, and return it.
 
@@ -272,6 +327,15 @@ def cache_remember(
         def survey_clean():
             return fw.data_read("inputs.raw.survey").dropna()
 
+    ``depends_on`` ties the value to what it is computed from, so it is recomputed when they
+    change::
+
+        fit = fw.cache_remember(
+            "lpa_fit",
+            lambda: fit_lpa(fw.data_read("inputs.final.cohort"), k=4),
+            depends_on=["inputs.final.cohort", "functions/lpa.py", {"k": 4}],
+        )
+
     Args:
         name: The cache name.
         compute: Computes the value on a miss.
@@ -279,6 +343,15 @@ def cache_remember(
         expire_after: Hours until the value expires, or a string like ``"30 minutes"`` or
             ``"2 days"``.
         refresh: Recompute even when cached. A function is called to decide.
+        depends_on: What the value is computed from. Their hashes are part of the entry's
+            key, so the value is recomputed when any of them changes. One item or a list:
+            a catalog name (``"inputs.raw.survey"``, hashed as its file), a file or folder
+            path from the project root (``"functions/fit.py"``, ``"functions"``), or any
+            other value, such as a parameter (``{"cutoff": 0}``). A string must name a
+            catalog entry, file, or folder; wrap a string value in a dict to hash it. An
+            entry stored with dependencies and read without them (``cache_get()``, or a call
+            that leaves ``depends_on`` out) is checked against its files and catalog
+            entries, and a change is a miss with a ``CacheWarning``.
     """
     if compute is None:
 
@@ -286,7 +359,12 @@ def cache_remember(
             @functools.wraps(function)
             def wrapper() -> T:
                 return cache_remember(
-                    name, function, file=file, expire_after=expire_after, refresh=refresh
+                    name,
+                    function,
+                    file=file,
+                    expire_after=expire_after,
+                    refresh=refresh,
+                    depends_on=depends_on,
                 )
 
             return wrapper
@@ -297,17 +375,23 @@ def cache_remember(
     if not isinstance(should_refresh, bool):
         warnings.warn("refresh must return a single boolean value", CacheWarning, stacklevel=2)
         should_refresh = False
+    # Hashed before computing, so the record describes the inputs the value came from
+    dependencies = _depends.resolve(depends_on) if depends_on is not None else None
+    carried: list[list[_depends.Dependency]] = []
     if should_refresh:
         inform(f"Cache '{name}' refresh requested")
         _remove(name, file)
     else:
-        value = _lookup(name, file)
+        value = _lookup(name, file, dependencies, carried)
         if value is not _MISSING:
             return value  # type: ignore[no-any-return]
+    if dependencies is None and carried:
+        # A value stored with dependencies keeps them when it is recomputed without them
+        dependencies = carried[0]
 
     computed = compute()
     try:
-        cache(name, computed, file, expire_after)
+        _store(name, computed, file, expire_after, dependencies)
     except Exception as error:
         warnings.warn(f"Failed to cache value: {error}", CacheWarning, stacklevel=2)
     return computed
@@ -350,6 +434,7 @@ def cache_flush() -> None:
                 if path.suffix.lower() in suffixes and path.is_file():
                     path.unlink()
         connection.execute("DELETE FROM cache")
+    _depends.forget()
 
 
 def cache_list() -> pd.DataFrame:

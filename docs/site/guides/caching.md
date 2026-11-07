@@ -70,6 +70,31 @@ def survey_clean():
 clean = survey_clean()
 ```
 
+## Dependencies
+
+A cached value goes stale when the data or code it came from changes, and nothing else tells the cache. `depends_on` names what the value is computed from. Their hashes become part of the entry's key, so `cache_remember()` computes the value again when any of them changes.
+
+```python
+fit = fw.cache_remember(
+    "lpa_fit",
+    lambda: fit_lpa(fw.data_read("inputs.final.cohort"), k=4),
+    depends_on=["inputs.final.cohort", "functions/lpa.py", {"k": 4}],
+)
+```
+
+`depends_on` takes one item or a list:
+
+| Item | Hashed as |
+|------|-----------|
+| A catalog name, such as `"inputs.final.cohort"` | Its file's SHA-256, as data integrity hashes it |
+| A file path from the project root, such as `"functions/lpa.py"` | The file's SHA-256 |
+| A folder path, such as `"functions"` | Every file's path and hash. Hidden files and `__pycache__` are skipped |
+| Any other value, such as `{"k": 4}`, a number, or a DataFrame | The value itself |
+
+A string always names a catalog entry, file, or folder, and one that names nothing is an error, so a typo cannot quietly turn into a value. To make a string value part of the key, wrap it: `{"rule": ">= 0"}`. The order of the list does not matter.
+
+An entry stored with dependencies remembers them. When it is read without them, by [cache_get()](ref:cache_get) or a `cache_remember()` call that leaves `depends_on` out, its files and catalog entries are hashed again. If any changed, the entry is older than its dependencies: the lookup issues a `CacheWarning` naming them and treats the value as missing, and `cache_remember()` computes it again with the same dependencies. [cache()](ref:cache) takes `depends_on` too.
+
 ## Expiration
 
 `expire_after` sets how long a value stays valid. It takes a number of hours or a string with a unit.
@@ -141,7 +166,7 @@ Framework records each cached file's SHA-256 hash. When a file no longer matches
 
 ## Caches shared with R
 
-R and Python share the `cache` table. R stores values as `.rds` files, which Python cannot read. A name that R cached is a miss in Python, with a `CacheWarning`, and R's file is left in place. `cache_forget()` and `cache_flush()` in Python remove entries from either language.
+R and Python share the `cache` table, and record dependencies in the same place (the `meta` table, under `cache_depends:<name>`). R stores values as `.rds` files, which Python cannot read. A name that R cached is a miss in Python, with a `CacheWarning`, and R's file is left in place. `cache_forget()` and `cache_flush()` in Python remove entries from either language.
 
 ## Caching guidance
 
