@@ -236,3 +236,55 @@ def test_a_notebook_reading_private_data_needs_confirmation(
     with pytest.raises(fw.FrameworkError, match="include_private=True"):
         fw.publish_notebook(notebook)
     assert "report.qmd reads private data: inputs.ids" in capsys.readouterr().err
+
+
+# Sensitive projects (R's .fw_settings_sensitive()) ------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("settings", "sensitive"),
+    [
+        # Projects of this type made before Framework 2 have no security: block
+        ({"project_type": "project_sensitive"}, True),
+        ({"project_type": "project_sensitive", "security": {"sensitive": False}}, True),
+        ({"project_type": "project", "security": {"sensitive": True}}, True),
+        ({"project_type": "project", "security": {"sensitive": False}}, False),
+        ({"project_type": "project"}, False),
+        # Without the setting, the private layout counts
+        ({"directories": {"inputs_private_raw": "inputs/private/raw"}}, True),
+        (
+            {
+                "directories": {"inputs_private_raw": "inputs/private/raw"},
+                "security": {"sensitive": False},
+            },
+            False,
+        ),
+        (None, False),
+    ],
+)
+def test_settings_sensitive(settings: object, sensitive: bool) -> None:
+    from framework._private import settings_sensitive
+
+    assert settings_sensitive(settings) is sensitive
+
+
+def test_an_old_project_sensitive_project_is_sensitive(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from framework._paths import output_directory
+    from framework._private import project_is_sensitive, sensitive_mismatch
+    from framework.settings import settings_read
+
+    (project / "settings.yml").write_text(
+        "default:\n  project_type: project_sensitive\n", encoding="utf-8"
+    )
+    config = settings_read(project / "settings.yml")
+    assert project_is_sensitive()
+    assert output_directory(config, "tables", public=False, root=project) == (
+        project / "outputs/private/tables"
+    )
+    assert "run framework.upgrade()" in str(sensitive_mismatch(config))
+    fw.status()
+    out = capsys.readouterr().out
+    assert "Sensitive data: yes" in out
+    assert "no security: block" in out

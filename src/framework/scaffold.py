@@ -20,6 +20,7 @@ import pandas as pd
 from framework import db, dotenv
 from framework._log import inform, show_messages
 from framework._paths import in_root
+from framework._private import sensitive_mismatch, settings_sensitive
 from framework.errors import FrameworkWarning, ProjectNotFoundError, SettingsError
 from framework.project import find_settings_file
 from framework.settings import settings_read
@@ -257,6 +258,10 @@ def status() -> None:
     lines.append("Project:")
     if config.get("project_type"):
         lines.append(f"  Type: {config['project_type']}")
+    lines.append(f"  Sensitive data: {'yes' if settings_sensitive(config) else 'no'}")
+    mismatch = sensitive_mismatch(config)
+    if mismatch is not None:
+        lines.append(f"  Warning: {mismatch}")
     author = _section(config, "author").get("name")
     if author:
         lines.append(f"  Author: {author}")

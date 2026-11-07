@@ -198,3 +198,12 @@ def test_cli_messages_name_flags(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert main(["adopt", "--path", str(tmp_path / "old")]) == 1
     err = capsys.readouterr().err
     assert "Pass --yes." in err and "yes=True" not in err
+
+
+def test_warns_when_a_sensitive_project_lacks_the_setting(clone: Path) -> None:
+    settings = clone / "settings.yml"
+    text = settings.read_text(encoding="utf-8")
+    sensitive = "  language: python\n  project_type: project_sensitive\n"
+    settings.write_text(text.replace("  language: python\n", sensitive, 1), encoding="utf-8")
+    with pytest.warns(fw.FrameworkWarning, match="no security: block"):
+        fw.bootstrap(clone, packages=False)

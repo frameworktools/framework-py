@@ -197,7 +197,9 @@ def _data(spec: dict[str, Any]) -> str:
 
 def _type_section(spec: dict[str, Any]) -> str:
     # Sensitive data is a setting, whatever structure the project uses
-    if (spec.get("security") or {}).get("sensitive"):
+    from framework._private import spec_sensitive
+
+    if spec_sensitive(spec):
         return (
             "## Privacy Requirements\n\n"
             "**This is a privacy-sensitive project.** Before ANY data operation, output, or\n"

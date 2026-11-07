@@ -53,9 +53,10 @@ def output_directory(
     """
     directories = config.get("directories")
     directories = directories if isinstance(directories, dict) else {}
-    security = config.get("security")
+    from framework._private import settings_sensitive
+
     split = (
-        (isinstance(security, dict) and security.get("sensitive") is True)
+        settings_sensitive(config)
         or f"outputs_private_{kind}" in directories
         or f"outputs_public_{kind}" in directories
     )

@@ -192,8 +192,66 @@ def confirm_private_upload(
         raise FrameworkError("Cancelled. Nothing was uploaded.")
 
 
+def settings_sensitive(settings: Any) -> bool:
+    """Whether settings describe a project that holds sensitive data.
+
+    ``project_type: project_sensitive`` always counts: projects of that type made before
+    Framework 2 have no ``security:`` block. Otherwise ``security: sensitive:`` decides
+    when it is set, and without it the privacy-sensitive layout (an ``inputs_private_*``
+    or ``outputs_private_*`` folder) counts. The rule is R's ``.fw_settings_sensitive()``.
+    """
+    if not isinstance(settings, dict):
+        return False
+    if settings.get("project_type") == "project_sensitive":
+        return True
+    security = settings.get("security")
+    flag = security.get("sensitive") if isinstance(security, dict) else None
+    if flag is not None:
+        return flag is True
+    directories = settings.get("directories")
+    keys = directories if isinstance(directories, dict) else {}
+    return any(re.match(r"^(inputs|outputs)_private_", str(key)) for key in keys)
+
+
+def spec_sensitive(spec: Any) -> bool:
+    """``settings_sensitive()`` for a spec, whose type is ``type``."""
+    if not isinstance(spec, dict):
+        return False
+    return settings_sensitive(
+        {
+            "project_type": spec.get("type"),
+            "security": spec.get("security"),
+            "directories": spec.get("directories"),
+        }
+    )
+
+
+def sensitive_mismatch(settings: Any) -> str | None:
+    """Why the settings and the project type disagree about sensitive data, or None.
+
+    A ``project_sensitive`` project with ``security: sensitive: false``, or with no
+    ``security:`` block at all, which ``upgrade()`` adds.
+    """
+    if not isinstance(settings, dict) or settings.get("project_type") != "project_sensitive":
+        return None
+    security = settings.get("security")
+    flag = security.get("sensitive") if isinstance(security, dict) else None
+    if flag is True:
+        return None
+    if flag is None:
+        return (
+            "project_type is project_sensitive but settings have no security: block. "
+            "Framework treats the project as sensitive; run framework.upgrade() to add "
+            "security: sensitive: true."
+        )
+    return (
+        "project_type is project_sensitive but security: sensitive: is false. "
+        "Framework treats the project as sensitive because of its type."
+    )
+
+
 def project_is_sensitive() -> bool:
-    """Whether the current project's settings have ``security: sensitive: true``."""
+    """Whether the current project holds sensitive data (``settings_sensitive()``)."""
     from framework.project import find_settings_file
     from framework.settings import settings_read
 
@@ -201,10 +259,9 @@ def project_is_sensitive() -> bool:
     if found is None:
         return False
     try:
-        security = settings_read(found).get("security")
+        return settings_sensitive(settings_read(found))
     except FrameworkError:
         return False
-    return isinstance(security, dict) and security.get("sensitive") is True
 
 
 def sensitive_reasons(what: str) -> list[str]:
@@ -213,7 +270,8 @@ def sensitive_reasons(what: str) -> list[str]:
     if not project_is_sensitive():
         return []
     return [
-        f"This project holds sensitive data (security: sensitive: true), and {what} can "
+        f"This project holds sensitive data (security: sensitive: true, or type "
+        f"project_sensitive), and {what} can "
         "show it. Check that it holds only results that may be shared."
     ]
 

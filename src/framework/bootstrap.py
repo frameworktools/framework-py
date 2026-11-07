@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,8 +31,9 @@ from typing import Any
 from framework import db, dotenv
 from framework._log import inform, show_messages
 from framework._paths import in_root
+from framework._private import sensitive_mismatch
 from framework.create import FILE_LIKE, ensure_secrets_ignored
-from framework.errors import FrameworkError
+from framework.errors import FrameworkError, FrameworkWarning
 from framework.hooks import git_hooks_install
 from framework.project import _settings_in
 from framework.settings import settings_read
@@ -230,6 +232,9 @@ def bootstrap(
         )
     _check_spec(root)
     result = BootstrapResult(root=root)
+    mismatch = sensitive_mismatch(config)
+    if mismatch is not None:
+        warnings.warn(mismatch, FrameworkWarning, stacklevel=2)
 
     if ensure_secrets_ignored(root):
         result.done.append("Added .env to .gitignore")

@@ -516,8 +516,9 @@ def folder_destinations(config: dict[str, Any], root: Path) -> dict[str, str]:
     ``visibility: public`` (or ``private: false``)."""
     publish = config.get("publish")
     destinations = publish.get("destinations") if isinstance(publish, dict) else None
-    security = config.get("security")
-    sensitive = isinstance(security, dict) and security.get("sensitive") is True
+    from framework._private import settings_sensitive
+
+    sensitive = settings_sensitive(config)
     found: dict[str, str] = {}
     for name, options in (destinations if isinstance(destinations, dict) else {}).items():
         if not isinstance(options, dict) or options.get("driver") != "folder":

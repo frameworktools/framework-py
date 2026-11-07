@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from framework._agents_md import agents_md
+from framework._private import spec_sensitive
 from framework.spec.check import ASSISTANTS
 
 AGENTS_DEFAULT = ".agents/skills"
@@ -50,7 +51,7 @@ def restricted_paths(spec: dict[str, Any]) -> list[str]:
 
 def restricted_notice(spec: dict[str, Any]) -> str | None:
     """The line naming the folders agents must stay out of, for sensitive projects."""
-    if not spec.get("security", {}).get("sensitive"):
+    if not spec_sensitive(spec):
         return None
     folders = ", ".join(f"`{path}`" for path in restricted_paths(spec))
     return (
@@ -112,7 +113,7 @@ def write_ai_files(root: Path, spec: dict[str, Any]) -> list[str]:
                     _write(root, f"{target}/{relative}", content)
             written.append(target)
 
-    if spec.get("security", {}).get("sensitive"):
+    if spec_sensitive(spec):
         guard = write_agent_guards(root, spec)
         if guard:
             written.append(guard)
