@@ -92,7 +92,7 @@ The hook belongs to a project at the top of its own repository. A project inside
 
 ## The security audit
 
-[git_security_audit()](ref:git_security_audit) checks that private data and secrets stay out of the repository. It runs six checks. Each file is reported once, under the deepest folder that holds it, even when several settings keys name the same folder.
+[git_security_audit()](ref:git_security_audit) checks that private data and secrets stay out of the repository. It runs seven checks. Each file is reported once, under the deepest folder that holds it, even when several settings keys name the same folder.
 
 | Check | Fails when |
 |-------|------------|
@@ -102,6 +102,7 @@ The hook belongs to a project at the top of its own repository. A project inside
 | `secrets_exposure` | Git tracks a `.env` file or a variant such as `.env.local`. Files ending in `.example`, `.template`, or `.sample` are allowed. |
 | `orphaned_files` | Warns, without failing, about data files outside the configured folders that git does not ignore |
 | `published_outputs` | Warns, without failing, about folder publishing destinations inside the project that hold files git does not ignore, since rendered notebooks there can show private results. In a project that is not privacy-sensitive, a destination with `visibility: public`, such as a GitHub Pages `docs/` folder, is meant to be committed and is left out. |
+| `connection_secrets` | A password, secret, token, or key under `connections` in the settings (the settings file or a split file under `settings/`) is written out instead of read with `env("VARIABLE")`, and git tracks the file. An untracked file only warns. `env("VAR", "default")` counts as written out, since the default is in the file. The report names the file and key, never the value. |
 
 A new project adds each folder destination the `published_outputs` check covers to its `.gitignore`, such as `/published/`.
 

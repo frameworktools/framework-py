@@ -60,6 +60,7 @@ def test_a_clean_project_passes(repo: Path) -> None:
         "orphaned_files",
         "secrets_exposure",
         "published_outputs",
+        "connection_secrets",
     ]
 
 
@@ -332,3 +333,46 @@ def test_sensitive_projects_check_public_publishing_folders_too(repo: Path) -> N
     ]
     assert list(published["destination"]) == ["local", "pages"]
     assert list(published["tracked"]) == [0, 1]
+
+
+def test_written_out_connection_secrets(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # Ports 2026-11-07: settings/connections.yml held "password: a2omop-dev-secret"
+    (repo / "settings.yml").write_text(
+        "default:\n"
+        "  connections: settings/connections.yml\n"
+        "  publish:\n    destinations: {}\n"
+        "  token_note: not a connection\n",
+        encoding="utf-8",
+    )
+    (repo / "settings").mkdir()
+    (repo / "settings/connections.yml").write_text(
+        "connections:\n"
+        "  databases:\n"
+        "    omop:\n"
+        "      driver: postgres\n"
+        "      password: a2omop-dev-secret\n"
+        "      user: env(\"DB_USER\")\n"
+        "    warehouse:\n"
+        "      password: env(\"WH_PASSWORD\")\n"
+        "      api_key: env(\"WH_KEY\", \"fallback-key\")\n"
+        "      token: ''\n"
+        "      secret: !expr Sys.getenv(\"WH_SECRET\")\n"
+        "      pwd: 1234\n",
+        encoding="utf-8",
+    )
+    result = fw.git_security_audit(check_git_history=False)
+    secrets = result.findings["connection_secrets"]
+    assert list(secrets["key"]) == [
+        "connections.databases.omop.password",
+        "connections.databases.warehouse.api_key",
+        "connections.databases.warehouse.pwd",
+    ]
+    assert set(secrets["file"]) == {"settings/connections.yml"}
+    assert result.summary.set_index("check").loc["connection_secrets", "status"] == "warning"
+    report = capsys.readouterr().out
+    assert "connections.databases.omop.password (not tracked)" in report
+    assert "a2omop-dev-secret" not in report
+    git(repo, "add", "settings")
+    result = fw.git_security_audit(check_git_history=False, verbose=False)
+    assert result.summary.set_index("check").loc["connection_secrets", "status"] == "fail"
+    assert not result.passed

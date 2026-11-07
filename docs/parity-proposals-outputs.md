@@ -241,3 +241,35 @@ R: `R/security_audit.R` (`.get_data_directories()`, `.identify_private_dirs()`, 
 coverage and exposure checks, the report), the hook's sensitive-folder walk, and project
 creation's `.gitignore` writer. `CHECKS` order matters for the summary table, so append
 `published_outputs` after `secrets_exposure` (and D9's and D8's checks after it).
+
+## D9. Security audit check `connection_secrets`
+
+Rule: a new audit check, seventh in the summary, after `published_outputs`.
+
+- Files: the settings file the audit read, and every `.yml`/`.yaml` file under the
+  project's `settings/` folder (split files). Each is parsed as YAML without evaluating
+  anything (`!expr` stays text).
+- Scope: everything under a key named `connections`, at any depth (so `default:`, other
+  environment blocks, and a split file whose top key is `connections` all count).
+- A credential key is one whose name matches, case-insensitively,
+  `password|passwd|pwd|secret|token|api_?key|access_key`.
+- Its value is **written out** unless it is missing, empty, a mapping or list, a boolean,
+  `env("VAR")` with no default, or `!expr Sys.getenv("VAR")` with no default.
+  `env("VAR", "x")` and `Sys.getenv("VAR", "x")` count as written out, since the default is
+  in the file. Numbers count.
+- Finding columns: `file` (from the project root), `key` (dot path such as
+  `connections.databases.omop.password`; list items as `[i]`), `tracked` (git tracks the
+  file). Values are never stored or printed.
+- Status: `fail` when any finding's file is tracked by git, else `warning` when there are
+  findings (including without git), else `pass`.
+- Recommendations: "Move connection passwords and tokens to .env and refer to them with
+  env("VARIABLE") in the settings" and "Rotate any secret that was committed: it stays in
+  git history".
+- Report section "Secrets Written in Connection Settings", one line per finding:
+  `settings/connections.yml: connections.databases.omop.password (tracked in git)`.
+
+Python: `security._check_connection_secrets()`. The pre-commit hook's `data_security`
+check runs it with the rest of the audit.
+
+R: add `.check_connection_secrets()` to `R/security_audit.R` with the same rule, reading
+the files with `yaml::read_yaml(eval.expr = FALSE)`.

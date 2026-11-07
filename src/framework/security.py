@@ -13,6 +13,11 @@ The checks match R's ``git_security_audit()``:
   with ``visibility: public`` is meant to be shared, such as a GitHub Pages
   ``docs/`` folder, and is left out. Python adds this check; R will follow.
 
+- connection_secrets: no password, secret, token, or key in the settings'
+  ``connections`` is written out instead of read from the environment. A
+  tracked settings file fails; an untracked one warns. Python adds this check;
+  R will follow.
+
 Folders configured outside the project are skipped, since git can't commit
 them from here, and listed in the report and in ``metadata``.
 
@@ -53,6 +58,7 @@ CHECKS = (
     "orphaned_files",
     "secrets_exposure",
     "published_outputs",
+    "connection_secrets",
 )
 
 _EXCLUDED_DIRS = (
@@ -554,6 +560,79 @@ def _check_published(
     return _frame(rows, ["destination", "path", "files", "tracked"]), advice
 
 
+_CREDENTIAL_KEY = re.compile(r"password|passwd|pwd|secret|token|api_?key|access_key", re.I)
+
+
+def _literal_secret(value: Any) -> bool:
+    """Whether a credential value is written out: anything but empty, ``env("VAR")``, or
+    ``!expr Sys.getenv("VAR")``. A default (``env("VAR", "x")``) is written out too."""
+    from framework.settings import _ENV_CALL, _EXPR, _SYS_GETENV
+
+    if value is None or value == "" or isinstance(value, (dict, list, bool)):
+        return False
+    if not isinstance(value, str):
+        return True
+    call = _ENV_CALL.match(value.strip())
+    if call is not None:
+        return bool(call.group(2))
+    if _EXPR.match(value):
+        system = _SYS_GETENV.match(_EXPR.sub("", value, count=1).strip())
+        return system is None or bool(system.group(4))
+    return True
+
+
+def _secret_keys(node: Any, path: str, inside: bool) -> list[str]:
+    """Dot paths of credential keys with written-out values, under ``connections``."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            here = f"{path}.{key}" if path else str(key)
+            within = inside or str(key) == "connections"
+            if within and _CREDENTIAL_KEY.search(str(key)) and _literal_secret(value):
+                found.append(here)
+            else:
+                found += _secret_keys(value, here, within)
+    elif isinstance(node, list):
+        for index, item in enumerate(node):
+            found += _secret_keys(item, f"{path}[{index}]", inside)
+    return found
+
+
+def _check_connection_secrets(
+    root: Path, settings_file: Path, tracked: set[str]
+) -> tuple[pd.DataFrame, list[str]]:
+    """Passwords and other secrets written into the settings' connections, in the settings
+    file and the split files under ``settings/``. Values are never shown."""
+    from framework import _yaml
+
+    files = [settings_file]
+    folder = root / "settings"
+    if folder.is_dir():
+        files += sorted(p for p in folder.rglob("*") if p.suffix.lower() in (".yml", ".yaml"))
+    rows: list[dict[str, Any]] = []
+    for file in files:
+        try:
+            document = _yaml.read(file)
+        except Exception:  # A broken file is the settings reader's to report.
+            continue
+        # A split file such as settings/connections.yml holds the section at its top.
+        relative = file.resolve().relative_to(root.resolve()).as_posix()
+        rows += [
+            {"file": relative, "key": key, "tracked": relative in tracked}
+            for key in _secret_keys(document, "", False)
+        ]
+    advice = (
+        [
+            "Move connection passwords and tokens to .env and refer to them with "
+            'env("VARIABLE") in the settings',
+            "Rotate any secret that was committed: it stays in git history",
+        ]
+        if rows
+        else []
+    )
+    return _frame(rows, ["file", "key", "tracked"]), advice
+
+
 def _walk_files(root: Path) -> list[Path]:
     """Every file under the root, skipping excluded top-level folders, and at any depth
     the ``*_files`` and ``*_cache`` folders Quarto and Jupyter write beside a document."""
@@ -638,6 +717,7 @@ def _report(result: AuditResult) -> str:
         "secrets_exposure": "Tracked Secrets Files",
         "orphaned_files": "Orphaned Data Files",
         "published_outputs": "Publishing Folders Not Ignored by Git",
+        "connection_secrets": "Secrets Written in Connection Settings",
     }
     for check, title in sections.items():
         frame = result.findings[check]
@@ -657,6 +737,9 @@ def _report(result: AuditResult) -> str:
                 )
             elif check == "secrets_exposure":
                 lines.append(f"  {number}. {row.file} (tracked in git)")
+            elif check == "connection_secrets":
+                where = "tracked in git" if row.tracked else "not tracked"
+                lines.append(f"  {number}. {row.file}: {row.key} ({where})")
             elif check == "published_outputs":
                 lines.append(
                     f"  {number}. {row.path}/ (destination {row.destination}: {row.files} "
@@ -762,6 +845,7 @@ def git_security_audit(
     record("secrets_exposure", _check_secrets(tracked))
     record("orphaned_files", _check_orphans(root, folders, exts, rules))
     record("published_outputs", _check_published(root, config, rules, tracked))
+    record("connection_secrets", _check_connection_secrets(root, path, set(tracked)))
 
     coverage = findings["gitignore_coverage"]
     statuses = {
@@ -783,6 +867,11 @@ def git_security_audit(
         if len(findings["secrets_exposure"])
         else "pass",
         "published_outputs": "warning" if len(findings["published_outputs"]) else "pass",
+        "connection_secrets": "pass"
+        if findings["connection_secrets"].empty
+        else "fail"
+        if findings["connection_secrets"]["tracked"].any()
+        else "warning",
     }
     summary = pd.DataFrame(
         {
