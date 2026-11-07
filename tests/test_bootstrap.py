@@ -31,11 +31,20 @@ def clone(tmp_path: Path) -> Path:
         "    outputs_tables: outputs/tables\n"
         "    shared: /mnt/shared/never-created\n"
         "  extra_directories:\n"
-        "    - {key: refs, label: References, path: references}\n",
+        "    - {key: refs, label: References, path: references}\n"
+        "  connections: settings/connections.yml\n"
+        "  api_token: !expr Sys.getenv('API_TOKEN')\n",
         encoding="utf-8",
     )
+    (root / "settings").mkdir()
+    (root / "settings/connections.yml").write_text(
+        "connections:\n  databases:\n    warehouse:\n      driver: postgres\n"
+        '      host: env("DB_HOST")\n      password: env("DB_PASSWORD")\n',
+        encoding="utf-8",
+    )
+    # S3_BUCKET is a placeholder the settings never read
     (root / ".env.example").write_text(
-        "DB_HOST=localhost\nDB_PASSWORD=\nAPI_TOKEN=\n", encoding="utf-8"
+        "DB_HOST=localhost\nDB_PASSWORD=\nAPI_TOKEN=\nS3_BUCKET=\n", encoding="utf-8"
     )
     return root
 

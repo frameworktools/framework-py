@@ -52,7 +52,7 @@ The file follows the rules of R's dotenv package.
 
 Every project type's `.gitignore` excludes `.env`. Project creation and [bootstrap()](ref:bootstrap) add a rule when the file is missing one, and creation stops with an error when git would still track `.env`. [git_security_audit()](ref:git_security_audit) fails when git tracks a `.env` file.
 
-To tell collaborators which variables a project needs, commit a `.env.example` with empty values. `bootstrap()` copies it to `.env` in a fresh clone and lists the variables that are still empty.
+To tell collaborators which variables a project needs, commit a `.env.example` with empty values. `bootstrap()` copies it to `.env` in a fresh clone and lists the variables that are still empty and that the settings read with `env()`. Unused placeholders, such as the S3 entries in a project without a bucket, are not listed.
 
 ## Environment variables in settings
 

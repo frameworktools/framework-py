@@ -4,7 +4,7 @@ Every step is safe to repeat and none contacts the cloud:
 
 1. Make sure ``.gitignore`` ignores ``.env``.
 2. Create ``.env`` from ``.env.example`` when it is missing, and list
-   variables that are still empty.
+   variables that are still empty and that the settings read with ``env()``.
 3. Create the project folders, which git does not carry when they are empty
    or ignored.
 4. Create ``framework.db``, or add tables a newer version needs.
@@ -79,7 +79,25 @@ def _ask(prompt: str) -> str:
     return input()
 
 
-def _prepare_env(root: Path, interactive: bool, result: BootstrapResult) -> None:
+# env("VAR") and !expr Sys.getenv("VAR") in the settings
+_REFERENCE = re.compile(r"""\b(?:env|Sys\.getenv)\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']""")
+
+
+def _referenced_variables(settings_file: Path) -> set[str]:
+    """Variables the settings read: from settings.yml and every file under settings/."""
+    files = [settings_file, *sorted((settings_file.parent / "settings").rglob("*.y*ml"))]
+    names: set[str] = set()
+    for file in files:
+        try:
+            names.update(_REFERENCE.findall(file.read_text(encoding="utf-8")))
+        except (OSError, UnicodeError):
+            continue
+    return names
+
+
+def _prepare_env(
+    root: Path, settings_file: Path, interactive: bool, result: BootstrapResult
+) -> None:
     env = root / ".env"
     example = root / ".env.example"
     if not env.exists() and example.is_file():
@@ -87,7 +105,9 @@ def _prepare_env(root: Path, interactive: bool, result: BootstrapResult) -> None
         result.done.append("Created .env from .env.example")
     if not env.is_file():
         return
-    empty = [key for key, value in dotenv.read(env).items() if value == ""]
+    # Placeholders the settings never read, such as an unused S3 block, are not to-dos
+    used = _referenced_variables(settings_file)
+    empty = [key for key, value in dotenv.read(env).items() if value == "" and key in used]
     if interactive and empty:
         values: dict[str, str] = {}
         for key in empty:
@@ -173,8 +193,9 @@ def bootstrap(
 
     Args:
         path: The project folder.
-        interactive: Ask for the values of empty ``.env`` variables. Without
-            it, bootstrap never prompts and lists them as to-dos instead.
+        interactive: Ask for the values of empty ``.env`` variables that the settings read
+            with ``env()``. Without it, bootstrap never prompts and lists them as to-dos
+            instead. Empty placeholders the settings never read are left alone.
         packages: Install the packages with uv.
 
     Returns:
@@ -207,7 +228,7 @@ def bootstrap(
 
     if ensure_secrets_ignored(root):
         result.done.append("Added .env to .gitignore")
-    _prepare_env(root, interactive, result)
+    _prepare_env(root, settings_file, interactive, result)
     _create_folders(root, config, result)
     existed = db.db_path(root).exists()
     db.ensure_db(root)

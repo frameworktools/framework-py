@@ -199,7 +199,7 @@ fw.structure_import("~/projects/old-study", name="Lab layout")
 A clone lacks the files git does not carry: `.env`, `framework.db`, ignored and empty folders, and the virtual environment. [bootstrap()](ref:bootstrap) restores them. Every step is safe to repeat, and none contacts Framework Cloud.
 
 1. It makes sure `.gitignore` ignores `.env`.
-2. It copies `.env.example` to `.env` when `.env` is missing, and lists variables that are still empty.
+2. It copies `.env.example` to `.env` when `.env` is missing, and lists variables that are still empty and that the settings read with `env()`.
 3. It creates the folders listed in the settings. Entries that name a file, such as `presentation.qmd`, are skipped.
 4. It creates `framework.db`, or adds tables a newer version needs.
 5. It installs the packages with `uv sync`, using `--frozen` when `uv.lock` exists.
