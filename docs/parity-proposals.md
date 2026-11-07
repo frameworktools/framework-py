@@ -158,3 +158,25 @@ with `columns` and `rows` fields.
 The `framework-sensitive-data` skill (shared asset, R side) should tell agents to use
 `data_info(name, columns = TRUE)` instead of reading restricted files to learn their
 layout.
+
+## path(...): a path from the project root, like here::here() [D7]
+
+```r
+path(...)
+```
+
+Shared behavior:
+
+- Joins its arguments under the project root and returns an absolute path. Arguments may
+  hold slashes (`path("outputs/tables", "x.csv")`). With no arguments, the root.
+- The same call gives the same path from any folder in the project, so existence checks
+  copied from R work in Python, which never changes the working directory.
+- The file need not exist.
+- An absolute argument is an error (`path() parts are relative to the project root`).
+- Outside a project, the "no Framework project found" error.
+
+Python: `fw.path(*parts) -> pathlib.Path`. R: returns a character string, like
+`here::here()`.
+
+R naming note: `path()` masks `fs::path()` when both packages are attached. The name was
+chosen to match Python's `fw.path()`; R users who attach fs will see the masking message.

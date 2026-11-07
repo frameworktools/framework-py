@@ -568,9 +568,14 @@ status = "ported"
 python = "configure_global"
 status = "folded"
 
-# Python functions with no R counterpart.
+# Python functions with no R counterpart. Those marked "proposed" are specified for R in
+# docs/parity-proposals.md, and move to [functions] once R exports them.
 [python_only]
-names = ["framework_template_path", "tools_available"]
+names = [
+    "framework_template_path",
+    "tools_available",
+    "path",  # proposed: path()
+]
 
 [functions.skills_sync]
 python = "skills_sync"

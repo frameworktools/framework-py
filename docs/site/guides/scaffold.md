@@ -58,7 +58,7 @@ from pathlib import Path
 fw.scaffold(Path.home() / "projects" / "vaccine-study" / "settings.yml")
 ```
 
-[project_root()](ref:project_root) returns the root without the other steps.
+[project_root()](ref:project_root) returns the root without the other steps, and [path()](ref:path) builds a path under it: `fw.path("outputs", "tables", "x.csv")`.
 
 ## The functions folder
 

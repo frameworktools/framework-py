@@ -24,6 +24,13 @@ fw.scaffold()
 
 Framework resolves project paths from the project root. The working directory is not changed, so a notebook in `notebooks/` and a script in `scripts/` refer to the same data by the same name.
 
+Your own path code should do the same. `Path("outputs/tables/x.csv")` in a notebook points under `notebooks/`; [path()](ref:path) builds the absolute path from the project root, as R's `here::here()` does:
+
+```python
+if not fw.path("outputs/tables/incidence.csv").exists():
+    raise RuntimeError("Run notebook 3 first")
+```
+
 ## Functions
 
 Reusable code lives in the `functions/` folder as ordinary Python modules. `scaffold()` adds the folder to `sys.path`, so notebooks and scripts import from it directly.

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from os import PathLike
+from pathlib import Path, PureWindowsPath
 
 from framework.errors import ProjectNotFoundError
 
@@ -57,3 +58,34 @@ def project_root(start: str | Path | None = None) -> Path:
             "A project has settings.yml (or config.yml) in its root folder."
         )
     return found.parent
+
+
+def path(*parts: str | PathLike[str]) -> Path:
+    """An absolute path inside the project, from parts relative to its root.
+
+    Like R's ``here::here()``: the same call gives the same file from a notebook in
+    ``notebooks/``, a script in the root, or a subfolder. Python never changes the working
+    directory, so ``Path("outputs/tables/x.csv").exists()`` in a notebook looks under
+    ``notebooks/``; ``fw.path("outputs/tables/x.csv").exists()`` looks under the root::
+
+        if not fw.path("outputs", "tables", "incidence.csv").exists():
+            ...
+
+    Args:
+        *parts: Path parts relative to the project root, joined in order. A part may hold
+            slashes (``"outputs/tables"``). No parts gives the root itself.
+
+    Returns:
+        The absolute path. The file need not exist.
+
+    Raises:
+        ProjectNotFoundError: Not inside a Framework project.
+        ValueError: A part is an absolute path.
+    """
+    root = project_root()
+    for part in parts:
+        if Path(part).is_absolute() or PureWindowsPath(part).drive:
+            raise ValueError(
+                f"path() parts are relative to the project root, but {str(part)!r} is absolute"
+            )
+    return root.joinpath(*parts)
