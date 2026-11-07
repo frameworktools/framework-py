@@ -827,15 +827,18 @@ Rules:
       (paths relative to the folder; anything resolving outside it, or not a file, is
       skipped), then removes folders this left empty, up to the destination folder;
    2. copies every bundle file to the folder, keeping its relative path and replacing a file
-      of the same name, except `artifact.json`, and except the bundle's `original` file when
-      it is an `.html`/`.htm` file at the bundle's top, isn't `index.html`, and is
+      of the same name, except `artifact.json`, and except the bundle's `original` file at
+      the bundle's top when it isn't `index.html` and is either a notebook source (`.qmd`,
+      `.ipynb`, `.Rmd`: only rendered output is published) or an `.html`/`.htm` file
       byte-identical to `index.html` (so a deck is written once);
    3. writes `.framework-site.json`:
       `{"schema": "framework.site/v1", "version": <previous + 1, from 1>, "slug", "title",
       "kind", "description", "created_at", "files": [<written, sorted>]}`.
 
    No `<slug>/`, `v/<n>/`, `index.json`, or site `index.html` is written. Files Framework
-   didn't write (`CNAME`, `.nojekyll`) stay.
+   didn't write (`CNAME`, `.nojekyll`) stay. `.framework-site.json` sits in the published
+   folder; the docs say so, and that GitHub Pages' default Jekyll build skips dot files, so
+   Pages doesn't serve it unless the folder has `.nojekyll`.
 3. The receipt: `url` is `<url>/` when the destination has one, else none; `location` is
    `<path>/index.html`; `version` is the record's version. The message is the usual
    "Published version N: <location>".

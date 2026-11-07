@@ -394,7 +394,9 @@ publish:
 fw.publish_notebook("presentation.qmd", to="pages")
 ```
 
-Each publish first removes the files the previous one wrote, which `docs/.framework-site.json` lists, and leaves other files, such as `CNAME` or `.nojekyll`, alone. A file the new publish writes replaces one of the same name. An HTML source is written once, as `index.html`. Objects and other files get the same offline reader, data, and representation files as a versioned folder, at the root. [publish_list()](ref:publish_list) shows the one artifact. The default layout is `versioned`.
+Each publish first removes the files the previous one wrote, which `docs/.framework-site.json` lists, and leaves other files, such as `CNAME` or `.nojekyll`, alone. A file the new publish writes replaces one of the same name. Only rendered output goes to the folder: a notebook becomes `index.html` and the files it needs, and its `.qmd` or `.ipynb` source is never copied there. An HTML source is written once, as `index.html`. Objects and other files get the same offline reader, data, and representation files as a versioned folder, at the root. [publish_list()](ref:publish_list) shows the one artifact. The default layout is `versioned`.
+
+`.framework-site.json` stays in the folder, so it is served with the site. It holds the slug, title, kind, description, version, publish time, and the list of files, nothing from the notebook's data. GitHub Pages runs Jekyll by default, and Jekyll skips files whose names start with a dot, so Pages doesn't serve it unless the folder has a `.nojekyll` file.
 
 Set `visibility: public` on a folder meant to be committed, as a Pages folder is. Otherwise new projects add the folder to `.gitignore`, and the security audit warns about it.
 

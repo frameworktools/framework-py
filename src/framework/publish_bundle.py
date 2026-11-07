@@ -71,6 +71,8 @@ def artifact_slug(value: str) -> str:
 # publish alone at the folder's root, as a GitHub Pages docs/ folder wants
 LAYOUTS = ("versioned", "site-root")
 SITE_RECORD = ".framework-site.json"
+# Sources a site-root publish never writes: only their rendered output goes to the site
+_NOTEBOOK_SOURCES = (".qmd", ".ipynb", ".rmd")
 
 
 @dataclass(frozen=True)
@@ -369,8 +371,9 @@ def folder_deliver_root(bundle: Path, site: Path, base_url: str | None = None) -
     """Put the latest publish alone at the folder's root, with no versions or index.
 
     The files the previous publish wrote, listed in ``.framework-site.json``, are removed
-    first; other files in the folder (``CNAME``, ``.nojekyll``) are left alone. The bundle's
-    ``artifact.json`` isn't written, nor a copy of an HTML source identical to
+    first; other files in the folder (``CNAME``, ``.nojekyll``) are left alone. Only
+    rendered output is written: the bundle's ``artifact.json`` isn't, nor a notebook's
+    source (``.qmd``, ``.ipynb``, ``.Rmd``), nor a copy of an HTML source identical to
     ``index.html``, so a deck is written once.
     """
     manifest = json.loads((bundle / "artifact.json").read_text(encoding="utf-8"))
@@ -385,18 +388,20 @@ def folder_deliver_root(bundle: Path, site: Path, base_url: str | None = None) -
     previous = previous if isinstance(previous, dict) else {}
     index = (bundle / "index.html").read_bytes() if (bundle / "index.html").is_file() else None
     original = manifest.get("original")
+
+    def source_copy(path: Path) -> bool:
+        """The bundle's copy of a notebook source, or of an HTML source equal to index.html."""
+        if path.parent != bundle or path.name != original or path.name == "index.html":
+            return False
+        suffix = path.suffix.lower()
+        if suffix in _NOTEBOOK_SOURCES:
+            return True
+        return suffix in (".html", ".htm") and path.read_bytes() == index
+
     files = [
         path
         for path in sorted(bundle.rglob("*"))
-        if path.is_file()
-        and path.name != "artifact.json"
-        and not (
-            path.parent == bundle
-            and path.name == original
-            and path.name != "index.html"
-            and path.suffix.lower() in (".html", ".htm")
-            and path.read_bytes() == index
-        )
+        if path.is_file() and path.name != "artifact.json" and not source_copy(path)
     ]
     root = site.resolve()
     for relative in previous.get("files") or []:

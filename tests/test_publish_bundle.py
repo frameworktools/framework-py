@@ -578,6 +578,41 @@ def test_site_root_layout_keeps_only_the_latest_publish(
     assert sorted(p.name for p in site.iterdir()) == [".framework-site.json", "CNAME", "index.html"]
 
 
+def test_site_root_publishes_only_rendered_output(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Ports 2026-11-07 (N6): the deck's .qmd source was written beside index.html
+    import subprocess
+
+    from framework import _pages
+
+    (project / "settings.yml").write_text(
+        "default:\n  project_name: Test\n  publish:\n    default: pages\n"
+        "    destinations:\n"
+        "      pages: {driver: folder, path: docs, visibility: public, layout: site-root}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+
+    def render(command: list[str], **kwargs: Any) -> Any:
+        out = Path(command[command.index("--output-dir") + 1])
+        (out / "deck.html").write_text("<p>slides</p>", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(_pages.shutil, "which", lambda name: "/usr/bin/quarto")
+    monkeypatch.setattr(_pages.subprocess, "run", render)
+    for name in ("deck.qmd", "deck.ipynb"):
+        notebook = project / name
+        notebook.write_text(
+            "---\ntitle: Deck\n---\n" if name.endswith(".qmd") else '{"cells": []}',
+            encoding="utf-8",
+        )
+        fw.publish_notebook(notebook, to="pages")
+        site = project / "docs"
+        assert sorted(p.name for p in site.iterdir()) == [".framework-site.json", "index.html"]
+        assert "<p>slides</p>" in (site / "index.html").read_text(encoding="utf-8")
+
+
 def test_layout_is_checked(monkeypatch: pytest.MonkeyPatch) -> None:
     from framework.publish_bundle import Destination, validate
 
