@@ -29,7 +29,7 @@ import subprocess
 import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import pandas as pd
@@ -902,8 +902,14 @@ def _publish_route(to: str | None, connection: str | None) -> tuple[Any, str | N
 
 
 def _data_slug(dest: str) -> str:
-    """publish_data()'s slug: ``dest``'s file name without its extension."""
-    return Path(Path(dest).name.removesuffix(".gz")).stem
+    """publish_data()'s slug: ``dest`` without its extension, with each ``/`` as ``-``.
+
+    ``"tables/demo.csv"`` becomes ``"tables-demo"``, so the folder part is kept.
+    """
+    path = PurePosixPath(dest.replace("\\", "/").removesuffix(".gz"))
+    if path.name:
+        path = path.with_suffix("")
+    return "-".join(part for part in path.parts if part not in ("", ".", "..", "/"))
 
 
 def publish_data(
@@ -927,13 +933,14 @@ def publish_data(
     explicit ``connection``, or a project without ``publish.default`` gets a plain upload
     to the bucket at ``dest``. Folder, GitHub, and Cloud destinations publish with
     ``publish()``: a DataFrame becomes the same typed table ``publish()`` makes of it, and a
-    file is published under ``dest``'s file name, which (without its extension) is the
-    slug.
+    file is published under ``dest``'s file name. The slug is ``dest`` without its
+    extension, with each ``/`` turned into ``-``: ``"tables/demo.csv"`` publishes as
+    ``tables-demo``.
 
     Args:
         data: A DataFrame to write in ``format``, or the path of a file to upload as is.
         dest: The object's path in the bucket, including any extension. For other
-            destinations, its file name names a published file and the slug.
+            destinations, it names the slug, and its file name names a published file.
         format: How a DataFrame is written to a bucket. One of "csv", "parquet", or "json"
             (records). Default: "csv". It is checked for files too, but does not change them.
         connection: A storage bucket name from the settings. Default: the project's default
@@ -965,6 +972,7 @@ def publish_data(
     if selected is not None and isinstance(data, pd.DataFrame):
         # The same typed table publish() makes of a DataFrame
         slug = _data_slug(dest)
+        inform(f"Publishing {dest} as {slug}")
         published = publish(
             data,
             to=selected.name,
@@ -1001,6 +1009,7 @@ def publish_data(
             staged.parent.mkdir()
             shutil.copy2(source, staged)
             slug = _data_slug(dest)
+            inform(f"Publishing {dest} as {slug}")
             published = publish(
                 staged,
                 to=selected.name,

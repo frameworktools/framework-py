@@ -524,8 +524,8 @@ def test_data_dir_and_list_follow_publish_default(
     monkeypatch.setattr("framework.cloud.project_token", lambda: None)
     frame = pd.DataFrame({"arm": ["a", "b"], "n": [10, 12]})
     url = fw.publish_data(frame, "tables/arm_counts.csv")
-    assert url == "https://files.example.org/r/arm-counts/"
-    artifact = project / "local-site/arm-counts"
+    assert url == "https://files.example.org/r/tables-arm-counts/"
+    artifact = project / "local-site/tables-arm-counts"
     assert pd.read_csv(artifact / "data.csv")["n"].tolist() == [10, 12]
 
     figures = project / "figures"
@@ -540,7 +540,7 @@ def test_data_dir_and_list_follow_publish_default(
     assert {"a.png", "sub/c.png"} <= published and "b.txt" not in published
 
     listed = fw.publish_list()
-    assert set(listed["key"]) == {"arm-counts/", "figures/"}
+    assert set(listed["key"]) == {"tables-arm-counts/", "figures/"}
     assert listed.set_index("key").loc["figures/", "url"] == "https://files.example.org/r/figures/"
     assert fw.publish_list("fig")["key"].tolist() == ["figures/"]
     with pytest.raises(fw.FrameworkError, match="lists S3 and folder destinations"):
@@ -584,3 +584,18 @@ def test_data_of_a_frame_publishes_a_typed_table_with_metadata(
         fw.publish_data(frame, "x.csv", to="s3", title="T")
     with pytest.raises(fw.FrameworkError, match="requires publishing to Framework Cloud"):
         fw.publish_dir(folder, to="s3", description="D")
+
+
+def test_data_slug_keeps_the_folder_part(
+    project: Path, s3: FakeS3, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Hand testing 2026-11-07: "tables/demo.csv" published as "demo", silently dropping
+    # the folder
+    _with_site(project)
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    data = project / "demo.csv"
+    data.write_text("x\n1\n", encoding="utf-8")
+    caplog.set_level("INFO", logger="framework")
+    url = fw.publish_data(data, "tables/demo.csv", compress=True)
+    assert url == "https://files.example.org/r/tables-demo/"
+    assert "Publishing tables/demo.csv.gz as tables-demo" in caplog.text
