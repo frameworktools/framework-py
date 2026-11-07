@@ -23,8 +23,10 @@ def doc_title(path: str | Path) -> str | None:
     """The ``title`` in a Quarto document's YAML front matter, or None.
 
     A ``.qmd`` or ``.Rmd`` file's front matter opens the file. A Jupyter notebook's sits
-    in its first cell, a raw cell, as Quarto reads it. Publishing uses the title in place
-    of the file name, as R does.
+    in its first cell, a raw cell, as Quarto reads it. A notebook whose first cell is a
+    markdown cell starting with a level-1 heading (``# Title``, as Framework's notebook
+    stub has) takes the heading, as Quarto does. Publishing uses the title in place of the
+    file name, as R does.
     """
     import yaml
 
@@ -37,10 +39,13 @@ def doc_title(path: str | Path) -> str | None:
         if suffix == ".ipynb":
             cells = json.loads(text).get("cells") or []
             first = cells[0] if cells else {}
-            if first.get("cell_type") != "raw":
-                return None
             body = first.get("source", "")
             text = "".join(body) if isinstance(body, list) else str(body)
+            if first.get("cell_type") == "markdown":
+                heading = re.match(r"\A\s*#[ \t]+(.+?)[ \t#]*(?:\r?\n|\Z)", text)
+                return heading.group(1).strip() if heading else None
+            if first.get("cell_type") != "raw":
+                return None
     except (OSError, UnicodeError, ValueError, AttributeError):
         return None
     match = re.match(r"\A\s*---[ \t]*\r?\n(.*?)\r?\n(?:---|\.\.\.)[ \t]*(\r?\n|\Z)", text, re.S)

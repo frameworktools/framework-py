@@ -766,7 +766,8 @@ def publish_notebook(
         share_unlisted: Explicitly allow collection readers to access an unlisted artifact.
         allow_private: Deprecated name for ``include_private``.
         title: The published title, on Framework Cloud and named destinations. Default: the
-            ``title`` in the document's YAML front matter, else its file name.
+            ``title`` in the document's YAML front matter (for a Jupyter notebook, or a
+            level-1 heading opening its first markdown cell), else its file name.
         description: A short description, on Framework Cloud and named destinations.
 
     Returns:

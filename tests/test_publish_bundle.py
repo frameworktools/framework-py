@@ -482,6 +482,18 @@ def test_doc_title_reads_front_matter(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert doc_title(notebook) == "From raw"
+    # Hand testing 2026-11-07: Framework's own ipynb stub opens with a "# Title" cell
+    for source, title in (
+        (["# Setup and settings\n", "\n", "Text"], "Setup and settings"),
+        ("# Closed #\n", "Closed"),
+        ("## Level two\n", None),
+        ("Text first\n# Later", None),
+    ):
+        notebook.write_text(
+            json.dumps({"cells": [{"cell_type": "markdown", "source": source}]}),
+            encoding="utf-8",
+        )
+        assert doc_title(notebook) == title
     (tmp_path / "c.qmd").write_text("# No front matter\n", encoding="utf-8")
     assert doc_title(tmp_path / "c.qmd") is None
     assert doc_title(tmp_path / "missing.qmd") is None
