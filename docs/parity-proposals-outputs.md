@@ -329,3 +329,47 @@ Python: `framework/_identifiers.py` (`identifier_columns()`, `header_columns()`,
 
 R: the same rule in a helper shared by `data_save()` and `R/security_audit.R`; headers via
 `readLines(n = 1)`, `arrow::read_schema()` (Suggests), and `haven::read_dta(n_max = 0)`.
+
+## D12. `show_table()` and plotly under `embed-resources`
+
+New function, Python first (listed in `parity.toml` as `python_only` until R exports it):
+
+```text
+show_table(data, caption = NULL, digits = NULL, big_mark = "", na = "", index = FALSE)
+```
+
+Rule: it returns a Markdown pipe table that the notebook displays as Markdown.
+
+- `data`: a data frame (Python: pandas or polars DataFrame or Series, or a numpy array).
+  Every row is shown.
+- Header: the column names. Alignment row: `---:` for numeric columns (not logical/bool),
+  `:---` for all others.
+- Cells, in order of checks:
+  1. missing (`NA`, `None`, `NaN`, `NaT`) -> `na`;
+  2. logical -> as the language prints it (`TRUE`/`FALSE` in R, `True`/`False` in Python);
+  3. integer -> digits with `big_mark` between groups of three;
+  4. double: infinite -> `Inf`/`-Inf`; with `digits`, fixed `digits` decimals
+     (`1.50`); without, a whole number without decimals (`1`) and anything else as the
+     language prints it (Python `str()`, R `format(x, digits = 15)`); `big_mark` groups the
+     whole part; a value printed in exponent form is left as is;
+  5. anything else -> its string form.
+  Then `|` becomes `\|` and runs of whitespace (including newlines) become one space.
+- `caption`: after the table, a blank line and `: <caption>` (Pandoc's table caption),
+  whitespace collapsed. In Quarto, `#| tbl-cap` with `#| label: tbl-...` does the same and
+  adds a cross-reference.
+- `index = TRUE` (Python only; R has no index, and R's `row.names` is the equivalent):
+  the index becomes the first column.
+- Errors: data that isn't table-like; `digits` negative or not a whole number.
+
+Python: `framework/display.py`; returns `TableDisplay`, with `_repr_markdown_()` for
+Jupyter and Quarto, and `str()`/`repr()` giving the Markdown. Verified with Quarto 1.10:
+the table renders with Bootstrap table classes, its caption, and a working `@tbl-` reference.
+
+R: implement with `knitr::kable(format = "pipe")` and `knitr::asis_output()` (knitr is
+already used for Quarto), applying the cell rules above through `format.args` or by
+pre-formatting columns, so both languages render the same Markdown for the same data.
+
+plotly: documented only (`docs/site/guides/quarto.md`, "plotly with embed-resources"): with
+`embed-resources: true`, write each figure's HTML with plotly.js only once and no MathJax.
+R's htmlwidgets have the same issue with `embed-resources`; the R docs could note
+`plotly::partial_bundle()` or `selfcontained = FALSE` there.

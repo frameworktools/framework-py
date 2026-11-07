@@ -139,6 +139,42 @@ fw.save_notebook("notebooks/exploration.qmd", name="exploration-2026-10", format
 
 The formats are `html`, `pdf`, and `docx`. HTML is rendered as one self-contained file unless you pass `embed_resources=False`. That overrides the project's `_quarto.yml` and saves the page's `_files/` folder beside it. `quarto_args` passes extra arguments to `quarto render`. `save_notebook()` also renders Jupyter notebooks (`.ipynb`).
 
+
+## Tables and interactive figures
+
+[show_table()](ref:show_table) shows a DataFrame as a table, as `knitr::kable()` does in R. It returns a Markdown pipe table, which Quarto makes a real table in HTML, PDF, and Word, styled like the rest of the page, and which Jupyter, VS Code, and Positron show as a table.
+
+````markdown
+```{python}
+#| label: tbl-arms
+#| tbl-cap: Patients by arm
+fw.show_table(counts, digits=1, big_mark=",")
+```
+
+@tbl-arms shows the arms.
+````
+
+`digits` sets the decimal places of floating-point numbers, `big_mark` the thousands separator, and `na` what a missing value shows. `caption` adds a caption when the cell has no `tbl-cap`. Every row is shown, so summarize large data first.
+
+### plotly with embed-resources
+
+With `embed-resources: true`, Quarto copies every script a page loads into the page. plotly's notebook renderer adds plotly.js and a MathJax script to every figure, so a page with a few dozen figures can pass 100 MB. Write each figure's HTML yourself, with plotly.js only in the first one and no MathJax:
+
+```python
+from IPython.display import HTML, display
+
+_plotly_loaded = False
+
+
+def show_plotly(fig):
+    global _plotly_loaded
+    html = fig.to_html(full_html=False, include_plotlyjs=not _plotly_loaded, include_mathjax=False)
+    display(HTML(html))
+    _plotly_loaded = True
+```
+
+Call `show_plotly(fig)` in place of `fig.show()`. The page then carries one copy of plotly.js, a few megabytes, plus each figure's data. Put the function in `functions/`, so every notebook shares it. Formulas in plotly text need MathJax: pass `include_mathjax="cdn"` for the one figure that has them.
+
 ## Publishing
 
 [publish_notebook()](ref:publish_notebook) renders a notebook and uploads the result to a storage bucket or to Framework Cloud. The [Publishing](guide:publishing) guide covers both.

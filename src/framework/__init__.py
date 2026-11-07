@@ -62,6 +62,7 @@ from framework.create import (
     project_create_from_layers,
 )
 from framework.data import data_add, data_read, data_save
+from framework.display import TableDisplay, show_table
 from framework.errors import (
     CacheWarning,
     DataChangedWarning,
@@ -162,6 +163,7 @@ __all__ = [
     "ResolvedSpec",
     "SettingsError",
     "SpecError",
+    "TableDisplay",
     "UnsupportedFormatError",
     "__version__",
     "adopt",
@@ -256,6 +258,7 @@ __all__ = [
     "settings",
     "settings_read",
     "settings_write",
+    "show_table",
     "skills_sync",
     "spec_check",
     "spec_resolve",

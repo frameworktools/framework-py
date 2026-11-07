@@ -34,7 +34,7 @@
   title: Notebooks and scripts
   description: Notebooks, scripts, presentations, stubs, and templates
   common: [make_notebook, make_script]
-  names: [make_notebook, make_qmd, make_script, make_presentation, make_revealjs, stubs_list,
+  names: [make_notebook, make_qmd, make_script, show_table, make_presentation, make_revealjs, stubs_list,
           stubs_path, stubs_publish, quarto_generate_all, quarto_regenerate, framework_template_path,
           read_framework_template, write_framework_template, reset_framework_template]
 
@@ -90,4 +90,4 @@
   names: [FrameworkError, SettingsError, SpecError, DataNotFoundError, ProjectNotFoundError,
           UnsupportedFormatError, IntegrityError, CloudError, FrameworkWarning, CacheWarning,
           DataChangedWarning, AuditResult, BootstrapResult, CapturedOutput, Connection, DataInfo,
-          PackagesStatus, ResolvedSpec]
+          PackagesStatus, ResolvedSpec, TableDisplay]

@@ -578,6 +578,7 @@ names = [
     "load_model",  # proposed: load_model()
     "db_execute_file",  # proposed: db_execute_file()
     "db_copy_from",  # proposed: db_copy_from()
+    "show_table",  # proposed: show_table()
 ]
 
 [functions.skills_sync]
