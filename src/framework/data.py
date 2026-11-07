@@ -464,14 +464,21 @@ def data_save(
 
 
 def _derive_name(file_path: Path, config: dict[str, Any], root: Path) -> str:
-    directories = config.get("directories") or {}
-    for key in ("inputs_raw", "inputs_intermediate", "inputs_final", "inputs_reference"):
-        folder = directories.get(key) if isinstance(directories, dict) else None
-        if not isinstance(folder, str):
+    """``<key>.<file name>`` for a file in a configured inputs directory, as in R.
+
+    The deepest matching directory wins, so a file in ``inputs_private_raw``
+    (``inputs/private/raw``) is ``inputs.private.raw.<file name>``.
+    """
+    directories = config.get("directories")
+    best: tuple[int, str] | None = None
+    for key, folder in (directories if isinstance(directories, dict) else {}).items():
+        if not re.match(r"^inputs(_|$)", str(key)) or not isinstance(folder, str) or not folder:
             continue
         base = in_root(folder, root).resolve()
-        if file_path.is_relative_to(base):
-            return f"{key.replace('_', '.')}.{file_path.stem}"
+        if file_path.is_relative_to(base) and (best is None or len(base.parts) > best[0]):
+            best = (len(base.parts), str(key))
+    if best is not None:
+        return f"{best[1].replace('_', '.')}.{file_path.stem}"
     inform(
         f"Note: Using '{file_path.stem}' as data name. Consider specifying a more descriptive name."
     )
@@ -531,8 +538,9 @@ def data_add(
     Args:
         file_path: The file to add. It must exist. A relative path is looked for from
             the project root, then from the current folder.
-        name: Catalog name. Default: from the folder (``inputs.raw.<file>``
-            for a file in ``inputs_raw``), else the file name.
+        name: Catalog name. Default: from the deepest configured inputs folder
+            (``inputs.raw.<file>`` for a file in ``inputs_raw``, and
+            ``inputs.private.raw.<file>`` in ``inputs_private_raw``), else the file name.
         type: File type. Default: from the extension.
         delimiter: Delimiter for CSV files.
         locked: Whether later reads must find the file unchanged.

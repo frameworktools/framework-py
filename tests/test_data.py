@@ -223,6 +223,27 @@ def test_add_names_files_by_folder(data_project: Path) -> None:
     assert fw.data_info("inputs.raw.survey").path == path.resolve()
 
 
+def test_add_names_files_in_private_and_public_inputs(project: Path) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n  directories:\n"
+        "    inputs: inputs\n"
+        "    inputs_private_raw: inputs/private/raw\n"
+        "    inputs_public_final: inputs/public/final\n",
+        encoding="utf-8",
+    )
+    for folder in ("inputs/private/raw", "inputs/public/final"):
+        (project / folder).mkdir(parents=True)
+    FRAME.to_csv(project / "inputs/private/raw/participants.csv", index=False)
+    FRAME.to_csv(project / "inputs/public/final/summary.csv", index=False)
+    FRAME.to_csv(project / "inputs/loose.csv", index=False)
+    fw.data_add(project / "inputs/private/raw/participants.csv")
+    fw.data_add(project / "inputs/public/final/summary.csv")
+    fw.data_add(project / "inputs/loose.csv")
+    names = set(fw.data_list()["name"])
+    assert {"inputs.private.raw.participants", "inputs.public.final.summary"} <= names
+    assert "inputs.loose" in names
+
+
 def test_add_into_inline_catalog_and_flat_settings(project: Path) -> None:
     (project / "settings.yml").write_text("project_name: Flat\n", encoding="utf-8")
     (project / "x.parquet").write_bytes(b"")

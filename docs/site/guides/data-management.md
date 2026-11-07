@@ -65,7 +65,7 @@ You can write entries by hand, but [data_add()](ref:data_add) and [data_save()](
 fw.data_add("inputs/raw/survey.csv")
 ```
 
-Without a `name`, a file in one of the `inputs_raw`, `inputs_intermediate`, `inputs_final`, or `inputs_reference` folders is named after that folder, so this call registers `inputs.raw.survey`. Elsewhere the name is the file name, and Framework suggests choosing a more descriptive one.
+Without a `name`, a file in a configured inputs folder (any `directories` key that starts with `inputs`) is named after the deepest one, so this call registers `inputs.raw.survey`, and `inputs/private/raw/participants.csv` in a privacy-sensitive project registers `inputs.private.raw.participants`. Elsewhere the name is the file name, and Framework suggests choosing a more descriptive one.
 
 ```python
 fw.data_add("inputs/raw/sites_2024.csv", name="inputs.raw.sites")
