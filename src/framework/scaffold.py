@@ -279,7 +279,9 @@ def status() -> None:
         if top is not None:
             lines.append(f"  Inside the repository at {top} (counts are for this project)")
         lines.append(f"  Branch: {_git('-C', str(root), 'branch', '--show-current')}")
-        lines.append(f"  Commits: {_git('-C', str(root), 'rev-list', '--count', 'HEAD', *scope)}")
+        label = "Commits touching this project" if top is not None else "Commits"
+        count = _git("-C", str(root), "rev-list", "--count", "HEAD", *scope)
+        lines.append(f"  {label}: {count}")
         changes = (_git("-C", str(root), "status", "--porcelain", "--", ".") or "").splitlines()
         lines.append(
             f"  Uncommitted changes: {len(changes)}" if changes else "  Working tree clean"

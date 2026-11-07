@@ -131,7 +131,7 @@ def test_status_of_a_project_inside_another_repository(
     fw.status()
     output = capsys.readouterr().out
     assert f"Inside the repository at {outer.resolve()}" in output
-    assert "Commits: 0" in output
+    assert "Commits touching this project: 0" in output
     # settings.yml is the project's one change; unrelated.txt is outside it
     assert "Uncommitted changes: 1" in output
 
