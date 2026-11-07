@@ -2,22 +2,72 @@
 
 from __future__ import annotations
 
+import re
 from os import PathLike
 from pathlib import Path, PureWindowsPath
+from typing import Any
 
 from framework.errors import ProjectNotFoundError
 
 SETTINGS_FILES = ("settings.yml", "config.yml")
+_FRAMEWORK_KEYS = ("project_type", "project_name", "directories")
 
 # R stops after ten parent folders, so Python does too.
 _MAX_DEPTH = 10
 
 
+def is_framework_config(path: Path) -> bool:
+    """Whether a ``config.yml`` is Framework's settings file.
+
+    Other tools use config.yml too (an app's own settings, CI), so only a file
+    with Framework keys counts: ``project_type``, ``project_name``, or
+    ``directories``, the 1.x ``options:`` keys (``results``, ``framework_db``,
+    or a key ending in ``_dir``), or a 1.x package list whose items have
+    ``auto_attach``, in its ``default:`` section or at the top level. The rule
+    is R's ``.fw_is_framework_config()``, shared with fw.
+    """
+    from framework import _yaml
+
+    if not path.is_file():
+        return False
+    try:
+        raw: Any = _yaml.read(path)
+    except Exception:
+        return False
+    if not isinstance(raw, dict):
+        return False
+    default = raw.get("default")
+    section = default if isinstance(default, dict) and default else raw
+    if any(key in section for key in _FRAMEWORK_KEYS):
+        return True
+    options = section.get("options")
+    if isinstance(options, dict) and any(
+        str(key) in ("results", "framework_db") or re.search(r"_dir$", str(key)) for key in options
+    ):
+        return True
+    packages = section.get("packages")
+    if isinstance(packages, list):
+        return any(isinstance(entry, dict) and "auto_attach" in entry for entry in packages)
+    return False
+
+
+def settings_files(folder: str | Path) -> list[Path]:
+    """The files that make a folder a Framework project, in order: ``settings.yml``,
+    ``settings.yaml``, and a ``config.yml`` with Framework keys."""
+    folder = Path(folder)
+    found = [
+        folder / name for name in ("settings.yml", "settings.yaml") if (folder / name).is_file()
+    ]
+    if is_framework_config(folder / "config.yml"):
+        found.append(folder / "config.yml")
+    return found
+
+
 def _settings_in(folder: Path) -> Path | None:
-    for name in SETTINGS_FILES:
-        candidate = folder / name
-        if candidate.is_file():
-            return candidate
+    if (folder / "settings.yml").is_file():
+        return folder / "settings.yml"
+    if is_framework_config(folder / "config.yml"):
+        return folder / "config.yml"
     return None
 
 

@@ -236,9 +236,11 @@ def adopt(path: str | Path = ".", yes: bool = False) -> Path:
     root = Path(path).expanduser().resolve()
     if not root.is_dir():
         raise FrameworkError(f"Not a folder: {root}")
-    existing = [
-        n for n in ("settings.yml", "config.yml", ".framework/spec.json") if (root / n).exists()
-    ]
+    from framework.project import settings_files
+
+    existing = [path.name for path in settings_files(root)]
+    if (root / ".framework/spec.json").exists():
+        existing.append(".framework/spec.json")
     if existing:
         raise FrameworkError(
             f"{root} is already a Framework project (it has {', '.join(existing)})."

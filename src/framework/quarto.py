@@ -209,9 +209,9 @@ def quarto_regenerate(project_path: str | Path, backup: bool = True) -> Regenera
             tool off.
     """
     root = Path(project_path).expanduser()
-    settings_file = next(
-        (root / name for name in ("settings.yml", "config.yml") if (root / name).is_file()), None
-    )
+    from framework.project import _settings_in
+
+    settings_file = _settings_in(root)
     if settings_file is None:
         raise FrameworkError("Project settings.yml/config.yml not found")
     config = settings_read(settings_file)

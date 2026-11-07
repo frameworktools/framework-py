@@ -200,3 +200,31 @@ def test_a_tracked_env_refuses_the_token(tmp_path: Path) -> None:
     subprocess.run(["git", "-C", str(tmp_path), "add", ".env"], check=True, env=env)
     with pytest.raises(fw.FrameworkError, match=r"git rm --cached \.env"):
         keep_env_out_of_git(tmp_path)
+
+
+def test_a_config_yml_counts_only_with_framework_keys(existing: Path) -> None:
+    from framework.project import is_framework_config, settings_files
+
+    config = existing / "config.yml"
+    # A tool's own config.yml (sidr-pipeline's repository settings)
+    config.write_text("repository:\n  name: pipeline\noutput: build\n", encoding="utf-8")
+    assert not is_framework_config(config)
+    assert settings_files(existing) == []
+    for text in (
+        "default:\n  project_type: project\n",
+        "project_name: Old\n",
+        "default:\n  options:\n    data_dir: data\n",
+        "default:\n  packages:\n    - name: dplyr\n      auto_attach: true\n",
+    ):
+        config.write_text(text, encoding="utf-8")
+        assert is_framework_config(config), text
+    config.write_text("repository: pipeline\n", encoding="utf-8")
+    fw.adopt(existing, yes=True)
+    assert (existing / "settings.yml").is_file()
+
+
+def test_settings_yaml_is_an_existing_project(existing: Path) -> None:
+    (existing / "settings.yaml").write_text("default:\n  project_name: x\n", encoding="utf-8")
+    with pytest.raises(fw.FrameworkError, match=r"settings\.yaml"):
+        fw.adopt(existing, yes=True)
+    assert not (existing / "settings.yml").exists()

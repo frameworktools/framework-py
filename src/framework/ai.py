@@ -171,9 +171,6 @@ def _installed_spec(root: Path) -> dict[str, Any]:
     }
 
 
-_SETTINGS_FILES = ("settings.yml", "config.yml")
-
-
 def ai_skills_update(project_path: str | Path = ".") -> list[str]:
     """Refresh clean Framework skills. Preserve local edits and account forks.
 
@@ -196,7 +193,9 @@ def ai_skills_update(project_path: str | Path = ".") -> list[str]:
 
     show_messages()
     root = Path(project_path).expanduser()
-    if not any((root / name).is_file() for name in (".framework/spec.json", *_SETTINGS_FILES)):
+    from framework.project import _settings_in
+
+    if not (root / ".framework/spec.json").is_file() and _settings_in(root) is None:
         from framework.errors import ProjectNotFoundError
 
         raise ProjectNotFoundError(
