@@ -21,6 +21,7 @@ my-api/
 ├── scripts/               # data preparation and other scripts
 ├── tests/
 │   └── test_main.py       # tests with FastAPI's test client
+├── conftest.py            # lets the tests import app.main
 ├── README.md              # how to run the API
 ├── AGENTS.md
 ├── framework.db
@@ -96,7 +97,7 @@ uvicorn serves the API at http://127.0.0.1:8000. The interactive docs are at `/d
 Run the tests from the project folder.
 
 ```sh
-uv run python -m pytest
+uv run pytest
 ```
 
-`python -m pytest` puts the project folder on the import path, so `tests/test_main.py` can import `app.main`. Add a test to `tests/` for each new endpoint.
+The empty `conftest.py` at the project root puts the project folder on the import path, so `tests/test_main.py` can import `app.main`. Add a test to `tests/` for each new endpoint.
