@@ -108,6 +108,8 @@ from framework.outputs import (
 from framework.packages import (
     PackagesStatus,
     package_add,
+    package_set_add,
+    package_sets_list,
     packages_install,
     packages_list,
     packages_restore,
@@ -210,6 +212,8 @@ __all__ = [
     "new_project",
     "now",
     "package_add",
+    "package_set_add",
+    "package_sets_list",
     "packages_install",
     "packages_list",
     "packages_restore",

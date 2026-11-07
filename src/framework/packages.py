@@ -17,6 +17,7 @@ import tomllib
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -147,6 +148,122 @@ def package_add(requirement: str, *, install: bool = True, dev: bool = False) ->
         inform(f"{_package_name(requirement)} is already in pyproject.toml")
     if install:
         _check(_run([sys.executable, "-m", "pip", "install", requirement], root), "pip install")
+
+
+def _package_set(set_id: str) -> dict[str, Any]:
+    """A package set for a Python project: built in, or an account's set from the cloud."""
+    from framework.features import _for_python, _sets
+
+    if "/" in set_id and not set_id.startswith("framework/"):
+        return _cloud_package_set(set_id)
+    set_id = set_id.removeprefix("framework/")
+    sets = _sets("packages")
+    available = ", ".join(i for i, d in sets.items() if _for_python(d))
+    definition = sets.get(set_id)
+    if definition is None:
+        raise FrameworkError(f"Unknown package set: {set_id}. Available: {available}")
+    if not _for_python(definition):
+        raise FrameworkError(
+            f"The {definition['name']} package set isn't available for Python projects. "
+            f"Available: {available}"
+        )
+    return definition
+
+
+def _cloud_package_set(handle: str) -> dict[str, Any]:
+    """An account's package set, resolved by Framework Cloud as ``new()`` resolves chosen sets."""
+    from framework.cloud import _require_token, cloud_server, resolve_choices
+
+    server = cloud_server().url
+    token = _require_token(server)
+    body = {"language": "python", "package_sets": [handle]}
+    envelope, _ = resolve_choices(body, token, server)
+    for entry in envelope.get("layers") or []:
+        if isinstance(entry, dict) and entry.get("key") == handle:
+            return {"id": handle, "name": handle, "layer": entry.get("layer") or {}}
+    raise FrameworkError(f"The {handle} package set isn't available for Python projects.")
+
+
+def package_set_add(set: str, *, install: bool = True) -> dict[str, list[str]]:
+    """Add a package set's packages to the project's dependencies, and install them.
+
+    Packages the project already lists are left as they are. The rest are added to
+    ``pyproject.toml`` as ``package_add()`` adds them. A GitHub package keeps its repository.
+    Sets also stack at creation with ``new(package_sets=[...])``.
+
+    Args:
+        set: A built-in package set for Python, such as ``"python-data-analysis"`` or
+            ``"fastapi-python"`` (see ``package_sets_list()``). When you are signed in to
+            Framework Cloud, a handle such as ``"@yourname/lab-tools"`` adds one of your
+            account's sets.
+        install: Install the added packages now. With uv, False only updates
+            ``pyproject.toml`` and ``uv.lock``.
+
+    Returns:
+        ``{"added": [...], "present": [...]}``: the packages added and those the project
+        already listed.
+
+    Raises:
+        FrameworkError: For an unknown set, a set for another language, or a failed install.
+    """
+    from framework.create import _dependency
+
+    show_messages()
+    root = project_root()
+    path = _pyproject(root)
+    definition = _package_set(set)
+    wanted = ((definition.get("layer") or {}).get("packages") or {}).get("default_packages") or {}
+    listed = {_normalize(_package_name(d)) for d in _dependencies(root)}
+    present = [name for name in wanted if _normalize(name) in listed]
+    added = [name for name in wanted if _normalize(name) not in listed]
+    requirements = [_dependency(name, wanted[name] or {}) for name in added]
+
+    if requirements:
+        uv = _uv()
+        if uv is not None:
+            args = [uv, "add", *requirements]
+            if not install:
+                args.append("--no-sync")
+            _check(_run(args, root), "uv add")
+        else:
+            for requirement in requirements:
+                _add_to_pyproject(path, requirement)
+            if install:
+                args = [sys.executable, "-m", "pip", "install", *requirements]
+                _check(_run(args, root), "pip install")
+        inform(f"✓ Added {len(added)} package(s) from {definition['name']}: {', '.join(added)}")
+    else:
+        inform(f"The project already lists every package in {definition['name']}.")
+    if present:
+        inform(f"Already listed: {', '.join(present)}")
+    return {"added": added, "present": present}
+
+
+def package_sets_list() -> pd.DataFrame:
+    """Framework's built-in package sets for Python projects.
+
+    Add one to a project with ``package_set_add()``, or at creation with
+    ``new(package_sets=[...])``.
+
+    Returns:
+        One row per set with ``id``, ``name``, ``description``, and ``packages`` (a list of
+        package names).
+    """
+    from framework.features import _for_python, _sets
+
+    rows = [
+        {
+            "id": d["id"],
+            "name": d["name"],
+            "description": d["description"],
+            "packages": list(
+                ((d.get("layer") or {}).get("packages") or {}).get("default_packages") or {}
+            ),
+        }
+        for d in _sets("packages").values()
+        if _for_python(d)
+    ]
+    return pd.DataFrame(rows, columns=["id", "name", "description", "packages"])
 
 
 def packages_list() -> pd.DataFrame:

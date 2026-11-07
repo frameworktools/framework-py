@@ -1,5 +1,5 @@
 {
-  "commit": "6755b53da142a6deedada08f449c9ad5b7e6aa9a",
+  "commit": "85ac88a89183e61fa39a17801605c8a082763857",
   "files": {
     "docs/docs-site.md": {
       "sha256": "2b86e376b11401881ef77a595d20af203ffc50ed95d99a55e895157e8f8dca25",
@@ -61,13 +61,109 @@
       "sha256": "767fddb1071e0ce2cd88eb0d9999921c5009ff97ef51193f079224648df56536",
       "source": "inst/schema/spec.v1.json"
     },
+    "src/framework/_assets/sets/packages/bayes-r.json": {
+      "sha256": "0283f7222120dca289859c54e9c60402ac1e364f4abb31a29bda12111cdacb35",
+      "source": "inst/sets/packages/bayes-r.json"
+    },
+    "src/framework/_assets/sets/packages/causal-inference-r.json": {
+      "sha256": "85caa461ac4eddedce26f294d0021cd4e752c5934f6b31eeeb9630fccb5e77f9",
+      "source": "inst/sets/packages/causal-inference-r.json"
+    },
+    "src/framework/_assets/sets/packages/fastapi-python.json": {
+      "sha256": "28c565555f3c9870bcfaf749468195e330336ed231be79b506a77d2407a69f5f",
+      "source": "inst/sets/packages/fastapi-python.json"
+    },
+    "src/framework/_assets/sets/packages/large-data-r.json": {
+      "sha256": "9985c1730301e2899e651954e89866a1377a3d0562ffe9d386a14ab8764d2bca",
+      "source": "inst/sets/packages/large-data-r.json"
+    },
+    "src/framework/_assets/sets/packages/plumber-r.json": {
+      "sha256": "4e2a88d0046e4d6ddb61af12873c917832bfc0751570146400dc36ac87d1d0bb",
+      "source": "inst/sets/packages/plumber-r.json"
+    },
+    "src/framework/_assets/sets/packages/polars-python.json": {
+      "sha256": "1e02390ea752f9e5b53ed8c85fcbc7a64e2881c64e00305d618b386f6c05e3c3",
+      "source": "inst/sets/packages/polars-python.json"
+    },
+    "src/framework/_assets/sets/packages/python-bayes.json": {
+      "sha256": "4516c035c64ca4b402e50c30c97ba3505557223ad710ccf681fd366fd1264f56",
+      "source": "inst/sets/packages/python-bayes.json"
+    },
     "src/framework/_assets/sets/packages/python-data-analysis.json": {
       "sha256": "d11b6029bd828c9c3d0928235630fe7971f181922ed133d15d8980345da7392b",
       "source": "inst/sets/packages/python-data-analysis.json"
     },
+    "src/framework/_assets/sets/packages/python-database.json": {
+      "sha256": "5f6bdbd88457d0221f71cd70d1f70347d88c9d861a7abc494a80536f5e10ce54",
+      "source": "inst/sets/packages/python-database.json"
+    },
+    "src/framework/_assets/sets/packages/python-ml.json": {
+      "sha256": "00e6d6f0eee6efcf3680c191bfba6703ea2a13b63cc8cb1932d6877cc1e0ff53",
+      "source": "inst/sets/packages/python-ml.json"
+    },
+    "src/framework/_assets/sets/packages/python-spatial.json": {
+      "sha256": "1703ecb7024368c07e8334daabf64cac376fecfd880d408c0fdf9ad8ef4343e0",
+      "source": "inst/sets/packages/python-spatial.json"
+    },
+    "src/framework/_assets/sets/packages/python-viz.json": {
+      "sha256": "78b7f0261a423c85f2a9cb0a63f7ff9089cad248984596ab2798510cc3a4a955",
+      "source": "inst/sets/packages/python-viz.json"
+    },
+    "src/framework/_assets/sets/packages/regression-r.json": {
+      "sha256": "85920611884d081888420677e5419e2a5b4a39c3161005da1ae6dfd2b819a276",
+      "source": "inst/sets/packages/regression-r.json"
+    },
+    "src/framework/_assets/sets/packages/shiny-python.json": {
+      "sha256": "820f0b63995f84d35a57f9eee54dc6fd769d836554543c6e827bd5456c8be8fb",
+      "source": "inst/sets/packages/shiny-python.json"
+    },
+    "src/framework/_assets/sets/packages/shiny-r.json": {
+      "sha256": "a9913174c986d6a2e2dbf7a580285d835e18e13520a77c7f17c3c47b1dba81bb",
+      "source": "inst/sets/packages/shiny-r.json"
+    },
+    "src/framework/_assets/sets/packages/spatial-r.json": {
+      "sha256": "0751ba7e4fae1d57a61da3d54435ef99a77c397809939168c678e37c239631a2",
+      "source": "inst/sets/packages/spatial-r.json"
+    },
+    "src/framework/_assets/sets/packages/survey-r.json": {
+      "sha256": "9f8ef8507516297b8acff5dcb24b32cd582981afe5f4bb8c9ab2438fae1bf799",
+      "source": "inst/sets/packages/survey-r.json"
+    },
+    "src/framework/_assets/sets/packages/survival-r.json": {
+      "sha256": "fdd97ff10d2539b22b46b7ab69b7be7186da1fea4a32a6f12029600d49dba6bf",
+      "source": "inst/sets/packages/survival-r.json"
+    },
+    "src/framework/_assets/sets/packages/tables-r.json": {
+      "sha256": "bda1cf4289bfeda025d9bbe9d4ad19a9dce66acb25d2028f8650a09bf5a22a4c",
+      "source": "inst/sets/packages/tables-r.json"
+    },
+    "src/framework/_assets/sets/packages/text-r.json": {
+      "sha256": "0f6a9fd4b7885f14c9d14e3a7310addac84cca71b9d82390759089f31b03f11a",
+      "source": "inst/sets/packages/text-r.json"
+    },
+    "src/framework/_assets/sets/packages/tidy-core.json": {
+      "sha256": "7e8742add524c00d21b229c0db446f4d348d290af883a05979e55f18ddf2ff12",
+      "source": "inst/sets/packages/tidy-core.json"
+    },
+    "src/framework/_assets/sets/packages/tidy-database.json": {
+      "sha256": "d09649632ef0f251b632eea2b7e890f556c35467fb4921b9146a8e859fac338a",
+      "source": "inst/sets/packages/tidy-database.json"
+    },
+    "src/framework/_assets/sets/packages/tidy-omop.json": {
+      "sha256": "f4706cc85428a37cfa2dc4c366b9e60f150ed31aab4c629f1b5b60f84f144f3c",
+      "source": "inst/sets/packages/tidy-omop.json"
+    },
+    "src/framework/_assets/sets/packages/tidymodels.json": {
+      "sha256": "045d2fdac9eff8989d881937d721a7550f71493b1cca00e2860692b97b135afd",
+      "source": "inst/sets/packages/tidymodels.json"
+    },
     "src/framework/_assets/sets/packages/tidyverse-analysis.json": {
       "sha256": "f5b157a35097ab007d2a5b7837faf78fdce2bd523c5d6fa6e5f0c433f4fdd738",
       "source": "inst/sets/packages/tidyverse-analysis.json"
+    },
+    "src/framework/_assets/sets/packages/tidyverse-extended.json": {
+      "sha256": "8e4ac48ffac2423659ef0d6e1489386c270fb1246c7ddb0fa246055a3c6f88b4",
+      "source": "inst/sets/packages/tidyverse-extended.json"
     },
     "src/framework/_assets/sets/skills/framework.json": {
       "sha256": "fb9963be10a404f684d1b158d93372865b12e9dc2edf9761a44b5a57c0eb57b9",
@@ -110,11 +206,11 @@
       "source": "tests/integration/sqlserver/init.sql"
     },
     "tests/shared/NAMESPACE": {
-      "sha256": "498a60ea34bb04315de41420a7ec2f58beb502ac98c9e22be7b50aaf4f6a0256",
+      "sha256": "d14163d5d6241daad7bb47b1337fdde0110649d332256b243bd7f55d09452299",
       "source": "NAMESPACE"
     },
     "tests/shared/conformance/README.md": {
-      "sha256": "6f2d8cf9a3f73fc90bca8802a1741421be6603f93658a0872900a574e3908611",
+      "sha256": "719868ba8867552fab21a291b35c3e5fefd757852934983b9a0b350909791e02",
       "source": "inst/conformance/README.md"
     },
     "tests/shared/conformance/adopt/case-insensitive.json": {
@@ -242,6 +338,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "6755b53da142a6deedada08f449c9ad5b7e6aa9a",
+  "ref": "85ac88a89183e61fa39a17801605c8a082763857",
   "source": "framework (R package)"
 }

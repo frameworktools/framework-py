@@ -21,8 +21,8 @@
   title: Packages
   description: Package management with uv
   common: [package_add, packages_status]
-  names: [package_add, packages_list, packages_install, packages_restore, packages_snapshot,
-          packages_update, packages_status]
+  names: [package_add, package_set_add, package_sets_list, packages_list, packages_install,
+          packages_restore, packages_snapshot, packages_update, packages_status]
 
 - id: saving-work
   title: Saving work

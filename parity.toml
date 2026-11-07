@@ -333,6 +333,16 @@ python = "package_add"
 status = "ported"
 note = "Adds to `pyproject.toml` and installs with uv when present, otherwise pip"
 
+[functions.package_set_add]
+python = "package_set_add"
+status = "ported"
+note = "Adds the set's packages to `pyproject.toml`"
+
+[functions.package_sets_list]
+python = "package_sets_list"
+status = "ported"
+note = "A DataFrame of the sets for Python"
+
 [functions.packages_install]
 python = "packages_install"
 status = "ported"

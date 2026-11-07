@@ -155,3 +155,93 @@ def test_packages_status_without_a_lock_file_names_the_real_reason(
     assert "uv is not installed" not in out
     assert "Lock file: missing (run packages_snapshot())" in out
     assert "Environment: unknown (no uv.lock to compare with)" in out
+
+
+def test_package_set_add_with_uv(calls: list[list[str]]) -> None:
+    result = fw.package_set_add("python-data-analysis", install=False)
+    assert "pandas" in result["present"]
+    assert "pandas" not in result["added"]
+    assert result["added"]
+    assert calls == [["uv", "add", *result["added"], "--no-sync"]]
+
+
+def test_package_set_add_without_uv(
+    project: Path, calls: list[list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(packages, "_uv", lambda: None)
+    result = fw.package_set_add("fastapi-python")
+    assert result == {"added": ["fastapi", "uvicorn", "pydantic", "httpx"], "present": []}
+    assert fw.packages_list()["package"].tolist() == [
+        "framework-py",
+        "pandas",
+        "fastapi",
+        "uvicorn",
+        "pydantic",
+        "httpx",
+    ]
+    assert calls == [[sys.executable, "-m", "pip", "install", *result["added"]]]
+    # A second time adds and installs nothing
+    assert fw.package_set_add("fastapi-python")["added"] == []
+    assert len(calls) == 1
+
+
+def test_package_set_add_keeps_a_github_repo(
+    project: Path, calls: list[list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    definition = {
+        "id": "gh",
+        "name": "GitHub set",
+        "layer": {
+            "packages": {
+                "default_packages": {"mytools": {"source": "github", "repo": "someone/mytools"}}
+            }
+        },
+    }
+    monkeypatch.setattr(packages, "_package_set", lambda set_id: definition)
+    fw.package_set_add("gh")
+    assert calls == [["uv", "add", "mytools @ git+https://github.com/someone/mytools"]]
+
+
+def test_package_set_add_rejects_unknown_and_r_sets(calls: list[list[str]]) -> None:
+    with pytest.raises(
+        fw.FrameworkError, match=r"Unknown package set: nope\. Available: .*fastapi"
+    ):
+        fw.package_set_add("nope")
+    with pytest.raises(fw.FrameworkError, match=r"isn't available for Python projects\. Available"):
+        fw.package_set_add("bayes-r")
+    assert calls == []
+
+
+def test_package_set_add_from_the_cloud(
+    calls: list[list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from framework import cloud
+
+    sent: list[dict[str, object]] = []
+
+    def resolve(body: dict[str, object], token: str, url: str) -> tuple[dict[str, object], None]:
+        sent.append(body)
+        layers = [
+            {"kind": "base", "key": "framework/project", "layer": {}},
+            {
+                "kind": "facet",
+                "key": "@me/lab",
+                "layer": {"packages": {"default_packages": {"labtools": {"source": "pypi"}}}},
+            },
+        ]
+        return {"layers": layers}, None
+
+    monkeypatch.setattr(cloud, "_require_token", lambda url: "token")
+    monkeypatch.setattr(cloud, "resolve_choices", resolve)
+    assert fw.package_set_add("@me/lab", install=False)["added"] == ["labtools"]
+    assert sent == [{"language": "python", "package_sets": ["@me/lab"]}]
+    assert calls == [["uv", "add", "labtools", "--no-sync"]]
+    with pytest.raises(fw.FrameworkError, match="isn't available for Python projects"):
+        fw.package_set_add("@me/r-only")
+
+
+def test_package_sets_list() -> None:
+    sets = fw.package_sets_list()
+    assert list(sets.columns) == ["id", "name", "description", "packages"]
+    assert {"python-data-analysis", "fastapi-python"} <= set(sets["id"])
+    assert "bayes-r" not in set(sets["id"])

@@ -66,6 +66,18 @@ Quarto runs the Python chunks of `.qmd` notebooks through Jupyter, so projects t
 fw.package_add("jupyter")
 ```
 
+## Package sets
+
+A package set is a group of packages for one kind of work. [package_set_add()](ref:package_set_add) adds a set to an existing project. It adds the packages the project doesn't list yet and installs them. Packages already listed stay as they are. [package_sets_list()](ref:package_sets_list) shows the sets for Python.
+
+```python
+fw.package_sets_list()
+fw.package_set_add("python-ml")
+fw.package_set_add("fastapi-python", install=False)
+```
+
+Signed in to Framework Cloud, you can also add one of your account's sets by its handle, such as `fw.package_set_add("@yourname/lab-tools")`. New projects take sets with `new(package_sets=[...])`.
+
 ## Listing and checking
 
 [packages_list()](ref:packages_list) returns the dependencies in `pyproject.toml` with the version installed in the running environment.
