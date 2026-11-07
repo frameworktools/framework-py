@@ -36,7 +36,13 @@ The arguments control the file.
 - `stub` names the stub to start from. The default is `"default"`.
 - `overwrite=True` replaces an existing file. Without it, an existing file is an error.
 
-The title is turned into a file name with lowercase letters, digits, and hyphens. The front matter gets a readable title: a name with spaces or capitals stays as typed, and a file-style name has its hyphens and underscores turned into spaces and its first letter capitalized, in sentence case, so `"setup-and-settings"` gets the title "Setup and settings".
+The title is turned into a file name with lowercase letters, digits, and hyphens. The front matter gets a readable title: a name with spaces or capitals stays as typed, and a file-style name has its hyphens and underscores turned into spaces and its first letter capitalized, in sentence case, so `"setup-and-settings"` gets the title "Setup and settings". Capitals are never lowered, so `"BP for LDL"` keeps its acronyms. A lowercase file name can't say which words are acronyms, so pass the title yourself:
+
+```python
+fw.make_notebook("bp-for-ldl-and-hba1c", title="BP for LDL and HbA1c")
+```
+
+`title` is used exactly as given. [make_qmd()](ref:make_qmd), [make_presentation()](ref:make_presentation), [make_revealjs()](ref:make_revealjs), and [make_script()](ref:make_script) take it too.
 
 [make_qmd()](ref:make_qmd) is `make_notebook()` with the type fixed to Quarto.
 

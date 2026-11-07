@@ -165,3 +165,22 @@ def test_titles_and_messages(notebooks_project: Path, caplog: pytest.LogCaptureF
     assert caplog.messages[-1] == f"Created reveal.js presentation: {talk}"
     quick = fw.make_notebook("quick", stub="minimal")
     assert caplog.messages[-1] == f"Created Quarto notebook: {quick} (stub: minimal)"
+
+
+def test_an_explicit_title_keeps_acronyms(notebooks_project: Path) -> None:
+    # Ports 2026-11-07: a file name such as "bp-for-ldl-and-hba1c" has no case, so its
+    # title was "Bp for ldl and hba1c". Capitals typed in the name are kept, and title=
+    # sets the rest.
+    from framework.notebooks import notebook_title
+
+    assert notebook_title("bp-for-ldl-and-hba1c") == "Bp for ldl and hba1c"
+    assert notebook_title("BP for LDL and HbA1c") == "BP for LDL and HbA1c"
+    path = fw.make_notebook("bp-for-ldl-and-hba1c", title="BP for LDL and HbA1c")
+    assert path.name == "bp-for-ldl-and-hba1c.qmd"
+    assert 'title: "BP for LDL and HbA1c"' in path.read_text(encoding="utf-8")
+    jupyter = fw.make_notebook("ldl.ipynb", title="LDL")
+    assert '"# LDL\\n"' in jupyter.read_text(encoding="utf-8")
+    talk = fw.make_presentation("ldl-talk", title="LDL talk")
+    assert 'title: "LDL talk"' in talk.read_text(encoding="utf-8")
+    script = fw.make_script("ldl", title="LDL checks")
+    assert script.read_text(encoding="utf-8").startswith('"""LDL checks')

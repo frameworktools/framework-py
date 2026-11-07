@@ -225,6 +225,7 @@ def make_notebook(
     *,
     overwrite: bool = False,
     subdir: str | None = None,
+    title: str | None = None,
 ) -> Path:
     """Create a notebook from a stub.
 
@@ -240,6 +241,10 @@ def make_notebook(
         stub: The stub to start from, such as ``"default"`` or ``"minimal"``.
         overwrite: Replace an existing file.
         subdir: A subfolder of ``dir``.
+        title: The title, used exactly as given. Default: made from ``name`` in sentence
+            case, which keeps a name with capitals as typed but can't know that a
+            lowercase file name such as "bp-for-ldl" holds acronyms. Pass
+            ``title="BP for LDL"`` for those.
 
     Returns:
         The path of the new file.
@@ -271,7 +276,7 @@ def make_notebook(
     author = _author(config)
     stem = re.sub(r"\.(qmd|ipynb|py)$", "", Path(name).name, flags=re.IGNORECASE)
     values = {
-        "title": notebook_title(stem),
+        "title": notebook_title(stem) if title is None else title,
         "filename": stem,
         "date": f"{date.today():%Y-%m-%d}",
         "author": author.get("name") or "Your Name",
@@ -295,6 +300,7 @@ def make_qmd(
     *,
     overwrite: bool = False,
     subdir: str | None = None,
+    title: str | None = None,
 ) -> Path:
     """Create a Quarto notebook (``.qmd``) with Python code chunks.
 
@@ -310,6 +316,8 @@ def make_qmd(
             ``stubs/notebook-{stub}.qmd`` is used first, then your template, then Framework's.
         overwrite: Replace an existing file.
         subdir: A subfolder of ``dir``.
+        title: The title, used exactly as given. Default: made from ``name``, as
+            ``make_notebook()`` describes.
 
     Returns:
         The path of the new file.
@@ -318,11 +326,16 @@ def make_qmd(
         FrameworkError: When the file exists and ``overwrite`` is False, or the stub is not
             found.
     """
-    return make_notebook(name, "quarto", dir, stub, overwrite=overwrite, subdir=subdir)
+    return make_notebook(name, "quarto", dir, stub, overwrite=overwrite, subdir=subdir, title=title)
 
 
 def make_revealjs(
-    name: str, dir: str | Path | None = None, *, overwrite: bool = False, subdir: str | None = None
+    name: str,
+    dir: str | Path | None = None,
+    *,
+    overwrite: bool = False,
+    subdir: str | None = None,
+    title: str | None = None,
 ) -> Path:
     """Create a Quarto reveal.js presentation.
 
@@ -337,6 +350,8 @@ def make_revealjs(
             then the project root. The folder is created when missing.
         overwrite: Replace an existing file.
         subdir: A subfolder of ``dir``.
+        title: The title, used exactly as given. Default: made from ``name``, as
+            ``make_notebook()`` describes.
 
     Returns:
         The path of the new file.
@@ -345,11 +360,18 @@ def make_revealjs(
         FrameworkError: When the file exists and ``overwrite`` is False, or the stub is not
             found.
     """
-    return make_notebook(name, "quarto", dir, "revealjs", overwrite=overwrite, subdir=subdir)
+    return make_notebook(
+        name, "quarto", dir, "revealjs", overwrite=overwrite, subdir=subdir, title=title
+    )
 
 
 def make_presentation(
-    name: str, dir: str | Path | None = None, *, overwrite: bool = False, subdir: str | None = None
+    name: str,
+    dir: str | Path | None = None,
+    *,
+    overwrite: bool = False,
+    subdir: str | None = None,
+    title: str | None = None,
 ) -> Path:
     """Create a presentation. The same as ``make_revealjs()``.
 
@@ -362,6 +384,8 @@ def make_presentation(
             then the project root. The folder is created when missing.
         overwrite: Replace an existing file.
         subdir: A subfolder of ``dir``.
+        title: The title, used exactly as given. Default: made from ``name``, as
+            ``make_notebook()`` describes.
 
     Returns:
         The path of the new file.
@@ -370,11 +394,16 @@ def make_presentation(
         FrameworkError: When the file exists and ``overwrite`` is False, or the stub is not
             found.
     """
-    return make_revealjs(name, dir, overwrite=overwrite, subdir=subdir)
+    return make_revealjs(name, dir, overwrite=overwrite, subdir=subdir, title=title)
 
 
 def make_script(
-    name: str, dir: str | Path | None = None, stub: str = "default", *, overwrite: bool = False
+    name: str,
+    dir: str | Path | None = None,
+    stub: str = "default",
+    *,
+    overwrite: bool = False,
+    title: str | None = None,
 ) -> Path:
     """Create a Python script (``.py``) in the scripts folder.
 
@@ -388,6 +417,8 @@ def make_script(
         stub: The stub to start from, such as "default". The project's
             ``stubs/script-{stub}.py`` is used first, then your template, then Framework's.
         overwrite: Replace an existing file.
+        title: The title, used exactly as given. Default: made from ``name``, as
+            ``make_notebook()`` describes.
 
     Returns:
         The path of the new file.
@@ -398,7 +429,7 @@ def make_script(
     """
     if not name.lower().endswith(".py"):
         name = f"{name}.py"
-    return make_notebook(name, "script", dir, stub, overwrite=overwrite)
+    return make_notebook(name, "script", dir, stub, overwrite=overwrite, title=title)
 
 
 def stubs_list(type: NotebookType | None = None) -> pd.DataFrame:

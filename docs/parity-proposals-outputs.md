@@ -77,3 +77,36 @@ becomes `reports-v1-2`. `publish_dir(dir, dest = "figures/meeting")` publishes a
 R: `publish_dir()` in `R/publish.R` uses `basename(sub("/+$", "", dest))` (and
 `basename(dest)` for the bundle), so R drops the folder too. Replace both with the same
 `/`-to-`-` join and normalization, and add the message.
+
+## B19. Notebook titles and acronyms: an explicit `title`
+
+The default title rule stays as it is in both languages (`.notebook_title()` in R,
+`notebook_title()` in Python):
+
+1. A name with whitespace or any capital letter is already a title: it is kept exactly as
+   typed, trimmed. `"BP for LDL and HbA1c"` stays `"BP for LDL and HbA1c"`, and
+   `"BP-summary"` stays `"BP-summary"`.
+2. Otherwise each run of `-` and `_` becomes one space and the first character is
+   uppercased. Nothing is ever lowercased.
+
+So every token typed in capitals already survives, which is the rule FINDINGS asked for.
+The ports' problem was the input: a file-style name such as `"bp-for-ldl-and-hba1c"` has
+no case information, so no rule can tell `ldl` from `and`. A list of known acronyms was
+considered and rejected: it can never be complete for a field, it would need to be kept
+identical in two languages, and a wrong guess ("Cat" -> "CAT") is worse than none.
+Rule 1 also isn't changed to split hyphenated names with capitals (`"BP-for-LDL"` ->
+`"BP for LDL"`), because that breaks names such as `"COVID-19-trends"`.
+
+New API, the only way to fix acronyms in a lowercase name:
+
+- `make_notebook(..., title = NULL)` and the wrappers `make_qmd()`, `make_rmd()` (R),
+  `make_revealjs()`, `make_presentation()`, and `make_script()` take `title`. When given,
+  it fills `{{ title }}` in the stub exactly as typed (the Jupyter stub's heading too); the
+  file name still comes from `name`.
+
+Python: keyword-only `title: str | None = None` on `make_notebook()`, `make_qmd()`,
+`make_revealjs()`, `make_presentation()`, and `make_script()`.
+
+R: add `title = NULL` after `subdir` (`make_script()`: after `overwrite`), and use
+`title %||% .notebook_title(original_name)` where `make_notebook()` fills the stub,
+including the `.ipynb` heading cell.
