@@ -582,3 +582,20 @@ def test_dates_and_times_are_written_as_readr_writes_them() -> None:
         "when": ["2020-01-02T08:04:05Z", "NA"],
         "day": ["2020-01-02", "NA"],
     }
+
+
+def test_saving_over_locked_data_warns_when_the_contents_change(data_project: Path) -> None:
+    fw.data_save(FRAME, "inputs.intermediate.cohort")
+    record = db.get_data_record("inputs.intermediate.cohort")
+    assert record is not None and record.locked
+
+    # The same contents: a rerun of a deterministic pipeline is silent
+    fw.data_save(FRAME, "inputs.intermediate.cohort")
+
+    changed = FRAME.assign(score=[1.0, 2.0])
+    with pytest.warns(fw.DataChangedWarning, match="replaced locked data 'inputs.intermediate"):
+        fw.data_save(changed, "inputs.intermediate.cohort")
+    pd.testing.assert_frame_equal(fw.data_read("inputs.intermediate.cohort"), changed)
+
+    fw.data_save(FRAME, "inputs.intermediate.rebuilt", locked=False)
+    fw.data_save(changed, "inputs.intermediate.rebuilt", locked=False)

@@ -154,7 +154,7 @@ fw.data_save(clean, "exports/patients_clean.parquet")
 fw.data_add("exports/patients_clean.parquet", name="exports.patients_clean")
 ```
 
-Saved files are locked by default. The target folder must exist unless you pass `force=True`.
+Saved files are locked by default, as in R, so a later read raises `IntegrityError` if anything else changes them. Saving again replaces the file, as R does. When the new contents differ from locked data, `data_save()` issues a `DataChangedWarning` with both hashes; saving the same contents again is silent. Pass `locked=False` for intermediate data a pipeline rebuilds. The target folder must exist unless you pass `force=True`.
 
 ## Supported formats
 

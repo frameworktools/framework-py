@@ -94,3 +94,30 @@ them (`03:04:05.5Z`), which readr reads back. R could keep them too.
 
 The writer is `framework._csv.write_csv(frame, path, sep=",")` in framework-py, for
 `save_table()` and any other CSV that should match R.
+
+## data_save(): saving over locked data [B6]
+
+```r
+data_save(data, path, type = NULL, delimiter = "comma", locked = TRUE, force = FALSE)
+```
+
+The default is already the same in both languages: `locked = TRUE`. (The porting report
+said R defaults to unlocked; it does not. R's legacy `ai_context.R` template still
+documents `data_save(data, path, locked = FALSE)`, which is where that impression comes
+from; that text should be fixed.)
+
+Shared behavior, new in both: `data_save()` over a name or path whose framework.db record
+is locked still writes the file and records the new hash, as R does today, but when the
+new file's hash differs from the recorded one it warns:
+
+```text
+data_save() replaced locked data 'inputs.intermediate.cohort' with different contents.
+Previous hash: 71da0ff755e5
+Current hash:  ddaa40dcf34b
+Pass locked=False for data a pipeline rebuilds.
+```
+
+Saving identical contents is silent, so rerunning a deterministic pipeline does not warn.
+Python raises it as `DataChangedWarning`; R should use `warning()`.
+
+R today: the second save overwrites silently.

@@ -32,7 +32,8 @@ class FrameworkWarning(UserWarning):
 
 
 class DataChangedWarning(FrameworkWarning):
-    """An unlocked data file changed since Framework last recorded its hash."""
+    """A data file changed since Framework last recorded its hash: an unlocked file read
+    after it changed, or locked data that ``data_save()`` replaced with new contents."""
 
 
 class CacheWarning(FrameworkWarning):

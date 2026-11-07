@@ -478,7 +478,9 @@ def data_save(
         type: ``"parquet"`` or ``"csv"``. Default: from the file extension,
             or Parquet for a catalog name.
         delimiter: Delimiter for CSV files: comma, tab, semicolon, or space.
-        locked: Whether later reads must find the file unchanged.
+        locked: Whether later reads must find the file unchanged. Default: True, as in R.
+            Saving again over locked data with different contents replaces it, as R does,
+            with a ``DataChangedWarning``. The same contents save silently.
         force: Create the folder if it does not exist.
 
     Returns:
@@ -517,6 +519,17 @@ def data_save(
     key = name or relative
 
     digest = file_hash(target)
+    previous = db.get_data_record(key, root)
+    if previous is not None and previous.locked and previous.hash and previous.hash != digest:
+        # As in R, the save goes ahead: data_save() is how locked data is rebuilt. It
+        # says so, since the lock means reads expect the file unchanged.
+        warnings.warn(
+            f"data_save() replaced locked data '{key}' with different contents.\n"
+            f"Previous hash: {previous.hash[:12]}\nCurrent hash:  {digest[:12]}\n"
+            "Pass locked=False for data a pipeline rebuilds.",
+            DataChangedWarning,
+            stacklevel=2,
+        )
     db.set_data_record(
         key,
         path=relative,
