@@ -1054,7 +1054,7 @@ def cloud_publish(
     visibility alone: a new artifact is unlisted, and an existing one keeps its setting.
     ``True`` turns the readable URL on with the derived name, and ``False`` turns it off.
     Pass ``visibility="public"`` to make an artifact public. An explicit ``visibility``
-    always wins over ``True`` and ``False``. A source with "private" in its path needs
+    always wins over ``True`` and ``False``. A source in a private folder needs
     confirmation, or ``include_private=True``.
     """
     sources = [source]

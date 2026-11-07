@@ -9,11 +9,28 @@ import framework as fw
 from framework._private import confirm_private_upload, is_private_path
 
 
-def test_full_path_match_ignores_case(tmp_path: Path) -> None:
+def test_folder_parts_match_ignoring_case(tmp_path: Path) -> None:
     assert is_private_path(tmp_path / "private/x.html")
     assert is_private_path(tmp_path / "proj/Private/out.html")
-    assert is_private_path(tmp_path / "my_PRIVATE_notes.csv")
+    assert is_private_path(tmp_path / "outputs_PRIVATE/out.html")
     assert not is_private_path(tmp_path / "public/x.html")
+    # File names never count, nor folders that merely contain the word
+    assert not is_private_path(tmp_path / "my_PRIVATE_notes.csv")
+    assert not is_private_path(tmp_path / "notebooks/01-private-and-public-data.qmd")
+    assert not is_private_path(tmp_path / "private-ish/x.html")
+    folder = tmp_path / "a/private"
+    folder.mkdir(parents=True)
+    assert is_private_path(folder)
+
+
+def test_folders_the_settings_mark_private(project: Path) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n  directories:\n    outputs_private_tables: results/held\n"
+        "    outputs_public_tables: results/shared\n",
+        encoding="utf-8",
+    )
+    assert is_private_path(project / "results/held/t.csv")
+    assert not is_private_path(project / "results/shared/t.csv")
 
 
 # The same cases as R's test-publish.R
@@ -37,12 +54,18 @@ def test_silent_paths(path: str) -> None:
     [
         "/private/var/folders/proj/Private/out.html",
         "~/proj/Private/out.html",
-        "/home/PRIVATE-studies/report.html",
-        "/srv/my_private_notes.html",
+        "/home/study_private/report.html",
     ],
 )
 def test_flagged_paths(path: str) -> None:
     assert is_private_path(Path(path))
+
+
+@pytest.mark.parametrize(
+    "path", ["/home/PRIVATE-studies/report.html", "/srv/my_private_notes.html"]
+)
+def test_file_names_and_other_words_are_not_private(path: str) -> None:
+    assert not is_private_path(Path(path))
 
 
 def test_no_terminal_needs_include_private(
@@ -165,6 +188,7 @@ def test_notebooks_that_name_private_data(project: Path) -> None:
         'd = fw.data_read("inputs.survey")\n'
         'e = fw.data_read("inputs.private.raw.other")\n'
         'print("private results are not shown")\n'
+        'f = fw.data_read("data/outputs_private/x.csv")\n'
         "```\n",
         encoding="utf-8",
     )
@@ -172,8 +196,26 @@ def test_notebooks_that_name_private_data(project: Path) -> None:
         "inputs/private/raw/ids.csv",
         "inputs.ids",
         "inputs.flagged",
-        "inputs.private.raw.other",
+        "data/outputs_private/x.csv",
     ]
+
+
+def test_settings_keys_patterns_and_file_names_are_not_private_reads(project: Path) -> None:
+    from framework._private import notebook_private_reads
+
+    _site(project, sensitive=True)
+    qmd = project / "01-private-and-public-data.qmd"
+    qmd.write_text(
+        "```{python}\n"
+        'fw.settings("security.sensitive")\n'
+        'fw.settings("inputs_private_raw")\n'
+        'info[info["key"].str.contains("private|public")]\n'
+        'print("sensitive:", 1)\n'
+        'fw.publish_notebook("notebooks/01-private-and-public-data.qmd")\n'
+        "```\n",
+        encoding="utf-8",
+    )
+    assert notebook_private_reads(qmd) == []
     ipynb = project / "b.ipynb"
     ipynb.write_text(
         '{"cells": [{"cell_type": "markdown", "source": ["\\"inputs/private/x.csv\\""]},'

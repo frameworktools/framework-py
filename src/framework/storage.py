@@ -441,7 +441,7 @@ def _publish_legacy(
         overwrite: Accepted for parity with R; uploads always replace.
         self_contained: For Framework Cloud publishing.
         slug: For Framework Cloud publishing.
-        include_private: Upload files with "private" in their path without asking. Only a
+        include_private: Upload files in private folders without asking. Only a
             person who has reviewed the files should set this.
         to: "cloud" explicitly publishes to Framework Cloud and "bucket" selects storage.
             "github" publishes to the project's GitHub Pages site: each publish is kept in
@@ -572,7 +572,7 @@ def publish(
         overwrite: Accepted for parity with R; uploads always replace.
         self_contained: For Framework Cloud publishing.
         slug: For Framework Cloud publishing.
-        include_private: Upload files with "private" in their path without asking. Only a
+        include_private: Upload files in private folders without asking. Only a
             person who has reviewed the files should set this.
         to: A configured destination name, cloud, github, folder, s3, or bucket.
             Named destinations take priority over publish.default and legacy defaults.
@@ -770,7 +770,7 @@ def publish_notebook(
         slug: For Framework Cloud: a string names the document and leaves its visibility
             alone, True turns the readable URL on with the derived name, and False turns it
             off. A storage bucket ignores it with a warning.
-        include_private: Upload files with "private" in their path without asking. Only a
+        include_private: Upload files in private folders without asking. Only a
             person who has reviewed the files should set this.
         to: "cloud" explicitly publishes to Framework Cloud and "bucket" selects storage.
             "github" publishes to the project's GitHub Pages site: each publish is kept in
@@ -979,7 +979,7 @@ def publish_data(
         connection: A storage bucket name from the settings. Default: the project's default
             bucket, then one marked ``default: true``, then the first.
         compress: Gzip the file before uploading.
-        include_private: Upload files with "private" in their path without asking. Only a
+        include_private: Upload files in private folders without asking. Only a
             person who has reviewed the files should set this.
         to: A destination name from ``publish.destinations``, or a driver name, as in
             ``publish()``. Default: ``publish.default``.
@@ -1092,7 +1092,7 @@ def publish_dir(
             (searched anywhere in that path, such as ``"figures/.*\\.png$"``). Default: every
             file.
         recursive: Include files in subfolders.
-        include_private: Upload files with "private" in their path without asking. Only a
+        include_private: Upload files in private folders without asking. Only a
             person who has reviewed the files should set this.
         to: A destination name from ``publish.destinations``, or a driver name, as in
             ``publish()``. Default: ``publish.default``.

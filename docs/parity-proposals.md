@@ -523,8 +523,7 @@ including the `.ipynb` heading cell.
 
 ### publish(), publish_notebook(), publish_data(): confirming notebooks and objects that can show private data [B1]
 
-Today the publish guard checks only file paths: a path containing `private` (any case)
-is listed, a terminal session is asked `[y/N]`, and a session with no terminal fails unless
+Today the publish guard checks only file paths: a path in a private folder is listed, a terminal session is asked `[y/N]`, and a session with no terminal fails unless
 `include_private = TRUE`. Rendered notebooks and in-memory objects have no telling path, so
 they published silently, even from `security: sensitive: true` projects.
 
@@ -540,9 +539,11 @@ a terminal, skipped with `include_private = TRUE`) also applies when:
    rule only.
 3. **Any project, notebook naming private data.** The notebook's code has a quoted string
    (single or double quotes, on one line, up to 500 characters) that either
-   - has a part, split on `/`, `\`, or `.`, with no whitespace, whose name contains
-     `private`, `confidential`, or `sensitive` (case-insensitive):
-     `"inputs/private/raw/ids.csv"`, `"inputs.private.raw.ids"`; or
+   - is a path (it has `/` or `\`) with a folder part named `private` or ending in
+     `_private` (case-insensitive), or under a folder the settings mark private (see
+     "Private paths" below): `"inputs/private/raw/ids.csv"`. The last part counts as a
+     folder only when it has no `.`, so a file name like `01-private-and-public.qmd`
+     never counts; or
    - is a data catalog name (`a.b`, letters, digits, `_`, `-`) whose entry is private
      (in a private folder, or `private: true`), as `data_info()` reports it.
 
@@ -558,8 +559,19 @@ Warning: 05-review.qmd reads private data: inputs.private.release, outputs/priva
 Error: Not uploading this without confirmation. Review it, then pass include_private=True to upload it.
 ```
 
+Strings that are neither never count: settings keys (`"inputs_private_raw"`,
+`"security.sensitive"`), patterns (`"private|public"`), and labels (`"sensitive:"`).
+
 For an object, the first reason names its class: `this DataFrame`. When private paths are
-also flagged, the error keeps saying "files with 'private' in their path".
+also flagged, the error says "files from private folders".
+
+Private paths (the file check before any upload): a path is private when one of its
+folder parts, not the file name, is `private` or ends in `_private` (case-insensitive),
+or when it falls under a configured private folder: a settings `directories` entry whose
+key contains `private` and not `public` (`outputs_private_tables: results/held`). macOS's
+`/private/` system prefix doesn't count. Messages: `Warning: <n> file(s) to upload are in
+private folders:` with the paths listed, and `Not uploading files from private folders
+without confirmation. Review it, then pass include_private=True to upload it.`
 
 Python: `_private.confirm_private_upload(paths, include_private, reasons)` takes the extra
 reasons; `sensitive_reasons()`, `notebook_private_reads()`, and `notebook_reasons()` build
@@ -579,7 +591,7 @@ isn't cheap. The rule uses the session instead:
    private: its catalog entry is private (`data_info()`'s `private`: a private folder or
    `private: true`), or, for a file path, a folder between the project root and the file
    is named like private, confidential, or sensitive (the same segment rule as the audit),
-   or, for a file outside the project, `private` appears anywhere in its full path. It
+   or, for a file outside the project, it is a private path (see B1's "Private paths"). It
    remembers the name as the caller gave it (catalog name or path), once each, in order.
 2. In a project with `security: sensitive: true`, `save_table()`, `save_figure()`, and
    `save_model()` with `public = TRUE` warn after such a read, once per saved file, after

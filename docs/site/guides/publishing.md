@@ -14,7 +14,7 @@ Framework publishes rendered notebooks, datasets, and other files so that collea
 - **Framework Cloud.** The framework.pub service or a self-hosted server, for projects created from or registered with it.
 - **GitHub Pages.** The project's own GitHub repository, with `to="github"`.
 
-Every publishing function warns about files with `private` in their path and asks before it uploads them. The [Private paths](#private-paths) section explains the rule.
+Every publishing function warns about files in private folders and asks before it uploads them. The [Private paths](#private-paths) section explains the rule.
 
 ## Choosing a destination
 
@@ -261,14 +261,14 @@ A project with a Framework Cloud project token asks the cloud for the site's URL
 
 ## Private paths
 
-Publishing happens only when you call a publishing function, and framework-py never uploads anything on its own. Every publishing function checks the full path of each file it is about to upload. A path that contains `private` in any letter case, such as `outputs/private/tables/detail.csv` or `~/Private/notes.html`, gets a warning that lists the files.
+Publishing happens only when you call a publishing function, and framework-py never uploads anything on its own. Every publishing function checks the full path of each file it is about to upload. A file in a private folder gets a warning that lists the files. A folder is private when it is named `private` or its name ends in `_private`, in any letter case, such as `outputs/private/tables/detail.csv`, `~/Private/notes.html`, or `data/study_private/ids.csv`, or when the settings mark it private: a `directories` entry whose key contains `private` (and not `public`), such as `outputs_private_tables: results/held`. File names don't count, so `notebooks/01-private-and-public.qmd` is not flagged.
 
 In an interactive session, the function then asks before it uploads anything. Answer `y` to upload, and anything else cancels. A session with no terminal, such as a script, a scheduled job, CI, or a notebook run by an assistant, cannot answer, so the function raises an error instead.
 
 ```text
-Warning: 1 file(s) to upload have 'private' in their path:
+Warning: 1 file(s) to upload are in private folders:
   /home/me/study/outputs/private/tables/detail.csv
-FrameworkError: Not uploading files with 'private' in their path without confirmation.
+FrameworkError: Not uploading files from private folders without confirmation.
 Review it, then pass include_private=True to upload it.
 ```
 
@@ -276,7 +276,7 @@ Review it, then pass include_private=True to upload it.
 
 Two more cases ask the same way:
 
-- **Notebooks that read private data.** Before [publish_notebook()](ref:publish_notebook) or [publish()](ref:publish) renders a `.qmd` or `.ipynb` file, it looks through the notebook's code for quoted strings that name private data: a path or dot name with a part named like `private`, `confidential`, or `sensitive` (`"inputs/private/raw/ids.csv"`, `"inputs.private.raw.ids"`), or a data catalog name whose file is private. It's a quick text check, so data read some other way isn't found.
+- **Notebooks that read private data.** Before [publish_notebook()](ref:publish_notebook) or [publish()](ref:publish) renders a `.qmd` or `.ipynb` file, it looks through the notebook's code for quoted strings that name private data: a path in a private folder (`"inputs/private/raw/ids.csv"`), or a data catalog name whose file is private (`"inputs.private.raw.ids"`). Other strings, such as settings keys (`"inputs_private_raw"`) or patterns (`"private|public"`), don't count. It's a quick text check, so data read some other way isn't found.
 - **Privacy-sensitive projects.** With `security: sensitive: true` in the settings, every notebook and every object (a DataFrame, model, or figure passed to `publish()`, or a DataFrame passed to `publish_data()`) asks, wherever it comes from, since a rendered notebook or an object can show private data that no path reveals.
 
 ```text
