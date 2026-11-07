@@ -62,6 +62,21 @@ def _project() -> tuple[Path, dict[str, Any]]:
         return found.parent, {}
 
 
+def notebook_title(name: str) -> str:
+    """The default title for a new notebook, as R makes it.
+
+    A name with spaces is already a title and is kept as typed ("My cool analysis"). A
+    file-style name has its ``-`` and ``_`` turned into spaces and each word capitalized:
+    "bp-summary" becomes "Bp Summary" and "01_load_data" becomes "01 Load Data".
+    """
+    if re.search(r"\s", name.strip()):
+        return name.strip()
+    words = [word for word in re.split(r"[-_\s]+", name) if word]
+    if not words:
+        return name
+    return " ".join(word[0].upper() + word[1:] for word in words)
+
+
 def slugify(text: str) -> str:
     """Lowercase letters, digits, and hyphens, as R names notebook files."""
     slug = re.sub(r"[^a-z0-9-]", "-", text.lower())
@@ -252,10 +267,10 @@ def make_notebook(
 
     source = _find_stub(root, "script" if kind == "script" else "notebook", stub, ext)
     author = _author(config)
-    title = re.sub(r"\.(qmd|ipynb|py)$", "", Path(name).name, flags=re.IGNORECASE)
+    stem = re.sub(r"\.(qmd|ipynb|py)$", "", Path(name).name, flags=re.IGNORECASE)
     values = {
-        "title": title,
-        "filename": title,
+        "title": notebook_title(stem),
+        "filename": stem,
         "date": f"{date.today():%Y-%m-%d}",
         "author": author.get("name") or "Your Name",
         "email": author.get("email", ""),
@@ -264,9 +279,10 @@ def make_notebook(
     content = _fill(source.read_text(encoding="utf-8"), ext, values, author)
     target.write_text(content, encoding="utf-8")
     label = {"quarto": "Quarto notebook", "jupyter": "Jupyter notebook", "script": "Python script"}
-    inform(f"Created {label[kind]}: {target}")
-    if stub != "default":
-        inform(f"  Using stub: {stub}")
+    what = "reveal.js presentation" if stub == "revealjs" else label[kind]
+    # The revealjs stub is implied by "presentation"; any other stub is named
+    note = f" (stub: {stub})" if stub not in ("default", "revealjs") else ""
+    inform(f"Created {what}: {target}{note}")
     return target
 
 

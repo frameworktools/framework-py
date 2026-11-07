@@ -50,7 +50,7 @@ def test_make_notebook_jupyter_is_valid_json(notebooks_project: Path) -> None:
     path = fw.make_notebook("explore.ipynb", subdir="eda")
     assert path == notebooks_project / "notebooks/eda/explore.ipynb"
     notebook = json.loads(path.read_text(encoding="utf-8"))
-    assert notebook["cells"][0]["source"][0] == "# explore\n"
+    assert notebook["cells"][0]["source"][0] == "# Explore\n"
     assert 'Ada "Countess" Lovelace' in notebook["cells"][0]["source"][2]
 
 
@@ -115,7 +115,7 @@ def test_stubs(notebooks_project: Path) -> None:
     assert [p.name for p in published] == ["script-default.py"]
     assert fw.stubs_path() == notebooks_project / "stubs"
     (notebooks_project / "stubs/script-default.py").write_text("# mine {{ title }}\n", "utf-8")
-    assert fw.make_script("x").read_text(encoding="utf-8") == "# mine x\n"
+    assert fw.make_script("x").read_text(encoding="utf-8") == "# mine X\n"
     assert fw.stubs_publish("scripts") == []
     row = fw.stubs_list("script").iloc[0]
     assert (row["name"], row["source"]) == ("default", "user")
@@ -129,7 +129,7 @@ def test_user_templates(project: Path) -> None:
     path = fw.write_framework_template("script", "# from my template {{ title }}")
     assert path.parent == fw.config_dir() / "templates"
     assert fw.make_script("z", dir=project).read_text(encoding="utf-8") == (
-        "# from my template z\n"
+        "# from my template Z\n"
     )
     fw.reset_framework_template("script")
     assert "fw.scaffold()" in fw.make_script("w", dir=project).read_text(encoding="utf-8")
@@ -144,3 +144,22 @@ def test_stubs_list_shows_your_templates(project: Path) -> None:
     listed = fw.stubs_list("quarto").set_index("name")
     assert listed.loc["default", "source"] == "personal"
     assert listed.loc["minimal", "source"] == "framework"
+
+
+def test_titles_and_messages(notebooks_project: Path, caplog: pytest.LogCaptureFixture) -> None:
+    from framework.notebooks import notebook_title
+
+    assert notebook_title("bp-summary") == "Bp Summary"
+    assert notebook_title("01_load_data") == "01 Load Data"
+    assert notebook_title("My cool analysis") == "My cool analysis"
+    assert notebook_title("analysis") == "Analysis"
+
+    caplog.set_level("INFO", logger="framework")
+    path = fw.make_notebook("bp-summary")
+    assert 'title: "Bp Summary"' in path.read_text(encoding="utf-8")
+    assert caplog.messages[-1] == f"Created Quarto notebook: {path}"
+    talk = fw.make_presentation("study-talk")
+    assert 'title: "Study Talk"' in talk.read_text(encoding="utf-8")
+    assert caplog.messages[-1] == f"Created reveal.js presentation: {talk}"
+    quick = fw.make_notebook("quick", stub="minimal")
+    assert caplog.messages[-1] == f"Created Quarto notebook: {quick} (stub: minimal)"

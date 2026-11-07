@@ -36,7 +36,7 @@ The arguments control the file.
 - `stub` names the stub to start from. The default is `"default"`.
 - `overwrite=True` replaces an existing file. Without it, an existing file is an error.
 
-The title is turned into a file name with lowercase letters, digits, and hyphens. The title itself goes into the front matter.
+The title is turned into a file name with lowercase letters, digits, and hyphens. The front matter gets a readable title: a name with spaces stays as typed, and a file-style name has its hyphens and underscores turned into spaces and each word capitalized, so `"bp-summary"` gets the title "Bp Summary".
 
 [make_qmd()](ref:make_qmd) is `make_notebook()` with the type fixed to Quarto.
 
@@ -143,8 +143,8 @@ Stubs can use these placeholders, which are filled when the file is created.
 
 | Placeholder | Value |
 |-------------|-------|
-| `{{ title }}` | The title you passed |
-| `{{ filename }}` | The same title |
+| `{{ title }}` | The readable title ("Bp Summary" for `"bp-summary"`) |
+| `{{ filename }}` | The name you passed, without an extension |
 | `{{ date }}` | Today's date, as `YYYY-MM-DD` |
 | `{{ author }}` | The author's name, or `Your Name` when none is set |
 | `{{ email }}` | The author's email |
