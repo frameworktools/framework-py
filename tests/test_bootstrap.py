@@ -33,7 +33,8 @@ def clone(tmp_path: Path) -> Path:
         "  extra_directories:\n"
         "    - {key: refs, label: References, path: references}\n"
         "  connections: settings/connections.yml\n"
-        "  api_token: !expr Sys.getenv('API_TOKEN')\n",
+        "  api_token: !expr Sys.getenv('API_TOKEN')\n"
+        '  # bucket: env("S3_BUCKET")\n',
         encoding="utf-8",
     )
     (root / "settings").mkdir()

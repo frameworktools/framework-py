@@ -79,19 +79,24 @@ def _ask(prompt: str) -> str:
     return input()
 
 
-# env("VAR") and !expr Sys.getenv("VAR") in the settings
-_REFERENCE = re.compile(r"""\b(?:env|Sys\.getenv)\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']""")
+# env("VAR"), !expr Sys.getenv("VAR"), and ${VAR} in the settings, as R finds them
+_REFERENCE = re.compile(
+    r"""\b(?:env|Sys\.getenv)\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']"""
+    r"|\$\{([A-Za-z_][A-Za-z0-9_]*)\}"
+)
+_COMMENT = re.compile(r"(^|\s)#.*$", re.MULTILINE)
 
 
 def _referenced_variables(settings_file: Path) -> set[str]:
-    """Variables the settings read: from settings.yml and every file under settings/."""
-    files = [settings_file, *sorted((settings_file.parent / "settings").rglob("*.y*ml"))]
+    """Variables the settings use: in settings.yml and the YAML files under settings/."""
+    files = [settings_file, *sorted((settings_file.parent / "settings").glob("*.y*ml"))]
     names: set[str] = set()
     for file in files:
         try:
-            names.update(_REFERENCE.findall(file.read_text(encoding="utf-8")))
+            text = _COMMENT.sub("", file.read_text(encoding="utf-8"))
         except (OSError, UnicodeError):
             continue
+        names.update(a or b for a, b in _REFERENCE.findall(text))
     return names
 
 
