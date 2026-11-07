@@ -98,6 +98,19 @@ def spec_tool_on(spec: Mapping[str, Any], tool: str) -> bool:
     return isinstance(tools, Mapping) and tools.get(tool) is True
 
 
+# The pre-commit checks a privacy-sensitive project starts with: the audit that blocks
+# committing private data and secrets, and the warning about unignored private folders
+SENSITIVE_HOOKS = {"data_security": True, "check_sensitive_dirs": True}
+
+
+def _git_defaults(git: Mapping[str, Any], type: str) -> dict[str, Any]:
+    """The git defaults for a type. A privacy-sensitive project turns its hooks on."""
+    result = dict(git)
+    if type == "project_sensitive":
+        result["hooks"] = {**(git.get("hooks") or {}), **SENSITIVE_HOOKS}
+    return result
+
+
 def package_defaults(type: str) -> dict[str, Any]:
     """Python's package defaults for a project type: the bottom layer of every spec.
 
@@ -133,7 +146,7 @@ def package_defaults(type: str) -> dict[str, Any]:
         "extra_directories": {},
         "render_dirs": dict(type_config["render_dirs"]),
         "packages": defaults["packages"],
-        "git": defaults["git"],
+        "git": _git_defaults(defaults["git"], type),
         "ai": defaults["ai"],
         # The workflow decides the notebook format, as in R's built-ins
         "scaffold": {**defaults["scaffold"], **({"workflow": "quarto"} if quarto_on else {})},

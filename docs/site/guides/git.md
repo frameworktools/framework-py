@@ -14,9 +14,9 @@ Framework sets up git for new projects and guards against committing restricted 
 
 [new_project()](ref:new_project) initializes a git repository when git is installed and `defaults.git.initialize` in your global settings is not `false`. It then takes these steps.
 
-1. It installs the pre-commit hook when a hook check is enabled.
-2. It makes sure `.gitignore` ignores `.env`. If git would still track `.env`, creation stops with an error before anything is committed.
-3. It stages every file and makes the first commit, `Initial commit from Framework`. When git's `user.name` or `user.email` is not set, it skips the commit and prints a note.
+1. It makes sure `.gitignore` ignores `.env`. If git would still track `.env`, creation stops with an error before anything is committed.
+2. It stages every file and makes the first commit, `Initial commit from Framework`. When git's `user.name` or `user.email` is not set, it skips the commit and prints a note.
+3. It installs the pre-commit hook when a hook check is enabled. The first commit holds only the files Framework wrote, so it is made before the hook exists and does not need a Python environment with framework-py yet.
 
 A project created inside an existing git work tree, such as a folder of example projects, is left to that repository: Framework skips `git init` and the first commit, and prints a line naming the enclosing repository.
 
@@ -64,7 +64,7 @@ git:
 | `check_sensitive_dirs` | Warns about folders whose names contain `private`, `confidential`, `sensitive`, `cache`, or `scratch` and that git does not ignore. At a terminal, it asks before committing. |
 | `check_notebook_outputs` | Fails the commit when a staged Jupyter notebook (`.ipynb`) has cell outputs or execution counts, since printed tables and previews are saved in the file. The message names each notebook and how to clear its outputs. |
 
-All three checks are off by default. The older name `warn_unignored_sensitive` is accepted for `check_sensitive_dirs`. The R package's `ai_sync` check was removed, because projects keep AI instructions in `AGENTS.md` and skills, and an `ai_sync` setting is ignored.
+A privacy-sensitive project (`project_sensitive`) starts with `data_security` and `check_sensitive_dirs` on, so its repository gets the hook as soon as it is created. In other projects all three checks are off by default. The older name `warn_unignored_sensitive` is accepted for `check_sensitive_dirs`. The R package's `ai_sync` check was removed, because projects keep AI instructions in `AGENTS.md` and skills, and an `ai_sync` setting is ignored.
 
 ### Managing the hook
 

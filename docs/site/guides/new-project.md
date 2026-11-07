@@ -165,7 +165,7 @@ A `bare` project gets only `settings.yml`, `pyproject.toml`, `.gitignore`, and `
 
 After creation, `new_project()` does three more things.
 
-1. It initializes a git repository when git is installed and your defaults allow it. It installs the pre-commit hook when a hook check is enabled. It makes the first commit when git's `user.name` and `user.email` are set, and skips the commit with a note otherwise.
+1. It initializes a git repository when git is installed and your defaults allow it. It makes the first commit when git's `user.name` and `user.email` are set, and skips the commit with a note otherwise. Then it installs the pre-commit hook when a hook check is enabled, as it is in a privacy-sensitive project.
 2. It records the project in the registry in your global settings, unless the folder is in the system's temporary folder.
 3. When you are logged in to Framework Cloud, it registers the project there with its name, type, and language, and saves the project token in `.env`. Bare projects are not registered.
 

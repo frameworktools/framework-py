@@ -215,3 +215,32 @@ it changed (`Updated the package list in AGENTS.md`).
 
 R today: `ai_regenerate_context(sections = "packages")` does this by hand, and is
 deprecated in 2.0; `package_add()` does not call it.
+
+## project_sensitive: hooks on by default, installed with the repository [B14]
+
+Shared behavior: a `project_sensitive` project's package defaults set
+
+```yaml
+git:
+  hooks:
+    data_security: true
+    check_sensitive_dirs: true
+```
+
+(a layer above can still turn either off). When creation initializes the project's own
+repository, the order is: `git init`, check `.env` is ignored, stage, make the initial
+commit, then install the pre-commit hook when any check is enabled. Installing after the
+initial commit means the first commit, which holds only generated files, does not need a
+runtime with Framework yet. A project inside another repository gets no hook, as today.
+
+R today: R 2.0 sets `data_security: false` for every type, including `project_sensitive`
+(`inst/templates/settings.project.yml`, `inst/settings/global-settings-default.yml`, and
+the `create/` conformance specs). The porting report's "R turns two on" came from an R
+project made by an older version, so this is a new default for R too. R's conformance
+fixtures `create/*/project_sensitive-*.json` carry `data_security: false` in their input
+spec and need regenerating once R changes.
+
+Depends on: the `check_sensitive_dirs` false positive on Framework's own
+`.claude/skills/framework-sensitive-data` folder (B3, in progress separately). Until that
+lands, every commit in a new sensitive project warns about that folder, and asks at a
+terminal.

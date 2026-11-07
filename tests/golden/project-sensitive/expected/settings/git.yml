@@ -3,4 +3,5 @@ git:
   user_name: ''
   user_email: ''
   hooks:
-    data_security: false
+    data_security: true
+    check_sensitive_dirs: true

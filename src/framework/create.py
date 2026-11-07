@@ -385,8 +385,6 @@ def _git_init(root: Path) -> None:
     git("init")
     inform("  Initialized git repository")
 
-    if git_hooks_install(root / "settings.yml", verbose=False):
-        inform("  Installed git hooks")
     ensure_secrets_ignored(root)
     if (root / ".env").exists() and git("check-ignore", "-q", ".env").returncode != 0:
         raise FrameworkError(
@@ -399,9 +397,12 @@ def _git_init(root: Path) -> None:
         or not git("config", "user.email").stdout.strip()
     ):
         inform("  Skipping initial commit (git user.name/user.email not set).")
-        return
-    if git("commit", "-m", "Initial commit from Framework").returncode == 0:
+    elif git("commit", "-m", "Initial commit from Framework").returncode == 0:
         inform("  Created initial commit")
+    # After the initial commit, which holds only the files Framework wrote, so the hook
+    # does not need a Python environment with framework-py before the project has one
+    if git_hooks_install(root / "settings.yml", verbose=False):
+        inform("  Installed git hooks")
 
 
 def _is_temporary(root: Path) -> bool:

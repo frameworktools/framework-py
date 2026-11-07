@@ -142,10 +142,10 @@ Several parts of Framework treat the private folders as restricted.
 - **Publishing.** Every publishing function warns about files with `private` in their path and asks before it uploads them.
 - **AI assistants.** `AGENTS.md` tells assistants not to read the private folders. When Claude Code is selected, `.claude/settings.json` denies it access to them and to `.env`. The `framework-sensitive-data` skill is installed.
 - **Settings.** `security: sensitive: true` marks the project.
-- **Audit.** [git_security_audit()](ref:git_security_audit) passes on a new privacy-sensitive project. Turning on the `data_security` hook check runs it before every commit.
+- **Audit.** [git_security_audit()](ref:git_security_audit) passes on a new privacy-sensitive project. The project starts with the `data_security` and `check_sensitive_dirs` hook checks on, and the pre-commit hook is installed when the project gets its repository, so the audit runs before every commit. A project created without git gets the hook from [git_hooks_install()](ref:git_hooks_install) after `git init`, or from [bootstrap()](ref:bootstrap) in a clone.
 
 ```python
-fw.git_hooks_enable("data_security")
+fw.git_hooks_install()
 ```
 
 ### Private and public data

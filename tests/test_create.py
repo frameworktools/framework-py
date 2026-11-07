@@ -448,3 +448,33 @@ def test_a_project_inside_a_repository_is_left_to_it(
     assert "Initialized git repository" not in caplog.text
     log = subprocess.run(["git", "-C", str(outer), "log"], capture_output=True, text=True)
     assert log.returncode != 0  # still no commits
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_sensitive_project_starts_with_hooks_on_and_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import subprocess
+
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    (tmp_path / "gitconfig").write_text(
+        "[user]\n  name = Test\n  email = test@example.org\n", encoding="utf-8"
+    )
+    root = fw.new("Private Study", tmp_path / "study", "project_sensitive", interactive=False)
+
+    hooks = fw.git_hooks_list(root / "settings.yml")
+    assert dict(zip(hooks["hook"], hooks["enabled"], strict=True)) == {
+        "data_security": True,
+        "check_sensitive_dirs": True,
+        "check_notebook_outputs": False,
+    }
+    assert hooks.attrs["installed"]
+    # The initial commit was made before the hook existed, so it needs no Python runtime
+    log = subprocess.run(
+        ["git", "-C", str(root), "log", "--oneline"], capture_output=True, text=True, check=True
+    )
+    assert "Initial commit from Framework" in log.stdout
+
+    plain = fw.new("Open Study", tmp_path / "open", "project", interactive=False)
+    assert not fw.git_hooks_list(plain / "settings.yml").attrs["installed"]
