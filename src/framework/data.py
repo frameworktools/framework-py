@@ -280,6 +280,45 @@ def _existing_file(path: str | Path) -> Path | None:
     return None
 
 
+def read_file(
+    info: DataInfo,
+    delim: str | None = None,
+    keep_attributes: bool = False,
+    r_args: dict[str, Any] | None = None,
+    kwargs: dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    """Read the file ``info`` describes, without checking or recording its hash."""
+    r_args = r_args or {}
+    kwargs = kwargs or {}
+    if not info.path.is_file():
+        raise _missing_file(str(info.name or info.path), info, by_name=info.name is not None)
+    delimiter = delim or info.delimiter or _guess_delimiter(info.path)
+    if delimiter is None and info.type == "csv":
+        warnings.warn(
+            f"Could not determine delimiter from extension for {info.path}, defaulting to comma",
+            FrameworkWarning,
+            stacklevel=3,
+        )
+    file_type = _GENERIC_TYPES.get((info.type, info.path.suffix.lower()), info.type)
+    accepted = _R_ARGUMENT_TYPES.get(file_type, ())
+    unused = [f"{name}=" for name in r_args if name not in accepted]
+    if unused:
+        raise FrameworkError(
+            f"{', '.join(unused)} does not apply to {file_type} files. R's reader arguments "
+            "apply to CSV and TSV files (readr) and Excel files (readxl); sheet= to Excel "
+            "only."
+        )
+    try:
+        data: pd.DataFrame = _reader(file_type, r_args)(
+            info.path, delimiter, keep_attributes, dict(kwargs)
+        )
+    except (FrameworkError, ImportError):
+        raise
+    except Exception as error:
+        raise FrameworkError(f"Failed to load data: {error}") from error
+    return data
+
+
 def _missing_file(path: str, info: DataInfo, *, by_name: bool) -> DataNotFoundError:
     """The error for a file that is not there, naming it from the project root."""
     found = find_settings_file()
@@ -379,31 +418,7 @@ def data_read(
     if tracked:
         _check_integrity(path, info)
 
-    delimiter = delim or info.delimiter or _guess_delimiter(info.path)
-    if delimiter is None and info.type == "csv":
-        warnings.warn(
-            f"Could not determine delimiter from extension for {info.path}, defaulting to comma",
-            FrameworkWarning,
-            stacklevel=2,
-        )
-    file_type = _GENERIC_TYPES.get((info.type, info.path.suffix.lower()), info.type)
-    accepted = _R_ARGUMENT_TYPES.get(file_type, ())
-    unused = [f"{name}=" for name in r_args if name not in accepted]
-    if unused:
-        raise FrameworkError(
-            f"{', '.join(unused)} does not apply to {file_type} files. R's reader arguments "
-            "apply to CSV and TSV files (readr) and Excel files (readxl); sheet= to Excel "
-            "only."
-        )
-    try:
-        data: pd.DataFrame = _reader(file_type, r_args)(
-            info.path, delimiter, keep_attributes, dict(kwargs)
-        )
-    except (FrameworkError, ImportError):
-        raise
-    except Exception as error:
-        raise FrameworkError(f"Failed to load data: {error}") from error
-
+    data = read_file(info, delim, keep_attributes, r_args, kwargs)
     if info.description:
         inform(f"Note: {path}: {info.description}")
     return data

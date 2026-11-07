@@ -212,6 +212,20 @@ info.path
 info.locked
 ```
 
+With `columns=True`, `data_info()` also reads the file and describes its columns without showing any values: `info.columns` is a DataFrame with each column's `name`, `type`, and count of `missing` values, and `info.rows` is the number of rows. Types use R's words, so the summary reads the same in both languages: `logical`, `integer`, `double`, `character`, `factor`, `date`, `datetime`, `time`, `duration`, or `other`. The read does not check or record the file's hash.
+
+```python
+info = fw.data_info("inputs.private.raw.patients", columns=True)
+info.columns
+#      name       type  missing
+# 0     mrn  character        0
+# 1     age    integer        2
+# 2  smoker    logical        0
+info.rows
+```
+
+This is how an AI assistant working under the sensitive-data rules can learn a restricted file's layout without printing its records.
+
 [data_list()](ref:data_list) returns every catalog entry as a DataFrame with the columns `name`, `path`, `type`, `locked`, and `description`.
 
 ```python

@@ -128,6 +128,7 @@ note = "A relative file path is looked for from the project root, then the worki
 [functions.data_info]
 python = "data_info"
 status = "ported"
+note = "Returns a `DataInfo`. `columns=True` adds a value-free column summary (proposed for R in docs/parity-proposals.md)"
 
 [functions.data_list]
 python = "data_list"

@@ -130,3 +130,31 @@ matrix, with the same catalog integrity checks as other formats (hash recorded o
 read, `IntegrityError` for a changed locked file). Without the extra, the error names
 `pip install "framework-py[rds]"`. An `.rds` holding anything else (a model, a list)
 raises `UnsupportedFormatError`. Python still does not write `.rds`.
+
+## data_info(path, columns = FALSE): a column summary that never shows values [D11]
+
+```r
+data_info(path, columns = FALSE)
+```
+
+With `columns = TRUE`, the file is read and summarized:
+
+- `columns`: a data frame with one row per column and the columns `name`, `type`, and
+  `missing` (the count of missing values).
+- `rows`: the number of rows.
+
+`type` is one of `logical`, `integer`, `double`, `character`, `factor`, `date`,
+`datetime`, `time`, `duration`, or `other`. These are R's words; R maps its classes as:
+logical, integer, double (numeric), character, factor (also ordered), `Date` -> date,
+`POSIXct`/`POSIXlt` -> datetime, `hms` -> time, `difftime` -> duration, anything else ->
+other. Python maps pandas dtypes to the same words, and inspects object columns' Python
+types.
+
+Never shown: values, factor levels, ranges, or examples. The read does not check the
+hash and records nothing in framework.db; a missing file is an error. The R return value
+is the existing spec list with `columns` and `rows` added; Python's is the `DataInfo`
+with `columns` and `rows` fields.
+
+The `framework-sensitive-data` skill (shared asset, R side) should tell agents to use
+`data_info(name, columns = TRUE)` instead of reading restricted files to learn their
+layout.

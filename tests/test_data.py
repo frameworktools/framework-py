@@ -639,3 +639,46 @@ def test_rds_without_the_extra_names_it(
     monkeypatch.setitem(sys.modules, "pyreadr", None)
     with pytest.raises(fw.FrameworkError, match=r"framework-py\[rds\]"):
         fw.data_read("inputs/raw/frame.rds")
+
+
+def test_data_info_columns_summarize_without_values(data_project: Path) -> None:
+    import datetime as dt
+
+    frame = pd.DataFrame(
+        {
+            "mrn": ["A-1001", "A-1002", None],
+            "age": [34, 51, 47],
+            "bmi": [22.5, None, None],
+            "smoker": [True, False, True],
+            "site": pd.Categorical(["east", "west", "east"]),
+            "seen": pd.to_datetime(["2020-01-02", None, "2020-03-04"]),
+            "dob": [dt.date(1990, 1, 1), dt.date(1975, 6, 30), None],
+        }
+    )
+    fw.data_save(frame.drop(columns="dob"), "inputs.raw.patients")
+    info = fw.data_info("inputs.raw.patients", columns=True)
+    assert info.rows == 3
+    assert info.columns is not None
+    assert info.columns.to_dict("list") == {
+        "name": ["mrn", "age", "bmi", "smoker", "site", "seen"],
+        "type": ["character", "integer", "double", "logical", "factor", "datetime"],
+        "missing": [1, 0, 2, 0, 0, 1],
+    }
+    shown = repr(info) + info.columns.to_string()
+    for value in ("A-1001", "east", "22.5", "2020-01-02"):
+        assert value not in shown
+    # Summarizing is not a read: framework.db has only data_save()'s record
+    assert fw.data_info("inputs.raw.patients").columns is None
+
+    from framework.catalog import column_summary
+
+    assert column_summary(frame[["dob"]]).to_dict("list") == {
+        "name": ["dob"],
+        "type": ["date"],
+        "missing": [1],
+    }
+
+
+def test_data_info_columns_of_a_missing_file(data_project: Path) -> None:
+    with pytest.raises(fw.DataNotFoundError, match=r"File not found: inputs/raw/none\.csv"):
+        fw.data_info("inputs/raw/none.csv", columns=True)

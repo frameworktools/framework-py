@@ -11,8 +11,9 @@ itself contain dots, so ``inputs.raw.survey`` is found as nested YAML, as
 
 from __future__ import annotations
 
+import datetime as dt
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,11 @@ class DataInfo:
         description: Shown when the data is read.
         name: The catalog name, when the file was found by name.
         extra: Any other fields of the catalog entry.
+        columns: With ``data_info(..., columns=True)``: one row per column, with its
+            ``name``, its ``type`` (logical, integer, double, character, factor, date,
+            datetime, time, duration, or other), and its count of ``missing`` values.
+            Never any values. None otherwise.
+        rows: With ``columns=True``, the number of rows. None otherwise.
     """
 
     path: Path
@@ -69,6 +75,8 @@ class DataInfo:
     description: str | None = None
     name: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    columns: pd.DataFrame | None = field(default=None, compare=False)
+    rows: int | None = None
 
 
 def type_from_extension(path: str | Path) -> tuple[str, str | None]:
@@ -212,7 +220,7 @@ def _not_found(name: str, data: Any) -> DataNotFoundError:
     return DataNotFoundError(message)
 
 
-def data_info(path: str) -> DataInfo:
+def data_info(path: str, columns: bool = False) -> DataInfo:
     """How to read a data file, given a catalog name or a file path.
 
     ``path`` is a dot-notation catalog name (``"inputs.raw.survey"``), a relative
@@ -220,16 +228,83 @@ def data_info(path: str) -> DataInfo:
     from the project root, then from the current folder. Catalog paths are relative to
     the project root.
 
+    With ``columns=True``, the file is read and summarized without showing any values:
+    each column's name, type, and missing count, and the number of rows. An agent under
+    the sensitive-data rules can learn a restricted file's layout this way without
+    seeing its records::
+
+        info = fw.data_info("inputs.private.raw.patients", columns=True)
+        info.columns   # name, type, missing
+        info.rows
+
     Args:
         path: A dot-notation catalog name, a relative path containing a slash, or an absolute
             path.
+        columns: Read the file and summarize its columns. The read is not recorded in
+            framework.db and does not check the file's hash.
 
     Returns:
-        The file's path, type, and catalog fields.
+        The file's path, type, and catalog fields, with ``columns`` and ``rows`` when asked.
 
     Raises:
-        DataNotFoundError: The name is not in the catalog, or its entry has no path.
+        DataNotFoundError: The name is not in the catalog, its entry has no path, or (with
+            ``columns=True``) the file does not exist.
     """
+    info = _data_info(path)
+    if not columns:
+        return info
+    from framework.data import read_file
+
+    frame = read_file(info)
+    return replace(info, columns=column_summary(frame), rows=len(frame))
+
+
+def _type_name(column: pd.Series) -> str:
+    """A column's type in R's words, so the summary reads the same in both languages."""
+    kind = column.dtype
+    if pd.api.types.is_bool_dtype(kind):
+        return "logical"
+    if pd.api.types.is_integer_dtype(kind):
+        return "integer"
+    if pd.api.types.is_float_dtype(kind):
+        return "double"
+    if isinstance(kind, pd.CategoricalDtype):
+        return "factor"
+    if pd.api.types.is_datetime64_any_dtype(kind):
+        return "datetime"
+    if pd.api.types.is_timedelta64_dtype(kind):
+        return "duration"
+    kinds = {type(value) for value in column.dropna()}
+    if not kinds or kinds <= {str}:
+        return "character"
+    if kinds <= {bool}:
+        return "logical"
+    if kinds <= {dt.date}:
+        return "date"
+    if kinds <= {dt.time}:
+        return "time"
+    if kinds <= {dt.datetime, pd.Timestamp}:
+        return "datetime"
+    if kinds <= {int}:
+        return "integer"
+    if kinds <= {int, float}:
+        return "double"
+    return "other"
+
+
+def column_summary(frame: pd.DataFrame) -> pd.DataFrame:
+    """Each column's name, type, and missing count. Never any values."""
+    return pd.DataFrame(
+        {
+            "name": [str(name) for name in frame.columns],
+            "type": [_type_name(frame.iloc[:, i]) for i in range(frame.shape[1])],
+            "missing": [int(frame.iloc[:, i].isna().sum()) for i in range(frame.shape[1])],
+        },
+        columns=["name", "type", "missing"],
+    )
+
+
+def _data_info(path: str) -> DataInfo:
     settings_file = find_settings_file()
     root = settings_file.parent if settings_file else None
     if _is_absolute(path) or "/" in path or "\\" in path:
