@@ -40,7 +40,7 @@ Without a type, an interactive session asks for one and suggests `project`. A sc
 Every type except bare includes these files.
 
 - `settings.yml`, with `language: python`.
-- `pyproject.toml`, which depends on `framework-py`.
+- `pyproject.toml`, which depends on `framework-py` and on what Quarto and Jupyter need to render and open notebooks.
 - `scaffold.py`, which [scaffold()](ref:scaffold) runs.
 - `.env` with empty credential placeholders, ignored by git.
 - `framework.db`, ignored by git.

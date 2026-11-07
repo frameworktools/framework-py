@@ -49,8 +49,8 @@ fw.new_project("Pipeline", "~/projects/pipeline", type="project", workflow="scri
 Tools are optional parts of a project beyond its folders. Each tool adds only its own files, folders, and packages. [tools_available()](ref:tools_available) lists the tools for Python projects.
 
 - `uv` manages the project's dependencies in `pyproject.toml` and `uv.lock`. It is on for every project.
-- `quarto` writes the root `_quarto.yml` and render settings. It is on for every type except `bare`.
-- `jupyter` adds the `ipykernel` package for Jupyter notebooks. The Jupyter workflow turns it on.
+- `quarto` writes the root `_quarto.yml` and render settings, and adds `ipykernel`, `nbformat`, and `nbclient`, which `quarto render` needs to run Python chunks. It is on for every type except `bare`.
+- `jupyter` adds the `ipykernel` kernel and `jupyterlab`, so `uv run jupyter lab` opens the notebooks. The Jupyter workflow turns it on.
 - `quarto_slides` adds a `slides/` folder that renders as RevealJS.
 - `quarto_manuscript` adds a `manuscript/` folder with a Quarto manuscript to start from.
 
@@ -150,7 +150,7 @@ A new project contains these files, depending on its type.
 
 - The folders of the project type.
 - `settings.yml`, plus split files under `settings/` for standard and privacy-sensitive projects.
-- `pyproject.toml`, which depends on `framework-py` and tells uv not to build the project as a package.
+- `pyproject.toml`, which depends on `framework-py` and the tools its workflow needs (see Tools above) and tells uv not to build the project as a package.
 - `scaffold.py`, which [scaffold()](ref:scaffold) runs after it loads the settings.
 - `.env`, with empty placeholders for PostgreSQL and S3 credentials.
 - `.gitignore` for the project type. Framework makes sure it ignores `.env`.

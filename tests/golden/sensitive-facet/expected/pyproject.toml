@@ -5,6 +5,9 @@ description = "Golden Sensitive Facet"
 requires-python = ">=3.11"
 dependencies = [
     "framework-py",
+    "ipykernel",
+    "nbformat",
+    "nbclient",
 ]
 
 [tool.uv]

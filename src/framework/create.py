@@ -283,9 +283,28 @@ def _dependency(name: str, entry: Mapping[str, Any]) -> str:
     return f"{name}{version or ''}"
 
 
+# What Quarto's Jupyter engine imports to run Python chunks (nbformat and nbclient,
+# in Quarto's share/jupyter/jupyter.py), and the kernel it starts.
+_QUARTO_PACKAGES = ("ipykernel", "nbformat", "nbclient")
+# The kernel, and JupyterLab, so `uv run jupyter lab` opens the notebooks.
+_JUPYTER_PACKAGES = ("ipykernel", "jupyterlab")
+
+
+def _package_key(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def _pyproject(spec: Mapping[str, Any]) -> str:
     packages = (spec.get("packages") or {}).get("default_packages") or {}
     dependencies = ["framework-py", *(_dependency(n, e) for n, e in packages.items())]
+    # A project renders and edits with its workflow's tools out of the box. The spec's
+    # packages win when they name one of these, with a version for example.
+    tools = [
+        *(_QUARTO_PACKAGES if spec_tool_on(spec, "quarto") else ()),
+        *(_JUPYTER_PACKAGES if spec_tool_on(spec, "jupyter") else ()),
+    ]
+    named = {_package_key(name) for name in packages}
+    dependencies += [name for name in dict.fromkeys(tools) if _package_key(name) not in named]
     lines = [
         "[project]",
         f'name = "{kebab_case(spec["name"])}"',

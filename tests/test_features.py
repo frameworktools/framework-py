@@ -219,3 +219,30 @@ def test_course_keeps_quarto_and_workflows_can_be_chosen(tmp_path: Path) -> None
     assert not list(scripts.rglob("_quarto.yml"))
     with pytest.raises(fw.FrameworkError, match="Unknown workflow: notebooks"):
         fw.new("X", tmp_path / "x", "project", workflow="notebooks", interactive=False)
+
+
+def test_python_projects_get_what_their_workflow_needs(tmp_path: Path) -> None:
+    import tomllib
+
+    def dependencies(root: Path) -> list[str]:
+        data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        return list(data["project"]["dependencies"])
+
+    render = ["ipykernel", "nbformat", "nbclient"]
+    jupyter = fw.new("J", tmp_path / "j", "project", interactive=False)
+    assert dependencies(jupyter) == ["framework-py", *render, "jupyterlab"]
+    for type in ("project", "course", "presentation"):
+        root = fw.new(type, tmp_path / type, type, workflow="quarto", interactive=False)
+        assert dependencies(root) == ["framework-py", *render], type
+    scripts = fw.new("S", tmp_path / "s", "project", workflow="scripts", interactive=False)
+    assert dependencies(scripts) == ["framework-py"]
+    # A spec package of the same name keeps its version and is not added twice
+    layer = {
+        "type": "project",
+        "language": "python",
+        "tools": {"quarto": True},
+        "packages": {"default_packages": {"nbclient": {"source": "pypi", "version": ">=0.10"}}},
+    }
+    spec = fw.spec_resolve([layer], name="Pinned").spec
+    pinned = fw.project_create(spec, tmp_path / "pinned")
+    assert dependencies(pinned) == ["framework-py", "nbclient>=0.10", "ipykernel", "nbformat"]
