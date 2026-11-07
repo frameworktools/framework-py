@@ -170,7 +170,7 @@ def test_package_set_add_without_uv(
 ) -> None:
     monkeypatch.setattr(packages, "_uv", lambda: None)
     result = fw.package_set_add("fastapi-python")
-    assert result == {"added": ["fastapi", "uvicorn", "pydantic", "httpx"], "present": []}
+    assert result == {"added": ["fastapi", "uvicorn", "pydantic", "httpx", "pytest"], "present": []}
     assert fw.packages_list()["package"].tolist() == [
         "framework-py",
         "pandas",
@@ -178,6 +178,7 @@ def test_package_set_add_without_uv(
         "uvicorn",
         "pydantic",
         "httpx",
+        "pytest",
     ]
     assert calls == [[sys.executable, "-m", "pip", "install", *result["added"]]]
     # A second time adds and installs nothing

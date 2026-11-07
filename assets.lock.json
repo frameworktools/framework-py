@@ -1,5 +1,5 @@
 {
-  "commit": "85ac88a89183e61fa39a17801605c8a082763857",
+  "commit": "5b4855b15ff5c1da2166724580fd1c6b6ed7f5ea",
   "files": {
     "docs/docs-site.md": {
       "sha256": "2b86e376b11401881ef77a595d20af203ffc50ed95d99a55e895157e8f8dca25",
@@ -70,7 +70,7 @@
       "source": "inst/sets/packages/causal-inference-r.json"
     },
     "src/framework/_assets/sets/packages/fastapi-python.json": {
-      "sha256": "28c565555f3c9870bcfaf749468195e330336ed231be79b506a77d2407a69f5f",
+      "sha256": "e1a1d48f61f4f48c54374ba6bc8212ed3181d72e4e22cfcef47fa841fe95e5e9",
       "source": "inst/sets/packages/fastapi-python.json"
     },
     "src/framework/_assets/sets/packages/large-data-r.json": {
@@ -338,6 +338,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "85ac88a89183e61fa39a17801605c8a082763857",
+  "ref": "5b4855b",
   "source": "framework (R package)"
 }
