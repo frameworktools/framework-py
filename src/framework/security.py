@@ -4,9 +4,13 @@ The checks match R's ``git_security_audit()``:
 
 - gitignore_coverage: private folders and the data files in them are ignored.
 - private_data_exposure: git tracks no file in a private folder.
-- git_history: no commit added a private data file.
-- orphaned_files: data files sit inside the configured folders. Files git
-  ignores are not counted.
+- git_history: no commit added, changed, renamed, or copied a data file in a
+  private folder, in an inputs folder, or with identifier-like columns in its
+  header (read from the committed blob). ``reason`` says which.
+- orphaned_files: data files sit inside the folders the settings name
+  (``directories``, ``extra_directories``, ``render_dirs``). Files git ignores,
+  hidden folders, and JSON, text, and XML files (unless asked for) are not
+  counted.
 - secrets_exposure: git tracks no ``.env`` file.
 - published_outputs: folder publishing destinations inside the project that hold
   files are ignored by git. In projects that are not sensitive, a destination
@@ -36,6 +40,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -67,16 +72,24 @@ CHECKS = (
     "identifier_columns",
 )
 
-_EXCLUDED_DIRS = (
-    ".git", ".Rproj.user", "renv", "packrat", ".framework_cache", ".quarto", "_cache",
-    "_files", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",
-    # Framework's and editors' own configuration, which is JSON but not data.
-    ".framework", ".claude", ".github", ".vscode", ".idea", ".positron", "node_modules",
-)  # fmt: skip
+# Folders the orphan check skips at any depth, besides hidden ones (.git, .venv,
+# .framework, .claude, .vite, ...) and Quarto's *_files and *_cache
+_EXCLUDED_DIRS = ("renv", "packrat", "node_modules", "_site", "_freeze", "__pycache__")
 _EXCLUDED_FILES = {"framework.db", ".framework_renv_enabled", ".framework_scaffolded", ".initiated"}
 _SECRETS_FILE = re.compile(r"^\.env(\..+)?$")
 _SECRETS_EXAMPLE = re.compile(r"\.(example|template|sample)$")
-_HISTORY_ACTIONS = {"A": "added", "M": "modified", "D": "deleted"}
+_HISTORY_ACTIONS = {
+    "A": "added",
+    "M": "modified",
+    "D": "deleted",
+    "T": "modified",
+    "R": "renamed",
+    "C": "copied",
+}
+_HISTORY_MAX_BYTES = 50 * 1024**2
+# Orphan checks leave these out unless asked for: mostly code, cohort definitions,
+# manifests, and notes, rarely data
+_ORPHAN_SKIPPED_EXTENSIONS = ("json", "txt", "xml")
 _AUTO_FIX_HEADER = "# Framework Security Audit - Auto-generated"
 
 
@@ -420,44 +433,110 @@ def _check_secrets(tracked: list[str]) -> tuple[pd.DataFrame, list[str]]:
     return _frame(rows, ["file", "git_status"]), advice
 
 
+def _history_changes(output: str) -> list[dict[str, str]]:
+    """The file changes in ``git log --name-status`` output: one row per changed path with
+    its commit, date, and action. A rename or copy counts for the path it creates."""
+    rows: list[dict[str, str]] = []
+    commit = date = None
+    for line in output.splitlines():
+        if re.match(r"^[0-9a-f]{40}\x1f", line):
+            commit, date = line.split("\x1f", 1)
+            continue
+        parts = line.split("\t")
+        if commit is None or len(parts) < 2 or not re.match(r"^[AMDTRC][0-9]*$", parts[0]):
+            continue
+        rows.append(
+            {
+                "hash": commit,
+                "date": date or "",
+                "action": _HISTORY_ACTIONS[parts[0][0]],
+                "file": parts[-1],
+            }
+        )
+    return rows
+
+
+def _history_header_columns(root: Path, commit: str, name: str) -> list[str] | None:
+    """A committed file's column names at ``commit``, from its header only. The blob goes
+    to a temporary file that is removed right away; files over 50 MB are not read."""
+    from framework._identifiers import header_columns
+
+    size = _git(root, "cat-file", "-s", f"{commit}:{name}")
+    try:
+        if size.returncode != 0 or int(size.stdout.strip()) > _HISTORY_MAX_BYTES:
+            return None
+    except ValueError:
+        return None
+    blob = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "blob", f"{commit}:{name}"],
+        capture_output=True,
+        check=False,
+    )
+    if blob.returncode != 0:
+        return None
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / f"blob{Path(name).suffix}"
+        path.write_bytes(blob.stdout)
+        return header_columns(path)
+
+
 def _check_history(
     root: Path,
     private: dict[str, str],
+    inputs: dict[str, str],
     extensions: tuple[str, ...],
     depth: int | str,
 ) -> tuple[pd.DataFrame, list[str]]:
-    args = ["log", "--all", "--pretty=format:%H|%ad|%s", "--date=iso", "--name-status"]
+    """Data files committed in a private folder, in an inputs folder, or with
+    identifier-like columns in their header, at any point in history (added, modified,
+    deleted, renamed, or copied)."""
+    from framework._identifiers import HEADER_TYPES, identifier_columns
+
+    args = ["log", "--all", "--pretty=format:%H%x1f%ad", "--date=iso", "--name-status"]
     if isinstance(depth, int):
         args.append(f"-{depth}")
     elif depth == "shallow":
         args.append("-100")
     result = _git(root, *args)
-    rows: list[dict[str, str]] = []
-    commit = date = None
-    for line in result.stdout.splitlines() if result.returncode == 0 else []:
-        if re.match(r"^[0-9a-f]{40}\|", line):
-            sha, date, *_ = line.split("|")
-            commit = sha[:8]
-            continue
-        parts = line.split("\t")
-        if commit is None or len(parts) < 2 or parts[0] not in _HISTORY_ACTIONS:
-            continue
-        name = parts[1]
-        if not _is_data_file(name, extensions):
-            continue
-        in_private = any(_inside(name, folder) for folder in private.values())
-        if in_private or re.search("private|secret|confidential", name, re.IGNORECASE):
-            rows.append(
-                {
-                    "commit": commit,
-                    "file": name,
-                    "action": _HISTORY_ACTIONS[parts[0]],
-                    "date": date or "",
-                }
-            )
+    changes = [
+        change
+        for change in (_history_changes(result.stdout) if result.returncode == 0 else [])
+        if _is_data_file(change["file"], extensions)
+    ]
+
+    # Why each path is a leak, checked once per path
+    reasons: dict[str, str] = {}
+    for name in dict.fromkeys(change["file"] for change in changes):
+        folders = [part.lower() for part in name.split("/")[:-1]]
+        if any(_inside(name, folder) for folder in private.values()) or re.search(
+            "private|secret|confidential", name, re.IGNORECASE
+        ):
+            reasons[name] = "private folder"
+        elif any(_inside(name, folder) for folder in inputs.values()) or any(
+            part in ("inputs", "input") for part in folders
+        ):
+            reasons[name] = "inputs folder"
+        elif Path(name).suffix.lower() in HEADER_TYPES:
+            kept = [c for c in changes if c["file"] == name and c["action"] != "deleted"]
+            columns = _history_header_columns(root, kept[0]["hash"], name) if kept else None
+            found = identifier_columns(columns or [])
+            if found:
+                reasons[name] = "identifier columns: " + ", ".join(c for c, _ in found)
+    rows = [
+        {
+            "commit": change["hash"][:8],
+            "file": change["file"],
+            "action": change["action"],
+            "date": change["date"],
+            "reason": reasons[change["file"]],
+        }
+        for change in changes
+        if change["file"] in reasons
+    ]
     advice = (
         [
-            "CRITICAL: Private data files found in git history!",
+            "CRITICAL: Data files in private or inputs folders, or with identifier-like "
+            "columns, are in git history!",
             "Consider using git-filter-repo or BFG Repo-Cleaner to remove sensitive data",
             "Consult: https://docs.github.com/en/authentication/keeping-your-account-and-data-"
             "secure/removing-sensitive-data-from-a-repository",
@@ -465,7 +544,24 @@ def _check_history(
         if rows
         else []
     )
-    return _frame(rows, ["commit", "file", "action", "date"]), advice
+    return _frame(rows, ["commit", "file", "action", "date", "reason"]), advice
+
+
+def _project_folders(config: dict[str, Any], root: Path) -> list[str]:
+    """Every folder the settings name inside the project: directories,
+    extra_directories, and render_dirs, as paths from the root."""
+    paths: list[Any] = list(_configured_directories(config).values())
+    extra = config.get("extra_directories")
+    entries = (
+        extra.values() if isinstance(extra, dict) else extra if isinstance(extra, list) else []
+    )
+    paths += [e.get("path") for e in entries if isinstance(e, dict)]
+    render = config.get("render_dirs")
+    paths += list(render.values()) if isinstance(render, dict) else []
+    cleaned = [p.removeprefix("./").rstrip("/") for p in paths if isinstance(p, str)]
+    return [
+        _relative_folder(root, p) for p in dict.fromkeys(cleaned) if p and not _outside(root, p)
+    ]
 
 
 def _check_orphans(
@@ -673,16 +769,18 @@ def _check_identifiers(root: Path, tracked: list[str]) -> tuple[pd.DataFrame, li
 
 
 def _walk_files(root: Path) -> list[Path]:
-    """Every file under the root, skipping excluded top-level folders, and at any depth
-    the ``*_files`` and ``*_cache`` folders Quarto and Jupyter write beside a document."""
+    """Every file under the root, skipping hidden folders (``.git``, ``.venv``, tool
+    caches), environments and site output (``renv``, ``packrat``, ``node_modules``,
+    ``_site``, ``_freeze``), and the ``*_files`` and ``*_cache`` folders Quarto and Jupyter
+    write beside a document, at any depth."""
     found: list[Path] = []
     for current, dirnames, filenames in os.walk(root):
-        if Path(current) == root:
-            dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
         dirnames[:] = [
             d
             for d in dirnames
-            if d not in (".git", "__pycache__") and not d.endswith(("_files", "_cache"))
+            if not d.startswith(".")
+            and d not in _EXCLUDED_DIRS
+            and not d.endswith(("_files", "_cache"))
         ]
         found.extend(Path(current) / name for name in filenames)
     return sorted(found)
@@ -748,7 +846,7 @@ _SECTIONS = {
     "private_data_exposure": "Private Data Exposure (Git Tracked)",
     "git_history": "Git History Leaks",
     "secrets_exposure": "Tracked Secrets Files",
-    "orphaned_files": "Orphaned Data Files",
+    "orphaned_files": "Orphaned Data Files (outside the folders in settings)",
     "published_outputs": "Publishing Folders Not Ignored by Git",
     "connection_secrets": "Secrets Written in Connection Settings",
     "identifier_columns": "Tracked Data With Identifier-Like Columns",
@@ -767,6 +865,9 @@ def _finding_lines(result: AuditResult, checks: tuple[str, ...]) -> list[str]:
         if frame.empty:
             continue
         lines += ["", f"--- {title} ---"]
+        if check == "orphaned_files":
+            lines += _orphan_lines(frame)
+            continue
         for number, row in enumerate(frame.head(10).itertuples(), start=1):
             if check == "gitignore_coverage":
                 lines.append(f"  {number}. [{str(row.severity).upper()}] {row.file}")
@@ -776,7 +877,8 @@ def _finding_lines(result: AuditResult, checks: tuple[str, ...]) -> list[str]:
                 lines.append(f"  {number}. {row.file} (tracked in git, {row.directory})")
             elif check == "git_history":
                 lines.append(
-                    f"  {number}. {row.file} ({row.action} in commit {row.commit}, {row.date})"
+                    f"  {number}. {row.file} ({row.action} in commit {row.commit}, {row.date}; "
+                    f"{row.reason})"
                 )
             elif check == "secrets_exposure":
                 lines.append(f"  {number}. {row.file} (tracked in git)")
@@ -794,6 +896,26 @@ def _finding_lines(result: AuditResult, checks: tuple[str, ...]) -> list[str]:
                 lines.append(f"  {number}. {row.path} ({round(float(str(row.size)) / 1024, 1)} KB)")
         if len(frame) > 10:
             lines.append(f"     ... and {len(frame) - 10} more")
+    return lines
+
+
+def _orphan_lines(frame: pd.DataFrame) -> list[str]:
+    """Orphaned files grouped by folder, the folders with most files first."""
+    counts: dict[str, int] = {}
+    for path in frame["path"]:
+        folder = str(Path(str(path)).parent.as_posix())
+        counts[folder] = counts.get(folder, 0) + 1
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    lines = [
+        f"  {number}. {folder}/ ({count} file{'' if count == 1 else 's'})"
+        for number, (folder, count) in enumerate(ordered[:10], start=1)
+    ]
+    if len(ordered) > 10:
+        lines.append(f"     ... and {len(ordered) - 10} more folders")
+    lines.append(
+        "     Add a folder to settings.yml (directories or extra_directories) if it holds "
+        "project data."
+    )
     return lines
 
 
@@ -850,7 +972,7 @@ def git_security_audit(
     history_depth: int | str = "all",
     auto_fix: bool = False,
     verbose: bool = True,
-    extensions: tuple[str, ...] | list[str] = DATA_EXTENSIONS,
+    extensions: tuple[str, ...] | list[str] | None = None,
 ) -> AuditResult:
     """Check that private data and secrets stay out of git.
 
@@ -863,7 +985,10 @@ def git_security_audit(
         auto_fix: Add private folders and data files that are not ignored to ``.gitignore``.
             Files git already tracks stay tracked: run ``git rm --cached``.
         verbose: Print the report.
-        extensions: File extensions that count as data files.
+        extensions: File extensions that count as data files. Default: ``DATA_EXTENSIONS``,
+            except that the orphaned-file check leaves out ``json``, ``txt``, and ``xml``
+            (mostly code, cohort definitions, and manifests). Given extensions are used
+            as they are by every check.
 
     Returns:
         An ``AuditResult``. ``result.passed`` is False when a check failed.
@@ -880,7 +1005,12 @@ def git_security_audit(
         raise FrameworkError("Settings file not found (expected settings.yml or config.yml)")
     root = path.resolve().parent
     config = settings_read(path)
-    exts = tuple(e.lower().removeprefix(".") for e in extensions)
+    exts = tuple(e.lower().removeprefix(".") for e in (extensions or DATA_EXTENSIONS))
+    orphan_exts = (
+        exts
+        if extensions is not None
+        else tuple(e for e in exts if e not in _ORPHAN_SKIPPED_EXTENSIONS)
+    )
 
     use_git = _git_available(root)
     if not use_git and verbose:
@@ -901,11 +1031,14 @@ def git_security_audit(
     record("gitignore_coverage", _check_gitignore(root, private, rules, exts))
     record("private_data_exposure", _check_exposure(root, private, tracked, exts))
     if check_git_history and use_git:
-        record("git_history", _check_history(root, private, exts, history_depth))
+        inputs = {k: v for k, v in folders.items() if k.startswith("inputs_")}
+        record("git_history", _check_history(root, private, inputs, exts, history_depth))
     else:
-        findings["git_history"] = _frame([], ["commit", "file", "action", "date"])
+        findings["git_history"] = _frame([], ["commit", "file", "action", "date", "reason"])
     record("secrets_exposure", _check_secrets(tracked))
-    record("orphaned_files", _check_orphans(root, folders, exts, rules))
+    # Every folder the settings name counts as known, plain folders included
+    known = {**folders, **{f"folder:{p}": p for p in _project_folders(config, root)}}
+    record("orphaned_files", _check_orphans(root, known, orphan_exts, rules))
     record("published_outputs", _check_published(root, config, rules, tracked))
     record("connection_secrets", _check_connection_secrets(root, path, set(tracked)))
     record("identifier_columns", _check_identifiers(root, tracked))

@@ -426,3 +426,47 @@ def test_identifier_names() -> None:
         ("last_name", "name"),
     ]
     assert identifier_columns(["first_name", "last_name", "site"]) == []
+
+
+def test_history_flags_inputs_folders_identifiers_and_renames(repo: Path) -> None:
+    # A standard project's inputs, committed (peanuts' patient CSVs)
+    (repo / ".gitignore").write_text(".env\n", encoding="utf-8")
+    (repo / "inputs/intermediate").mkdir(parents=True)
+    (repo / "inputs/intermediate/visits.csv").write_text("visit\n1\n", encoding="utf-8")
+    (repo / "reference").mkdir()
+    (repo / "reference/results.csv").write_text("patient_name,dob,result\n", encoding="utf-8")
+    (repo / "reference/counts.csv").write_text("county,n\n", encoding="utf-8")
+    (repo / "old.csv").write_text("id\n1\n", encoding="utf-8")
+    git(repo, "add", "inputs/intermediate", "reference", "old.csv", ".gitignore")
+    git(repo, "commit", "-qm", "data")
+    (repo / "secret").mkdir()
+    git(repo, "mv", "old.csv", "secret/moved.csv")
+    git(repo, "commit", "-qm", "move")
+    history = fw.git_security_audit(verbose=False).findings["git_history"]
+    reasons = dict(zip(history["file"], history["reason"], strict=False))
+    assert reasons["inputs/intermediate/visits.csv"] == "inputs folder"
+    assert reasons["reference/results.csv"].startswith("identifier columns: ")
+    assert "reference/counts.csv" not in reasons
+    assert reasons["secret/moved.csv"] == "private folder"
+    assert "renamed" in set(history["action"])
+
+
+def test_orphans_skip_known_folders_json_and_hidden_folders(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    settings = repo / "settings.yml"
+    settings.write_text(
+        settings.read_text(encoding="utf-8")
+        + "  extra_directories:\n    - {key: hades, label: hades, path: hades}\n",
+        encoding="utf-8",
+    )
+    for path in ("hades/cohort.csv", "cohorts/def.json", ".vite/deps/x.csv", "misc/a.csv"):
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text("x\n", encoding="utf-8")
+    (repo / "misc/b.csv").write_text("x\n", encoding="utf-8")
+    result = fw.git_security_audit(check_git_history=False)
+    assert list(result.findings["orphaned_files"]["path"]) == ["misc/a.csv", "misc/b.csv"]
+    assert "misc/ (2 files)" in capsys.readouterr().out
+    # Asked for, JSON counts
+    asked = fw.git_security_audit(check_git_history=False, verbose=False, extensions=["json"])
+    assert list(asked.findings["orphaned_files"]["path"]) == ["cohorts/def.json"]
