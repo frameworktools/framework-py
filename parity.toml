@@ -123,6 +123,7 @@ status = "ported"
 [functions.data_add]
 python = "data_add"
 status = "ported"
+note = "A relative file path is looked for from the project root, then the working directory"
 
 [functions.data_info]
 python = "data_info"
@@ -135,12 +136,12 @@ status = "ported"
 [functions.data_read]
 python = "data_read"
 status = "ported"
-note = "`.rds` raises `UnsupportedFormatError`"
+note = "`.rds` raises `UnsupportedFormatError`. A relative file path is looked for from the project root, then the working directory"
 
 [functions.data_save]
 python = "data_save"
 status = "ported"
-note = "CSV and Parquet"
+note = "CSV and Parquet. A relative file path starts at the project root, and a dot name ending in `.csv` or `.parquet` is a catalog name saved as that type (R writes both relative to the working directory). A file saved by path is recorded under its path from the root"
 
 [functions.data_verify]
 python = "data_verify"
@@ -223,7 +224,7 @@ status = "ported"
 [functions.git_hooks_install]
 python = "git_hooks_install"
 status = "ported"
-note = "Installs the pre-commit script shared with R and fw, which runs `python -m framework hook pre-commit`"
+note = "Installs the pre-commit script shared with R and fw, which runs `python -m framework hook pre-commit`. Refuses a project inside another repository, whose hooks would run from the outer top folder (R installs there)"
 
 [functions.git_hooks_list]
 python = "git_hooks_list"
@@ -274,7 +275,7 @@ note = "Python's package defaults and per-type .gitignore text, with the user ca
 [functions.make_notebook]
 python = "make_notebook"
 status = "ported"
-note = "Quarto (`.qmd`) with Python chunks by default, `.ipynb` on request"
+note = "Quarto (`.qmd`) with Python chunks by default, `.ipynb` on request. A relative `dir` starts at the project root"
 
 [functions.make_presentation]
 python = "make_presentation"
@@ -531,6 +532,7 @@ note = "Python resolves paths from the root and does not change the working dire
 [functions.status]
 python = "status"
 status = "ported"
+note = "In a project inside another repository, names that repository and counts only the project's commits and changes"
 
 [functions.storage_test]
 python = "storage_test"
