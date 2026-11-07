@@ -48,7 +48,7 @@ An entry is either a path or a mapping with these fields.
 | `path` | The file, relative to the project root. Required. |
 | `type` | The file type. Without it, the type comes from the extension. |
 | `delimiter` | For delimited text: `comma`, `tab`, `semicolon`, or `space`. |
-| `locked` | When `true`, a changed file raises an error on read. |
+| `locked` | When `true`, a changed file raises an error on read. An entry without it is unlocked, so `data_add()` and `data_save()` write `locked: true` for a locked file and leave the field out otherwise, as R does. |
 | `description` | Printed when the data is read. |
 
 Other fields are kept and returned by [data_info()](ref:data_info) in its `extra` attribute.
