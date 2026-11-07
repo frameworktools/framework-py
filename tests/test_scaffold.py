@@ -36,6 +36,18 @@ def test_scaffold_from_a_subfolder(project: Path, monkeypatch: pytest.MonkeyPatc
     assert history["first"].endswith("Z")
 
 
+def test_scaffold_creates_no_database_in_a_bare_project(project: Path) -> None:
+    # Hand testing 2026-11-07: scaffold() created framework.db, which creation skips for bare
+    (project / "settings.yml").write_text(
+        "default:\n  project_name: Test\n  project_type: bare\n", encoding="utf-8"
+    )
+    fw.scaffold()
+    assert not (project / "framework.db").exists()
+    db.ensure_db()
+    fw.scaffold()
+    assert json.loads(db.get_meta("scaffold_history") or "{}")["first"]
+
+
 def test_scaffold_keeps_the_first_time(project: Path) -> None:
     db.set_meta("scaffold_history", '{"first":"2020-01-01T00:00:00Z","last":"x"}')
     fw.scaffold()

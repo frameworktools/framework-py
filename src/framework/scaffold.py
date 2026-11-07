@@ -190,7 +190,8 @@ def scaffold(settings_file: str | Path | None = None) -> Path:
     Call it at the top of every notebook and script. It:
 
     - finds the project root and loads its ``.env`` and settings,
-    - creates framework.db if needed and records the scaffold time,
+    - creates framework.db if needed and records the scaffold time (a bare project gets
+      no framework.db until something needs it, as when it was created),
     - sets the random seed when ``seed_on_scaffold`` is on (or ``FW_SEED`` is set),
     - puts the project's ``functions`` folder on the import path, and
     - runs ``scaffold.py`` from the project root, if there is one.
@@ -220,8 +221,10 @@ def scaffold(settings_file: str | Path | None = None) -> Path:
     root = path.resolve().parent
     config = settings_read(path)
     _load_dotenv(config, root)
-    db.ensure_db(root)
-    _mark_scaffolded(root)
+    # A bare project has no framework.db until something needs it, as at creation
+    if config.get("project_type") != "bare" or db.db_path(root).exists():
+        db.ensure_db(root)
+        _mark_scaffolded(root)
     _set_seed(config)
     _add_function_folders(config, root)
 
