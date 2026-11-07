@@ -1,5 +1,5 @@
 {
-  "commit": "5b4855b15ff5c1da2166724580fd1c6b6ed7f5ea",
+  "commit": "8d714cb08c95a5705981b2733fff63757eb58ace",
   "files": {
     "docs/docs-site.md": {
       "sha256": "2b86e376b11401881ef77a595d20af203ffc50ed95d99a55e895157e8f8dca25",
@@ -266,7 +266,7 @@
       "source": "inst/conformance/create/python/bare-scripts.json"
     },
     "tests/shared/conformance/create/python/course-quarto.json": {
-      "sha256": "74fd8b3879ea4b3a1202299c933d8aca79db8ee190f098dd613f162d61d1b047",
+      "sha256": "a2fb8f92110b10cac52eb3d0357b8389aa83856fadd6f809b0c2d23633563919",
       "source": "inst/conformance/create/python/course-quarto.json"
     },
     "tests/shared/conformance/create/python/presentation-quarto.json": {
@@ -302,15 +302,15 @@
       "source": "inst/conformance/create/python/project-scripts.json"
     },
     "tests/shared/conformance/create/python/project_sensitive-jupyter.json": {
-      "sha256": "e4c45b58b7de944393030c19870158c314c0ccfb07d68bb3dc0947a9e1e3e374",
+      "sha256": "00dea84ddfc912654c7972b37fc26c3e5967f9d2e41d82003316be5c848f8a83",
       "source": "inst/conformance/create/python/project_sensitive-jupyter.json"
     },
     "tests/shared/conformance/create/python/project_sensitive-quarto.json": {
-      "sha256": "56f2a2c77c9bf8ac9e6fa7a8ffb50ba4b64bda623f877c9d5a7485a6e50e514e",
+      "sha256": "3688b13bf0b5076a54c0ef5ea1b1fc8fc19cbc698b1012366ef0f01319d05bfd",
       "source": "inst/conformance/create/python/project_sensitive-quarto.json"
     },
     "tests/shared/conformance/create/python/project_sensitive-scripts.json": {
-      "sha256": "65e6325b7ebb1963f492c4c9e3c86d02c4d096d9134dd0c859a42d5a890126ea",
+      "sha256": "afd8e2fb23a4c39196b7cbbc069c4eb1bff216e030c876b4c682828a5cd0eabc",
       "source": "inst/conformance/create/python/project_sensitive-scripts.json"
     },
     "tests/shared/conformance/merge/atomic-entries.json": {
@@ -338,6 +338,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "5b4855b",
+  "ref": "8d714cb08c95a5705981b2733fff63757eb58ace",
   "source": "framework (R package)"
 }
