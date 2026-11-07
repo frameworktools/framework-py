@@ -67,6 +67,13 @@ def test_save_by_path_writes_csv_without_cataloging(data_project: Path) -> None:
     assert record is not None and record.delimiter == "semicolon"
 
 
+def test_save_by_absolute_path_records_the_path_from_the_root(data_project: Path) -> None:
+    fw.data_save(FRAME, str(data_project / "inputs/raw/abs.csv"))
+    record = db.get_data_record("inputs/raw/abs.csv")
+    assert record is not None and record.path == "inputs/raw/abs.csv"
+    assert db.get_data_record(str(data_project / "inputs/raw/abs.csv")) is None
+
+
 def test_save_adds_a_missing_extension(data_project: Path) -> None:
     fw.data_save(FRAME, "inputs/raw/raw", type="parquet")
     assert (data_project / "inputs/raw/raw.parquet").is_file()

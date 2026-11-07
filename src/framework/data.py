@@ -405,7 +405,6 @@ def data_save(
     if not isinstance(data, pd.DataFrame):
         raise FrameworkError("data_save() needs a pandas DataFrame")
     target, file_type, name = _save_target(path, type)
-    key = name or path
     if file_type == "rds":
         raise UnsupportedFormatError(
             ".rds files are R-only. Save as 'parquet' or 'csv' so both languages can read it."
@@ -428,12 +427,16 @@ def data_save(
     else:
         data.to_parquet(target, index=False)
     root = project_root()
-    inform(f"Data saved to: {relative_to_root(target, root)}")
+    relative = relative_to_root(target, root)
+    inform(f"Data saved to: {relative}")
+    # A file path is recorded from the project root, however it was given, so an
+    # absolute path and the same path from the root share one record.
+    key = name or relative
 
     digest = file_hash(target)
     db.set_data_record(
         key,
-        path=relative_to_root(target, root),
+        path=relative,
         type=file_type,
         delimiter=delimiter if file_type == "csv" else None,
         locked=locked,
