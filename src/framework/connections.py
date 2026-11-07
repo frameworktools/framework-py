@@ -18,6 +18,8 @@ Connections live under ``connections`` in the settings (usually
 Credentials come from ``.env`` through ``env()``, so they never sit in the
 settings. Drivers: sqlite (built in), postgres (``postgres`` extra), mysql or
 mariadb (``mysql``), duckdb (``duckdb``), and sqlserver (``sqlserver``).
+``read_only: true`` on a sqlite or duckdb connection opens the file read-only:
+writes fail, and ``db_execute()`` and ``db_transaction()`` refuse it.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ import sqlite3
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from importlib import import_module, metadata
+from pathlib import Path
 from types import TracebackType
 from typing import Any
 
@@ -157,7 +160,14 @@ def _file_path(config: Mapping[str, Any], what: str) -> str:
 
 
 def _connect_sqlite(config: Mapping[str, Any]) -> Any:
-    return sqlite3.connect(_file_path(config, "SQLite"))
+    path = _file_path(config, "SQLite")
+    if not config.get("read_only"):
+        return sqlite3.connect(path)
+    # mode=ro opens the file without write access, so every write fails and a file
+    # without write permission opens
+    if not Path(path).is_file():
+        raise FrameworkError(f"Read-only database does not exist: {path}")
+    return sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)
 
 
 def _connect_postgres(config: Mapping[str, Any]) -> Any:
@@ -270,12 +280,14 @@ class Connection:
         name: The connection name in the settings.
         driver: sqlite, postgres, mysql, duckdb, or sqlserver.
         raw: The driver's connection object.
+        read_only: Whether it was opened with ``read_only: true`` (sqlite and duckdb).
     """
 
-    def __init__(self, name: str, driver: str, raw: Any) -> None:
+    def __init__(self, name: str, driver: str, raw: Any, read_only: bool = False) -> None:
         self.name = name
         self.driver = driver
         self.raw = raw
+        self.read_only = read_only
         self._in_transaction = False
 
     def __getattr__(self, attribute: str) -> Any:
@@ -332,7 +344,8 @@ def db_connect(name: str) -> Connection:
         raise
     except Exception as error:
         raise FrameworkError(f"Failed to connect to '{name}': {error}") from error
-    return Connection(name, driver, raw)
+    read_only = driver in ("sqlite", "duckdb") and bool(entry.get("read_only"))
+    return Connection(name, driver, raw, read_only)
 
 
 # Queries ------------------------------------------------------------------------------
@@ -393,9 +406,15 @@ def db_execute(
         The driver's count of affected rows, or -1 when the driver does not report one.
 
     Raises:
-        FrameworkError: When the connection cannot be opened or the statement fails.
+        FrameworkError: When the connection cannot be opened, is read-only, or the
+            statement fails.
     """
     with db_connect(connection_name) as connection:
+        if connection.read_only:
+            raise FrameworkError(
+                f"Connection '{connection_name}' is read-only (read_only: true in its "
+                "settings). db_execute() can't change it."
+            )
         cursor = connection.cursor()
         try:
             cursor.execute(query, params) if params is not None else cursor.execute(query)
@@ -440,9 +459,14 @@ def db_transaction(connection: Connection) -> Iterator[Connection]:
         A context manager that yields ``connection``.
 
     Raises:
-        FrameworkError: When the block raises an exception. The transaction is rolled back and
-            the original exception is chained as the cause.
+        FrameworkError: When the connection is read-only, or the block raises an exception.
+            The transaction is rolled back and the original exception is chained as the cause.
     """
+    if connection.read_only:
+        raise FrameworkError(
+            f"Connection '{connection.name}' is read-only (read_only: true in its settings). "
+            "db_transaction() needs a writable connection."
+        )
     if connection._in_transaction:
         yield connection
         return

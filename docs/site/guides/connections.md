@@ -77,7 +77,7 @@ fw.db_drivers_status()
 
 Each driver accepts a few more fields.
 
-- **SQLite and DuckDB.** `database` is a file path, relative to the project root. Its folder must exist. DuckDB also takes `read_only`, `memory_limit`, and `threads`.
+- **SQLite and DuckDB.** `database` is a file path, relative to the project root. Its folder must exist. Both take `read_only: true`, which opens an existing file read-only: writes fail, a file without write permission still opens, and `db_execute()` and `db_transaction()` refuse the connection. DuckDB also takes `memory_limit` and `threads`.
 - **PostgreSQL.** `schema` sets the search path and defaults to `public`.
 - **SQL Server.** `port` defaults to 1433. `odbc_driver` names the ODBC driver and defaults to `ODBC Driver 17 for SQL Server`. `trust_server_certificate` defaults to `true`, which accepts self-signed certificates. The ODBC driver itself is installed separately.
 

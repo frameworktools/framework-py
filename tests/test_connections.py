@@ -74,6 +74,32 @@ def test_duckdb(db_project: Path) -> None:
     assert fw.db_query("SELECT answer FROM t", "duck")["answer"].tolist() == [42]
 
 
+def test_read_only_sqlite(db_project: Path) -> None:
+    fw.db_execute("CREATE TABLE t (a INTEGER)", "local")
+    fw.db_execute("INSERT INTO t VALUES (1)", "local")
+    (db_project / "settings/connections.yml").write_text(
+        "connections:\n  databases:\n"
+        "    study: {driver: sqlite, database: data/local.db, read_only: true}\n"
+        "    missing: {driver: sqlite, database: data/none.db, read_only: true}\n",
+        encoding="utf-8",
+    )
+    assert fw.db_query("SELECT a FROM t", "study")["a"].tolist() == [1]
+    with pytest.raises(fw.FrameworkError, match=r"'study' is read-only.*db_execute"):
+        fw.db_execute("DELETE FROM t", "study")
+    with fw.db_connect("study") as conn:
+        assert conn.read_only
+        with (
+            pytest.raises(fw.FrameworkError, match=r"db_transaction\(\) needs a writable"),
+            fw.db_transaction(conn),
+        ):
+            pass
+        with pytest.raises(Exception, match="readonly"):
+            conn.cursor().execute("INSERT INTO t VALUES (2)")
+    with pytest.raises(fw.FrameworkError, match="Read-only database does not exist"):
+        fw.db_connect("missing")
+    assert not (db_project / "data/none.db").exists()
+
+
 def test_sqlite_path_is_relative_to_the_root(
     db_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
