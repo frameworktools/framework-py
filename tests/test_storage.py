@@ -599,3 +599,16 @@ def test_data_slug_keeps_the_folder_part(
     url = fw.publish_data(data, "tables/demo.csv", compress=True)
     assert url == "https://files.example.org/r/tables-demo/"
     assert "Publishing tables/demo.csv.gz as tables-demo" in caplog.text
+
+
+def test_data_message_shows_the_normalized_slug(
+    project: Path, s3: FakeS3, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Ports 2026-11-07: the message said tables-bp_by_visit, the artifact was
+    # tables-bp-by-visit
+    _with_site(project)
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    caplog.set_level("INFO", logger="framework")
+    url = fw.publish_data(pd.DataFrame({"x": [1]}), "tables/BP_by_visit.csv")
+    assert url == "https://files.example.org/r/tables-bp-by-visit/"
+    assert "Publishing tables/BP_by_visit.csv as tables-bp-by-visit" in caplog.text

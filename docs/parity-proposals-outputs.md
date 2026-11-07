@@ -50,3 +50,17 @@ R: `checkmate::assert_subset(format, c(..., "eps", "emf"))`, then loop. eps thro
 `ggsave(device = grDevices::cairo_ps)` or `"eps"`, and for recorded plots
 `grDevices::postscript(onefile = FALSE, horizontal = FALSE, paper = "special")`. emf
 through `devEMF::emf` when installed (a Suggests), else the same error as Python.
+
+## B10. `publish_data()` reports the slug the artifact gets
+
+Rule: the "Publishing <dest> as <slug>" message shows the final slug, after the same
+normalization every slug gets (`artifact_slug()`: lowercase, each run of characters other
+than `a-z` and `0-9` becomes `-`, leading and trailing `-` removed).
+`publish_data(df, "tables/bp_by_visit.csv")` says `as tables-bp-by-visit`, not
+`tables-bp_by_visit`.
+
+Python: `_data_slug()` returns the normalized slug, so the message, the folder, and the
+manifest agree.
+
+R: normalize in R's `publish_data()` slug helper before the message (`.artifact_slug()` or
+its equivalent), and pass the normalized slug on.

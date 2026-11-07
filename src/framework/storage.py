@@ -903,14 +903,18 @@ def _publish_route(to: str | None, connection: str | None) -> tuple[Any, str | N
 
 
 def _data_slug(dest: str) -> str:
-    """publish_data()'s slug: ``dest`` without its extension, with each ``/`` as ``-``.
+    """publish_data()'s slug: ``dest`` without its extension, with each ``/`` as ``-``,
+    normalized as every slug is (lowercase, each other run of characters a ``-``).
 
-    ``"tables/demo.csv"`` becomes ``"tables-demo"``, so the folder part is kept.
+    ``"tables/bp_by_visit.csv"`` becomes ``"tables-bp-by-visit"``, so the folder part is
+    kept, and the message shows the slug the artifact really gets.
     """
+    from framework.publish_bundle import artifact_slug
+
     path = PurePosixPath(dest.replace("\\", "/").removesuffix(".gz"))
     if path.name:
         path = path.with_suffix("")
-    return "-".join(part for part in path.parts if part not in ("", ".", "..", "/"))
+    return artifact_slug("-".join(part for part in path.parts if part not in ("", ".", "..", "/")))
 
 
 def publish_data(
