@@ -483,3 +483,35 @@ def test_csv_takes_readr_argument_names(data_project: Path) -> None:
         fw.data_read("inputs/raw/export.csv", skip=1, col_types="ccl")
     with pytest.raises(fw.FrameworkError, match="sheet= does not apply to csv"):
         fw.data_read("inputs/raw/export.csv", sheet=1)
+
+
+def test_missing_file_is_named_from_the_project_root(
+    data_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (data_project / "notebooks").mkdir()
+    monkeypatch.chdir(data_project / "notebooks")
+    with pytest.raises(fw.DataNotFoundError) as caught:
+        fw.data_read("outputs/tables/incidence.csv")
+    message = str(caught.value)
+    assert message.startswith("File not found: outputs/tables/incidence.csv")
+    assert f"Looked for: {(data_project / 'outputs/tables/incidence.csv').resolve()}" in message
+    assert "notebooks/outputs" not in message
+    assert (
+        fw.data_info("outputs/tables/incidence.csv").path
+        == (data_project / "outputs/tables/incidence.csv").resolve()
+    )
+
+    (data_project / "settings/data.yml").write_text(
+        "data:\n  gone: inputs/raw/gone.csv\n", encoding="utf-8"
+    )
+    with pytest.raises(fw.DataNotFoundError, match="File not found for 'gone': inputs/raw/gone"):
+        fw.data_read("gone")
+
+
+def test_a_file_only_in_the_current_folder_is_still_found(
+    data_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (data_project / "notebooks/local").mkdir(parents=True)
+    (data_project / "notebooks/local/x.csv").write_text("a\n1\n", encoding="utf-8")
+    monkeypatch.chdir(data_project / "notebooks")
+    assert fw.data_info("local/x.csv").path == (data_project / "notebooks/local/x.csv").resolve()

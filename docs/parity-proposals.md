@@ -62,3 +62,21 @@ Known differences that remain: readxl gives a column that mixes numbers and text
 (`"4"`), while pandas keeps the mixed values; readxl reads an Excel time-only cell as a
 date-time on 1899-12-31, pandas as a `datetime.time`; readr's `n` parses numbers with
 grouping marks (`"1,000"`), Python's `n` does not.
+
+## data_read() and data_info(): a missing file is named from the project root [B7]
+
+Shared behavior: a relative path is looked for from the project root, then from the
+working directory. `data_info()` returns the path under the root unless the file exists
+only under the working directory, so a missing file resolves under the root. The error
+names the path from the root and the absolute path looked for:
+
+```text
+File not found: outputs/tables/incidence.csv
+Looked for: /home/me/project/outputs/tables/incidence.csv
+```
+
+For a catalog name: `File not found for 'inputs.raw.survey': inputs/raw/survey.csv`, then
+the same `Looked for:` line.
+
+R today: the message is `File not found: <spec$path>`, with whatever path `data_info()`
+built, which may be absolute or relative to the working directory.

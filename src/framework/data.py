@@ -260,6 +260,15 @@ def _existing_file(path: str | Path) -> Path | None:
     return None
 
 
+def _missing_file(path: str, info: DataInfo, *, by_name: bool) -> DataNotFoundError:
+    """The error for a file that is not there, naming it from the project root."""
+    found = find_settings_file()
+    shown = relative_to_root(info.path, found.parent) if found else info.path.as_posix()
+    label = f"File not found for '{path}': {shown}" if by_name else f"File not found: {shown}"
+    detail = f"\nLooked for: {info.path}" if shown != info.path.as_posix() else ""
+    return DataNotFoundError(label + detail)
+
+
 def data_read(
     path: str | Path,
     delim: str | None = None,
@@ -344,7 +353,7 @@ def data_read(
         tracked = True
 
     if not info.path.is_file():
-        raise DataNotFoundError(f"File not found: {info.path}")
+        raise _missing_file(path, info, by_name=info.name is not None)
     if info.type == "rds":
         raise UnsupportedFormatError(_R_ONLY.format(path=info.path))
 

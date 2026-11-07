@@ -82,7 +82,7 @@ survey = fw.data_read("inputs.raw.survey")
 lookup = fw.data_read("inputs/reference/codes.csv")
 ```
 
-A catalog name is resolved from the project root. A path, which is anything containing a slash, is resolved from the current folder. Only files read by catalog name are checked against `framework.db`.
+A catalog name is resolved from the project root. A relative path, which is anything containing a slash, is looked for from the project root, then from the current folder. When the file is in neither, the error names its path from the project root, along with the full path looked for. Only files read by catalog name are checked against `framework.db`.
 
 The `delim` argument overrides the delimiter. Other keyword arguments go to the pandas or pyreadstat reader.
 

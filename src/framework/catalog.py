@@ -233,10 +233,14 @@ def data_info(path: str) -> DataInfo:
     settings_file = find_settings_file()
     root = settings_file.parent if settings_file else None
     if _is_absolute(path) or "/" in path or "\\" in path:
-        # A relative path starts at the project root when the file is there, as
-        # data_save() writes it, else at the current folder
-        found = root is not None and (root / Path(path).expanduser()).exists()
-        return _build(path, root if found and root else Path.cwd(), None, None, root)
+        # A relative path starts at the project root, as data_save() writes it. The current
+        # folder is used only when the file is there and not under the root, so a missing
+        # file is reported under the root.
+        relative = Path(path).expanduser()
+        base = root
+        if base is None or ((Path.cwd() / relative).exists() and not (base / relative).exists()):
+            base = Path.cwd()
+        return _build(path, base, None, None, root)
 
     base = root or Path.cwd()
     data = settings_read(settings_file).get("data")
