@@ -166,27 +166,26 @@ The `framework-sensitive-data` skill (shared asset, R side) should tell agents t
 `data_info(name, columns = TRUE)` instead of reading restricted files to learn their
 layout.
 
-### path(...): a path from the project root, like here::here() [D7]
+### project_path(...): a path from the project root, like here::here() [D7]
 
 ```r
-path(...)
+project_path(...)
 ```
 
 Shared behavior:
 
 - Joins its arguments under the project root and returns an absolute path. Arguments may
-  hold slashes (`path("outputs/tables", "x.csv")`). With no arguments, the root.
+  hold slashes (`project_path("outputs/tables", "x.csv")`). With no arguments, the root.
 - The same call gives the same path from any folder in the project, so existence checks
   copied from R work in Python, which never changes the working directory.
 - The file need not exist.
-- An absolute argument is an error (`path() parts are relative to the project root`).
+- An absolute or rooted argument (`/etc`, `C:\data`, `C:data`, `\data`, `~`) is an error:
+  `project_path() parts are relative to the project root, but '<part>' is absolute`.
 - Outside a project, the "no Framework project found" error.
 
-Python: `fw.path(*parts) -> pathlib.Path`. R: returns a character string, like
-`here::here()`.
-
-R naming note: `path()` masks `fs::path()` when both packages are attached. The name was
-chosen to match Python's `fw.path()`; R users who attach fs will see the masking message.
+Python: `fw.project_path(*parts) -> pathlib.Path`, with `fw.path()` as an alias. R:
+returns a character string, like `here::here()`. R 2.0.1 ships it as `project_path()`
+rather than `path()`, so it doesn't mask `fs::path()`.
 
 ### settings_read(): warn about keys outside the environment sections [B13]
 

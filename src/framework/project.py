@@ -60,15 +60,15 @@ def project_root(start: str | Path | None = None) -> Path:
     return found.parent
 
 
-def path(*parts: str | PathLike[str]) -> Path:
+def project_path(*parts: str | PathLike[str]) -> Path:
     """An absolute path inside the project, from parts relative to its root.
 
-    Like R's ``here::here()``: the same call gives the same file from a notebook in
-    ``notebooks/``, a script in the root, or a subfolder. Python never changes the working
-    directory, so ``Path("outputs/tables/x.csv").exists()`` in a notebook looks under
-    ``notebooks/``; ``fw.path("outputs/tables/x.csv").exists()`` looks under the root::
+    Like R's ``project_path()`` and ``here::here()``: the same call gives the same file from a
+    notebook in ``notebooks/``, a script in the root, or a subfolder. Python never changes the
+    working directory, so ``Path("outputs/tables/x.csv").exists()`` in a notebook looks under
+    ``notebooks/``; ``fw.project_path("outputs/tables/x.csv").exists()`` looks under the root::
 
-        if not fw.path("outputs", "tables", "incidence.csv").exists():
+        if not fw.project_path("outputs", "tables", "incidence.csv").exists():
             ...
 
     Args:
@@ -80,13 +80,28 @@ def path(*parts: str | PathLike[str]) -> Path:
 
     Raises:
         ProjectNotFoundError: Not inside a Framework project.
-        ValueError: A part is an absolute path.
+        ValueError: A part is absolute or rooted (``"/etc"``, ``"C:\\data"``, ``"~/x"``).
     """
-    root = project_root()
     for part in parts:
-        # Rooted on either system: "/etc", "C:\\data", or "\\data"
-        if Path(part).is_absolute() or PureWindowsPath(part).anchor:
+        text = str(part)
+        # Rooted on either system: "/etc", "C:\\data", "C:data", "\\data", or "~"
+        if Path(part).is_absolute() or PureWindowsPath(part).anchor or text.startswith("~"):
             raise ValueError(
-                f"path() parts are relative to the project root, but {str(part)!r} is absolute"
+                f"project_path() parts are relative to the project root, but '{text}' is absolute"
             )
-    return root.joinpath(*parts)
+    return project_root().joinpath(*parts)
+
+
+def path(*parts: str | PathLike[str]) -> Path:
+    """An alias of ``project_path()``, the name R uses.
+
+    ``fw.path(...)`` and ``fw.project_path(...)`` are the same call, and both stay supported.
+    New code can use ``project_path()`` so it reads the same in R and Python.
+
+    Args:
+        *parts: Path parts relative to the project root, as for ``project_path()``.
+
+    Returns:
+        The absolute path. The file need not exist.
+    """
+    return project_path(*parts)

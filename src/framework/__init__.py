@@ -121,7 +121,7 @@ from framework.packages import (
     packages_status,
     packages_update,
 )
-from framework.project import path, project_root
+from framework.project import path, project_path, project_root
 from framework.quarto import quarto_generate_all, quarto_regenerate
 from framework.scaffold import project_info, scaffold, status
 from framework.scratch import scratch_capture, scratch_clean
@@ -234,6 +234,7 @@ __all__ = [
     "project_create_from_layers",
     "project_info",
     "project_list",
+    "project_path",
     "project_register",
     "project_root",
     "project_unregister",

@@ -410,9 +410,9 @@ status = "ported"
 note = "Reads the shared `projects.yml`"
 
 [functions.project_path]
-python = "path"
-status = "renamed"
-note = "Python adds project_path() next"
+python = "project_path"
+status = "ported"
+note = "`fw.path()` is an alias"
 
 [functions.publish]
 python = "publish"
@@ -595,6 +595,7 @@ status = "folded"
 names = [
     "framework_template_path",
     "tools_available",
+    "path",  # alias of project_path()
 ]
 
 [functions.skills_sync]
