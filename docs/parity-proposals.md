@@ -293,12 +293,15 @@ Lookup:
 
 1. `depends_on` given: hash the dependencies before evaluating `expr`. When the entry
    has no record or its key differs, it is a miss: message
-   `Cache '<name>' is out of date: <refs that differ> changed`, then compute and store
-   with the new dependencies.
+   `Cache '<name>' is out of date: <names that differ> changed`, then compute and store
+   with the new dependencies. Names: a reference's string (`inputs.final.bp_long`); a
+   value that is a dict or named list with a single key, that key (`cutoff`); any other
+   value, `dependency <n> (a value)`. Several names are comma-separated with a final
+   "and" (`a, b and c`). The stored `ref` stays `value <n>`.
 2. `depends_on` not given, and the entry has a record (also `cache_get()`): hash its
    `data`, `file`, and `folder` dependencies again (values keep their stored hash). If
    any differs, or no longer resolves, warn
-   `Cache '<name>' is older than its dependencies: <refs> changed since it was stored, so
+   `Cache '<name>' is older than its dependencies: <names> changed since it was stored, so
    it is treated as a miss. Pass depends_on= to cache_remember() to recompute it without
    this warning.` and treat it as a miss. `cache_remember()` then stores the recomputed
    value with the re-hashed dependencies, so tracking continues.

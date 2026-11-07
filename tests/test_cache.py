@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from contextlib import closing
@@ -250,3 +251,32 @@ def test_dependencies_go_with_their_entry(deps_project: Path) -> None:
     fw.cache("c", 1, depends_on="inputs.raw.survey")
     fw.cache_flush()
     assert _depends.recorded("c") is None
+
+
+def test_change_messages_name_the_entry(
+    deps_project: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    deps = ["inputs.raw.survey", {"cutoff": 0}, [1, 2], {"a": 1, "b": 2}]
+    fw.cache_remember("fit", lambda: 1, depends_on=deps)
+    with caplog.at_level(logging.INFO, logger="framework"):
+        fw.cache_remember("fit", lambda: 2, depends_on=[deps[0], {"cutoff": 1}, *deps[2:]])
+    assert "out of date: cutoff changed" in caplog.text
+
+    caplog.clear()
+    (deps_project / "inputs/raw/survey.csv").write_text("a\n9\n", encoding="utf-8")
+    changed = [deps[0], {"cutoff": 2}, [3], {"a": 1, "b": 3}]
+    with caplog.at_level(logging.INFO, logger="framework"):
+        fw.cache_remember("fit", lambda: 3, depends_on=changed)
+    assert (
+        "out of date: inputs.raw.survey, cutoff, dependency 3 (a value) and "
+        "dependency 4 (a value) changed"
+    ) in caplog.text
+    assert "value 1" not in caplog.text
+    # The stored record keeps R's shape: positions, no labels
+    from framework import _depends, db
+
+    stored = json.loads(db.get_meta(_depends.META_PREFIX + "fit") or "{}")
+    assert {d["ref"] for d in stored["dependencies"]} >= {"value 2", "value 3"}
+    assert all(set(d) == {"kind", "ref", "hash"} for d in stored["dependencies"])

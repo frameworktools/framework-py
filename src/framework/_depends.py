@@ -24,7 +24,7 @@ import hashlib
 import json
 import os
 import pickle
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +45,20 @@ class Dependency:
     kind: str
     ref: str
     hash: str
+    # A value's name in messages; not stored, since R and Python share the record
+    label: str = field(default="", compare=False)
+
+    def record(self) -> dict[str, str]:
+        return {"kind": self.kind, "ref": self.ref, "hash": self.hash}
+
+    def name(self) -> str:
+        """What messages call this dependency: a dict entry's key, a reference's string,
+        or ``dependency <n> (a value)``."""
+        if self.label:
+            return self.label
+        if self.kind == "value":
+            return f"dependency {self.ref.removeprefix('value ')} (a value)"
+        return self.ref
 
 
 def _sha256(data: bytes) -> str:
@@ -122,9 +136,16 @@ def resolve(depends_on: Any) -> list[Dependency]:
     return [
         _resolve_reference(item)
         if isinstance(item, str)
-        else Dependency("value", f"value {position}", value_hash(item))
+        else Dependency("value", f"value {position}", value_hash(item), _value_label(item))
         for position, item in enumerate(items, start=1)
     ]
+
+
+def _value_label(value: Any) -> str:
+    """A dict with one key is named by its key; other values by their position."""
+    if isinstance(value, dict) and len(value) == 1:
+        return str(next(iter(value)))
+    return ""
 
 
 def key(dependencies: list[Dependency]) -> str:
@@ -139,7 +160,10 @@ def recorded(name: str) -> tuple[str, list[Dependency]] | None:
         return None
     try:
         data = json.loads(text)
-        dependencies = [Dependency(**item) for item in data["dependencies"]]
+        dependencies = [
+            Dependency(str(item["kind"]), str(item["ref"]), str(item["hash"]))
+            for item in data["dependencies"]
+        ]
         return str(data["key"]), dependencies
     except (ValueError, KeyError, TypeError):
         return None
@@ -149,7 +173,7 @@ def record(name: str, dependencies: list[Dependency] | None) -> None:
     if dependencies is None:
         forget(name)
         return
-    document = {"key": key(dependencies), "dependencies": [asdict(d) for d in dependencies]}
+    document = {"key": key(dependencies), "dependencies": [d.record() for d in dependencies]}
     db.set_meta(META_PREFIX + name, json.dumps(document))
 
 
@@ -177,11 +201,11 @@ def recheck(dependencies: list[Dependency]) -> tuple[list[Dependency], list[str]
         try:
             fresh = _resolve_reference(dependency.ref)
         except FrameworkError:
-            changed.append(dependency.ref)
+            changed.append(dependency.name())
             continue
         current.append(fresh)
         if fresh.hash != dependency.hash:
-            changed.append(dependency.ref)
+            changed.append(dependency.name())
     return current, changed
 
 
@@ -189,6 +213,13 @@ def changed_between(old: list[Dependency], new: list[Dependency]) -> list[str]:
     """Names for what differs between two dependency lists, for messages."""
     before = {(d.kind, d.ref): d.hash for d in old}
     after = {(d.kind, d.ref): d.hash for d in new}
-    names = [ref for (kind, ref), digest in after.items() if before.get((kind, ref)) != digest]
-    names += [ref for (kind, ref) in before if (kind, ref) not in after]
+    names = [d.name() for d in new if before.get((d.kind, d.ref)) != d.hash]
+    names += [d.name() for d in old if (d.kind, d.ref) not in after]
     return list(dict.fromkeys(names)) or ["the dependency list"]
+
+
+def listing(names: list[str]) -> str:
+    """``a``, ``a and b``, or ``a, b and c``."""
+    if len(names) < 2:
+        return "".join(names)
+    return f"{', '.join(names[:-1])} and {names[-1]}"

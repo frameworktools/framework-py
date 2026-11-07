@@ -230,7 +230,7 @@ def _lookup(
     if dependencies is not None:
         if stored is None or stored[0] != _depends.key(dependencies):
             changed = _depends.changed_between(stored[1] if stored else [], dependencies)
-            inform(f"Cache '{name}' is out of date: {', '.join(changed)} changed")
+            inform(f"Cache '{name}' is out of date: {_depends.listing(changed)} changed")
             return _MISSING
     elif stored is not None:
         fresh, changed = _depends.recheck(stored[1])
@@ -238,9 +238,10 @@ def _lookup(
             carried.append(fresh)
         if changed:
             warnings.warn(
-                f"Cache '{name}' is older than its dependencies: {', '.join(changed)} changed "
-                "since it was stored, so it is treated as a miss. Pass depends_on= to "
-                "cache_remember() to recompute it without this warning.",
+                f"Cache '{name}' is older than its dependencies: "
+                f"{_depends.listing(changed)} changed since it was stored, so it is treated "
+                "as a miss. Pass depends_on= to cache_remember() to recompute it without "
+                "this warning.",
                 CacheWarning,
                 stacklevel=3,
             )
