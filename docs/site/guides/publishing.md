@@ -337,6 +337,9 @@ fw.publish(table, to="lab", slug="study-table", title="Study table")
 fw.publish(model, to="pages", slug="adjusted-model")
 ```
 
+A folder `path` may start with `~`. A relative path starts at the project root, even
+when a notebook runs from `notebooks/`.
+
 Folder, GitHub, and named S3 destinations receive portable bundles. Each bundle
 contains `artifact.json`, an offline `index.html`, the original export, and typed
 `representation.json` when available. Tables also retain a CSV export. The reader

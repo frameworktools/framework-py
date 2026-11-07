@@ -255,6 +255,17 @@ def build_bundle(
     return manifest
 
 
+def folder_path(path: str | Path) -> Path:
+    """A folder destination's path: ``~`` is the home folder, and a relative path starts
+    at the project root, wherever Python runs (a notebook renders from ``notebooks/``).
+    Outside a project, a relative path starts at the current folder."""
+    from framework._paths import in_root
+    from framework.project import find_settings_file
+
+    found = find_settings_file()
+    return in_root(path, found.parent if found is not None else Path.cwd())
+
+
 def folder_deliver(bundle: Path, site: Path, base_url: str | None = None) -> dict[str, Any]:
     """Keep immutable snapshots and rebuild a relative-link site index."""
     manifest = json.loads((bundle / "artifact.json").read_text(encoding="utf-8"))
@@ -381,7 +392,7 @@ def publish_external(
         )
         if selected.driver == "folder":
             receipt = folder_deliver(
-                bundle, Path(selected.options["path"]).expanduser(), selected.options.get("url")
+                bundle, folder_path(selected.options["path"]), selected.options.get("url")
             )
         elif selected.driver == "github":
             from framework._pages import github_publish

@@ -449,3 +449,20 @@ def test_split_publishing_credentials_resolve_once(
         settings_read(tmp_path / "settings.yml")["publish"]["destinations"]["results"]["access_key"]
         == "resolved-environment-value"
     )
+
+
+def test_relative_folder_path_starts_at_the_project_root(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n  project_name: Test\n  publish:\n    default: local\n    destinations:\n"
+        "      local: {driver: folder, path: published, visibility: public}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    notebooks = project / "notebooks"
+    notebooks.mkdir()
+    monkeypatch.chdir(notebooks)
+    fw.publish(pd.DataFrame({"x": [1, 2]}), slug="from-notebook")
+    assert (project / "published" / "from-notebook" / "artifact.json").is_file()
+    assert not (notebooks / "published").exists()
