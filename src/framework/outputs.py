@@ -263,6 +263,29 @@ def save_report(
     return destination
 
 
+def _render_keeping_source(command: list[str], source: Path) -> subprocess.CompletedProcess[str]:
+    """Run ``quarto render`` and put a ``.ipynb`` source back as it was.
+
+    Quarto writes cell outputs back into a Jupyter notebook it executes (with
+    ``--execute``), and saved notebooks must keep the source unchanged, so its bytes and
+    times are restored after the render, even when the render fails or is interrupted.
+    """
+    if source.suffix.lower() != ".ipynb":
+        return subprocess.run(command, capture_output=True, text=True, check=False)
+    original = source.read_bytes()
+    times = source.stat()
+    try:
+        return subprocess.run(command, capture_output=True, text=True, check=False)
+    finally:
+        try:
+            changed = source.read_bytes() != original
+        except OSError:
+            changed = True
+        if changed:
+            source.write_bytes(original)
+            os.utime(source, ns=(times.st_atime_ns, times.st_mtime_ns))
+
+
 def save_notebook(
     file: str | Path,
     name: str | None = None,
@@ -284,7 +307,8 @@ def save_notebook(
         overwrite: Replace an existing file.
         embed_resources: For HTML, embed images and styles in one file. False overrides the
             project's ``_quarto.yml`` and saves the page's ``_files/`` folder beside it.
-        quarto_args: Extra arguments for ``quarto render``.
+        quarto_args: Extra arguments for ``quarto render``. A ``.ipynb`` rendered with
+            ``--execute`` is left unchanged: its outputs go into the saved file only.
     """
     source = Path(file)
     if not source.is_file() or source.suffix.lower() not in (".qmd", ".ipynb"):
@@ -308,7 +332,7 @@ def save_notebook(
             command += ["--embed-resources"] if embed_resources else ["-M", "embed-resources:false"]
         command.extend(quarto_args)
         inform(f"Rendering {source.name}...")
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        result = _render_keeping_source(command, source)
         if result.returncode != 0:
             raise FrameworkError(f"Quarto render failed\n{result.stdout}{result.stderr}")
         # Inside a Quarto project, the output keeps the file's folder under

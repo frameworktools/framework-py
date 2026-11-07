@@ -212,3 +212,29 @@ def test_save_notebook_without_embedding_overrides_the_project(
     assert (saved.parent / "report_files" / "style.css").is_file()
     fw.save_notebook(notebook)
     assert "--embed-resources" in commands[-1]
+
+
+def test_save_notebook_leaves_an_executed_ipynb_unchanged(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Hand testing 2026-11-07: quarto_args=["--execute"] wrote the cell outputs back
+    # into the source notebook
+    import subprocess
+
+    from framework import outputs
+
+    notebook = project / "analysis.ipynb"
+    original = '{"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}\n'
+    notebook.write_text(original, encoding="utf-8")
+
+    def render(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        notebook.write_text('{"cells": [{"outputs": ["secret"]}]}', encoding="utf-8")
+        out = Path(command[command.index("--output-dir") + 1])
+        (out / "analysis.html").write_text("<p>secret</p>", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(outputs.shutil, "which", lambda name: "/usr/bin/quarto")
+    monkeypatch.setattr(outputs.subprocess, "run", render)
+    saved = fw.save_notebook(notebook, quarto_args=["--execute"])
+    assert "secret" in saved.read_text(encoding="utf-8")
+    assert notebook.read_text(encoding="utf-8") == original
