@@ -76,11 +76,12 @@ clean = survey_clean()
 
 ```python
 fw.cache_remember("exchange_rates", fetch_rates, expire_after=1)
+fw.cache_remember("live_counts", count_rows, expire_after="30 minutes")
 fw.cache_remember("daily_extract", run_extract, expire_after="1 day")
 fw.cache_remember("weekly_model", fit_model, expire_after="2 weeks")
 ```
 
-The units are `hour`, `hours`, `hr`, `hrs`, and `h`; `day`, `days`, and `d`; and `week`, `weeks`, and `w`. A value without an expiry stays valid until it is removed. `options.data.cache_default_expire` in the settings sets an expiry for values that do not give one.
+The units are `second`, `seconds`, `sec`, `secs`, and `s`; `minute`, `minutes`, `min`, and `mins`; `hour`, `hours`, `hr`, `hrs`, and `h`; `day`, `days`, and `d`; and `week`, `weeks`, and `w`. A value without an expiry stays valid until it is removed. `options.data.cache_default_expire` in the settings sets an expiry for values that do not give one.
 
 An expired value is removed when it is next looked up, and `cache_remember()` computes it again.
 

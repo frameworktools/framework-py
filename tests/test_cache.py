@@ -23,7 +23,18 @@ def cache_project(project: Path) -> Path:
 
 @pytest.mark.parametrize(
     ("value", "hours"),
-    [(None, None), ("", None), (2, 2.0), ("2 hours", 2.0), ("1.5d", 36.0), ("1 week", 168.0)],
+    [
+        (None, None),
+        ("", None),
+        (2, 2.0),
+        ("2 hours", 2.0),
+        ("1.5d", 36.0),
+        ("1 week", 168.0),
+        ("30 minutes", 0.5),
+        ("90 min", 1.5),
+        ("36 secs", 0.01),
+        ("7200s", 2.0),
+    ],
 )
 def test_normalize_expire_after(value: float | str | None, hours: float | None) -> None:
     assert normalize_expire_after(value) == hours

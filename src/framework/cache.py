@@ -36,15 +36,18 @@ T = TypeVar("T")
 _FORMATS = (".parquet", ".pickle")
 _R_FORMAT = ".rds"
 _UNITS = {
+    **dict.fromkeys(("second", "seconds", "sec", "secs", "s"), 1 / 3600),
+    **dict.fromkeys(("minute", "minutes", "min", "mins"), 1 / 60),
     **dict.fromkeys(("hour", "hours", "hr", "hrs", "h"), 1),
     **dict.fromkeys(("day", "days", "d"), 24),
     **dict.fromkeys(("week", "weeks", "w"), 24 * 7),
 }
-_DURATION = re.compile(r"^([0-9]*\.?[0-9]+)\s*(hour|hours|hr|hrs|h|day|days|d|week|weeks|w)$")
+_DURATION = re.compile(r"^([0-9]*\.?[0-9]+)\s*(" + "|".join(_UNITS) + r")$")
 
 
 def normalize_expire_after(value: float | str | None, default: float | None = None) -> float | None:
-    """Hours until expiry, from a number of hours or a string like ``"2 days"``."""
+    """Hours until expiry, from a number of hours or a string like ``"30 minutes"`` or
+    ``"2 days"``. Seconds, minutes, hours, days, and weeks are accepted, as in R."""
     if value is None or (isinstance(value, str) and not value.strip()):
         return default
     if isinstance(value, str):
@@ -52,7 +55,7 @@ def normalize_expire_after(value: float | str | None, default: float | None = No
         if match is None:
             raise FrameworkError(
                 "Could not parse expire_after value. Use numbers (hours) or strings like "
-                "'1 day', '2 hours', '1 week'."
+                "'30 minutes', '2 hours', '1 day', '1 week'."
             )
         return float(match.group(1)) * _UNITS[match.group(2)]
     if value < 0:
@@ -120,7 +123,7 @@ def cache(
         value: The value. DataFrames are stored as Parquet, anything else with pickle.
         file: Store the value in this file instead of the cache folder.
         expire_after: Hours until the value expires, or a string like
-            ``"2 days"``. Default: ``options.data.cache_default_expire`` in the
+            ``"30 minutes"`` or ``"2 days"``. Default: ``options.data.cache_default_expire`` in the
             settings, else never.
     """
     is_frame = isinstance(value, pd.DataFrame)
@@ -273,7 +276,8 @@ def cache_remember(
         name: The cache name.
         compute: Computes the value on a miss.
         file: Store the value in this file instead of the cache folder.
-        expire_after: Hours until the value expires, or a string like ``"2 days"``.
+        expire_after: Hours until the value expires, or a string like ``"30 minutes"`` or
+            ``"2 days"``.
         refresh: Recompute even when cached. A function is called to decide.
     """
     if compute is None:
