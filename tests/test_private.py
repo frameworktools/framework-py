@@ -68,3 +68,120 @@ def test_a_terminal_asks_first(
     else:
         with pytest.raises(fw.FrameworkError, match="Cancelled"):
             confirm_private_upload(secret, include_private=False)
+
+
+# Sensitive projects and notebooks that read private data (ports 2026-11-07) -----------
+
+
+def _site(project: Path, sensitive: bool) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n"
+        "  project_name: Test\n"
+        + ("  security:\n    sensitive: true\n" if sensitive else "")
+        + "  data:\n"
+        "    inputs:\n"
+        "      ids: inputs/private/raw/ids.csv\n"
+        "      flagged: {path: inputs/raw/flagged.csv, private: true}\n"
+        "      survey: inputs/raw/survey.csv\n"
+        "  publish:\n"
+        "    default: site\n"
+        "    destinations:\n"
+        "      site: {driver: folder, path: site, visibility: public}\n",
+        encoding="utf-8",
+    )
+
+
+def test_sensitive_projects_confirm_objects_and_notebooks(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # publish_notebook() published a notebook that read private data from a sensitive
+    # project with no question, as did publish() of a DataFrame
+    import pandas as pd
+
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    _site(project, sensitive=True)
+    frame = pd.DataFrame({"n": [1]})
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
+        fw.publish(frame, slug="counts")
+    assert "sensitive" in capsys.readouterr().err
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
+        fw.publish_data(frame, "tables/counts.csv")
+    notebook = project / "notebooks/summary.qmd"
+    notebook.parent.mkdir()
+    notebook.write_text("---\ntitle: S\n---\n\n```{python}\nx = 1\n```\n", encoding="utf-8")
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
+        fw.publish_notebook(notebook)
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
+        fw.publish(notebook)
+    assert not (project / "site").exists()
+    assert fw.publish(frame, slug="counts", include_private=True)
+    assert (project / "site/counts/artifact.json").is_file()
+
+
+def test_a_terminal_confirms_an_object_in_a_sensitive_project(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pandas as pd
+
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    _site(project, sensitive=True)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt: "n")
+    with pytest.raises(fw.FrameworkError, match="Cancelled"):
+        fw.publish(pd.DataFrame({"n": [1]}), slug="counts")
+    monkeypatch.setattr("builtins.input", lambda prompt: "y")
+    assert fw.publish(pd.DataFrame({"n": [1]}), slug="counts")
+
+
+def test_other_projects_publish_objects_without_asking(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import pandas as pd
+
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    _site(project, sensitive=False)
+    assert fw.publish(pd.DataFrame({"n": [1]}), slug="counts")
+
+
+def test_notebooks_that_name_private_data(project: Path) -> None:
+    from framework._private import notebook_private_reads
+
+    _site(project, sensitive=False)
+    qmd = project / "a.qmd"
+    qmd.write_text(
+        "---\ntitle: A\n---\n\nThis is private work.\n\n```{python}\n"
+        'a = fw.data_read("inputs/private/raw/ids.csv")\n'
+        "b = fw.data_read('inputs.ids')\n"
+        'c = fw.data_read("inputs.flagged")\n'
+        'd = fw.data_read("inputs.survey")\n'
+        'e = fw.data_read("inputs.private.raw.other")\n'
+        'print("private results are not shown")\n'
+        "```\n",
+        encoding="utf-8",
+    )
+    assert notebook_private_reads(qmd) == [
+        "inputs/private/raw/ids.csv",
+        "inputs.ids",
+        "inputs.flagged",
+        "inputs.private.raw.other",
+    ]
+    ipynb = project / "b.ipynb"
+    ipynb.write_text(
+        '{"cells": [{"cell_type": "markdown", "source": ["\\"inputs/private/x.csv\\""]},'
+        ' {"cell_type": "code", "source": ["df = fw.data_read(\\"inputs.ids\\")"]}]}',
+        encoding="utf-8",
+    )
+    assert notebook_private_reads(ipynb) == ["inputs.ids"]
+
+
+def test_a_notebook_reading_private_data_needs_confirmation(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    _site(project, sensitive=False)
+    notebook = project / "notebooks/report.qmd"
+    notebook.parent.mkdir()
+    notebook.write_text('```{python}\nfw.data_read("inputs.ids")\n```\n', encoding="utf-8")
+    with pytest.raises(fw.FrameworkError, match="include_private=True"):
+        fw.publish_notebook(notebook)
+    assert "report.qmd reads private data: inputs.ids" in capsys.readouterr().err

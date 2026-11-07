@@ -110,3 +110,52 @@ Python: keyword-only `title: str | None = None` on `make_notebook()`, `make_qmd(
 R: add `title = NULL` after `subdir` (`make_script()`: after `overwrite`), and use
 `title %||% .notebook_title(original_name)` where `make_notebook()` fills the stub,
 including the `.ipynb` heading cell.
+
+## B1. Confirming notebooks and objects that can show private data
+
+Today the publish guard checks only file paths: a path containing `private` (any case)
+is listed, a terminal session is asked `[y/N]`, and a session with no terminal fails unless
+`include_private = TRUE`. Rendered notebooks and in-memory objects have no telling path, so
+they published silently, even from `security: sensitive: true` projects.
+
+Rule: the same confirmation (one warning per reason, one question, the same error without
+a terminal, skipped with `include_private = TRUE`) also applies when:
+
+1. **Sensitive project, notebook.** The settings have `security: sensitive: true` and the
+   source is a `.qmd`, `.Rmd`, or `.ipynb` file, published with `publish_notebook()` or
+   `publish()` (every destination: bucket, folder, GitHub, S3, Cloud).
+2. **Sensitive project, object.** The settings have `security: sensitive: true` and the
+   source is an object: `publish()` of a data frame, model, figure, or anything else that
+   isn't a path, and `publish_data()` of a data frame. Files given by path keep the path
+   rule only.
+3. **Any project, notebook naming private data.** The notebook's code has a quoted string
+   (single or double quotes, on one line, up to 500 characters) that either
+   - has a part, split on `/`, `\`, or `.`, with no whitespace, whose name contains
+     `private`, `confidential`, or `sensitive` (case-insensitive):
+     `"inputs/private/raw/ids.csv"`, `"inputs.private.raw.ids"`; or
+   - is a data catalog name (`a.b`, letters, digits, `_`, `-`) whose entry is private
+     (in a private folder, or `private: true`), as `data_info()` reports it.
+
+   For `.ipynb`, only code cells are read. For `.qmd`/`.Rmd`, the whole file is read
+   (chunk options can name data; prose rarely quotes a path). Strings are reported in order
+   of appearance, each once.
+
+Messages (Python wording; R should match in substance):
+
+```text
+Warning: This project holds sensitive data (security: sensitive: true), and the rendered notebook 05-review.qmd can show it. Check that it holds only results that may be shared.
+Warning: 05-review.qmd reads private data: inputs.private.release, outputs/private/x.csv.
+Error: Not uploading this without confirmation. Review it, then pass include_private=True to upload it.
+```
+
+For an object, the first reason names its class: `this DataFrame`. When private paths are
+also flagged, the error keeps saying "files with 'private' in their path".
+
+Python: `_private.confirm_private_upload(paths, include_private, reasons)` takes the extra
+reasons; `sensitive_reasons()`, `notebook_private_reads()`, and `notebook_reasons()` build
+them. `publish()` checks notebooks and objects, `publish_notebook()`'s bucket and Cloud
+path checks notebooks, and `publish_data()` checks data frames.
+
+R: R's `publish()`, `publish_notebook()`, and `publish_data()` need the same three checks
+in `.fw_confirm_private()` (`R/publish.R`), which should take the extra reasons, with
+`security$sensitive` read from the settings.

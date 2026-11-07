@@ -269,10 +269,22 @@ In an interactive session, the function then asks before it uploads anything. An
 Warning: 1 file(s) to upload have 'private' in their path:
   /home/me/study/outputs/private/tables/detail.csv
 FrameworkError: Not uploading files with 'private' in their path without confirmation.
-Review them, then pass include_private=True to upload them.
+Review it, then pass include_private=True to upload it.
 ```
 
-`include_private=True` uploads without asking. Only a person who has reviewed the files should pass it. The older name `allow_private` still works but warns that it is deprecated. An object has no path, so the check does not apply to a DataFrame, model, or figure passed to `publish()` or `publish_data()`, even one made from private data. Review it before you publish it.
+`include_private=True` uploads without asking. Only a person who has reviewed the files should pass it. The older name `allow_private` still works but warns that it is deprecated.
+
+Two more cases ask the same way:
+
+- **Notebooks that read private data.** Before [publish_notebook()](ref:publish_notebook) or [publish()](ref:publish) renders a `.qmd` or `.ipynb` file, it looks through the notebook's code for quoted strings that name private data: a path or dot name with a part named like `private`, `confidential`, or `sensitive` (`"inputs/private/raw/ids.csv"`, `"inputs.private.raw.ids"`), or a data catalog name whose file is private. It's a quick text check, so data read some other way isn't found.
+- **Privacy-sensitive projects.** With `security: sensitive: true` in the settings, every notebook and every object (a DataFrame, model, or figure passed to `publish()`, or a DataFrame passed to `publish_data()`) asks, wherever it comes from, since a rendered notebook or an object can show private data that no path reveals.
+
+```text
+Warning: This project holds sensitive data (security: sensitive: true), and the rendered notebook summary.qmd can show it. Check that it holds only results that may be shared.
+FrameworkError: Not uploading this without confirmation. Review it, then pass include_private=True to upload it.
+```
+
+In other projects an object has no path, so publishing a DataFrame, model, or figure doesn't ask, even when it was made from private data. Review it before you publish it.
 
 On macOS, the system resolves `/tmp` and `/var` to paths under `/private/`. That leading `/private/` does not count. A folder you named `private` always counts.
 

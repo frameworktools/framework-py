@@ -36,7 +36,12 @@ import pandas as pd
 
 from framework._log import inform
 from framework._paths import rendered_page
-from framework._private import confirm_private_upload, include_private_arg
+from framework._private import (
+    confirm_private_upload,
+    include_private_arg,
+    notebook_reasons,
+    sensitive_reasons,
+)
 from framework.errors import FrameworkError
 from framework.publish_bundle import doc_title
 from framework.settings import settings_read
@@ -350,6 +355,10 @@ _ACCEPTED = (
 )
 
 
+def _is_notebook(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in (".qmd", ".ipynb", ".rmd")
+
+
 def _artifact_file(source: Any, directory: Path, cloud: bool = False) -> Path:
     """Export a supported object to one file without serializing model internals.
 
@@ -630,7 +639,14 @@ def publish(
             assets = path.with_name(f"{path.stem}_files")
             if assets.is_dir():
                 files += _files(assets, True, None)
-        confirm_private_upload(files, include_private_arg(include_private, allow_private))
+        reasons = notebook_reasons(path) if _is_notebook(path) else []
+        confirm_private_upload(files, include_private_arg(include_private, allow_private), reasons)
+    else:
+        confirm_private_upload(
+            [],
+            include_private_arg(include_private, allow_private),
+            sensitive_reasons(f"this {type(source).__name__}"),
+        )
     with tempfile.TemporaryDirectory(prefix="fw_publish_bundle_") as temp:
         bundle = Path(temp) / "bundle"
         manifest = build_bundle(
@@ -810,7 +826,9 @@ def publish_notebook(
     source = Path(file)
     if not source.is_file() or source.suffix.lower() not in (".qmd", ".ipynb"):
         raise FrameworkError(f"publish_notebook() needs an existing .qmd or .ipynb file: {source}")
-    confirm_private_upload([source], include_private_arg(include_private, allow_private))
+    confirm_private_upload(
+        [source], include_private_arg(include_private, allow_private), notebook_reasons(source)
+    )
     if to == "github":
         if format != "html":
             raise FrameworkError(f'GitHub Pages publishes HTML only (got format="{format}").')
@@ -984,6 +1002,8 @@ def publish_data(
     selected, bucket_name = _publish_route(to, connection)
     if selected is None and (title is not None or description is not None):
         raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
+    if isinstance(data, pd.DataFrame):
+        confirm_private_upload([], include, sensitive_reasons("this DataFrame"))
     if selected is not None and isinstance(data, pd.DataFrame):
         # The same typed table publish() makes of a DataFrame
         slug = _data_slug(dest)
