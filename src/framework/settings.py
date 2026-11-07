@@ -162,11 +162,49 @@ def _has_environment_sections(config: Any) -> bool:
     return any(key in _ENV_KEYWORDS for key in config)
 
 
+# Files and keys already warned about, so each warning shows once per session
+_WARNED_IGNORED: set[tuple[str, tuple[str, ...]]] = set()
+
+
+def _ignored_keys(raw: dict[str, Any], environment: str) -> list[str]:
+    """Top-level keys of a file with environment sections that no environment reads.
+
+    A key is an environment when it is a known environment name, the active one, or a
+    mapping that looks like one: it has ``inherits``, or shares a key with ``default``.
+    Anything else, such as ``ehr_source: optum`` beside ``default:``, is never read.
+    """
+    default = raw.get("default")
+    default_keys = set(default) if isinstance(default, dict) else set()
+    ignored = []
+    for key, value in raw.items():
+        if key in _ENV_KEYWORDS or key == environment:
+            continue
+        if isinstance(value, dict) and ("inherits" in value or default_keys & set(value)):
+            continue
+        ignored.append(str(key))
+    return ignored
+
+
+def _warn_ignored(raw: dict[str, Any], environment: str, label: str) -> None:
+    ignored = tuple(_ignored_keys(raw, environment))
+    if not ignored or (label, ignored) in _WARNED_IGNORED:
+        return
+    _WARNED_IGNORED.add((label, ignored))
+    names = ", ".join(ignored)
+    warnings.warn(
+        f"{label} has keys outside its environment sections, which are ignored: {names}. "
+        "Move them under default: to use them.",
+        SettingsWarning,
+        stacklevel=5,
+    )
+
+
 def _select_environment(raw: Any, environment: str, label: str, *, warn: bool) -> Any:
     if not _has_environment_sections(raw):
         return raw
     if "default" not in raw:
         raise SettingsError(f"{label} has environment sections but no 'default' environment")
+    _warn_ignored(raw, environment, label)
     config = raw["default"]
     if environment != "default":
         if environment in raw:

@@ -44,6 +44,14 @@ FW_CONFIG_ACTIVE=production uv run python scripts/load.py
 
 The active section is merged over `default`. Mappings merge key by key, a `null` value removes a key, and any other value, including a list, replaces the default value whole. An environment name that the file does not define falls back to `default` with a warning.
 
+In a file with environment sections, a top-level key that is not an environment is never read. Framework warns once per session and names the keys:
+
+```text
+SettingsWarning: Settings file '.../settings.yml' has keys outside its environment sections, which are ignored: ehr_source, person. Move them under default: to use them.
+```
+
+A top-level mapping counts as an environment, and is not warned about, when it is the active environment, has an `inherits:` key, or shares a key with `default`.
+
 ## Split files
 
 Standard and privacy-sensitive projects keep most sections in separate files under `settings/`. The main file names each split file in place of the section's content.

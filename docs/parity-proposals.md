@@ -180,3 +180,23 @@ Python: `fw.path(*parts) -> pathlib.Path`. R: returns a character string, like
 
 R naming note: `path()` masks `fs::path()` when both packages are attached. The name was
 chosen to match Python's `fw.path()`; R users who attach fs will see the masking message.
+
+## settings_read(): warn about keys outside the environment sections [B13]
+
+Shared behavior: when a settings file (or split file) has environment sections, every
+top-level key that is not an environment is reported once per session (per file and set
+of keys):
+
+```text
+Settings file '<path>' has keys outside its environment sections, which are ignored:
+ehr_source, person. Move them under default: to use them.
+```
+
+A top-level key is an environment, and not reported, when it is one of `default`,
+`production`, `development`, `test`, `testing`, `staging`, or the active environment, or
+when its value is a mapping that has `inherits` or shares at least one key with
+`default`. Keys are listed in file order. Flat files (no environment sections) are never
+reported. Python: `SettingsWarning`; R: `warning()`, with a session-level memo
+(for example in `.framework_env`) so it shows once.
+
+R today: such keys are silently invisible to `settings()` and `config()`.

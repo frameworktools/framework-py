@@ -372,3 +372,30 @@ def test_split_settings_writers_keep_comments(
     assert _yaml.read(git) == {"git": {"hooks": {"data_security": True}, "user_name": "Ada"}}
     assert data.read_text("utf-8").startswith("# Catalog\n")
     assert _yaml.read(data)["data"]["inputs"]["raw"]["x"]["path"] == "inputs/raw/x.csv"
+
+
+def test_keys_outside_the_environments_warn_once(project: Path) -> None:
+    import warnings
+
+    (project / "settings.yml").write_text(
+        "default:\n"
+        "  directories: {notebooks: notebooks}\n"
+        "ehr_source: optum\n"
+        "person: {id_column: person_id}\n"
+        "hpc:\n"
+        "  directories: {notebooks: /scratch/notebooks}\n"
+        "cluster: {inherits: default}\n"
+        "production: {}\n",
+        encoding="utf-8",
+    )
+    with pytest.warns(SettingsWarning, match=r"ignored: ehr_source, person\. Move them") as seen:
+        assert fw.settings("ehr_source") is None
+    assert len([w for w in seen if "ignored" in str(w.message)]) == 1
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fw.settings_read()
+
+
+def test_a_flat_settings_file_has_no_ignored_keys(project: Path) -> None:
+    (project / "settings.yml").write_text("ehr_source: optum\n", encoding="utf-8")
+    assert fw.settings("ehr_source") == "optum"
