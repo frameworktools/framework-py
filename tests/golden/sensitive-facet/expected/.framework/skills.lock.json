@@ -17,10 +17,10 @@
         ".claude/skills/framework-data"
       ],
       "variant": "python",
-      "hash": "cd79a0e67fed6a3b49da10432dc5446ef8857dc154d953e6364da16038358eda",
+      "hash": "ba731c42ed7356dfbf1803136761b877feaeddf31512fbc1e270a031d1d7c7fa",
       "origin": {
         "skill_id": "framework:framework-data",
-        "hash": "cd79a0e67fed6a3b49da10432dc5446ef8857dc154d953e6364da16038358eda"
+        "hash": "ba731c42ed7356dfbf1803136761b877feaeddf31512fbc1e270a031d1d7c7fa"
       }
     },
     "package:framework-packages": {
@@ -50,10 +50,10 @@
         ".claude/skills/framework-sensitive-data"
       ],
       "variant": "python",
-      "hash": "c7448b81eef97b6ee84b362fc344774dafee031b0ea104ba6550c4824e694678",
+      "hash": "5b748151d7df84d895887ad9ae4aebe17dccfe2ee02150711f4e4225da3abba5",
       "origin": {
         "skill_id": "framework:framework-sensitive-data",
-        "hash": "c7448b81eef97b6ee84b362fc344774dafee031b0ea104ba6550c4824e694678"
+        "hash": "5b748151d7df84d895887ad9ae4aebe17dccfe2ee02150711f4e4225da3abba5"
       }
     }
   }

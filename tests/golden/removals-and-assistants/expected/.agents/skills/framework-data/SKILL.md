@@ -30,8 +30,11 @@ or `pyreadstat`.
 ## Saving
 
 ```python
-fw.data_save(clean, "inputs.intermediate.survey_clean")  # Parquet, added to the catalog
-fw.data_save(final, "inputs/final/analysis_ready.csv", locked=True)
+# Locked by default: a later read raises an error if the file changed
+fw.data_save(final, "inputs/final/analysis_ready.csv")
+
+# Data a pipeline rebuilds on every run: unlocked, so a rebuild doesn't warn
+fw.data_save(clean, "inputs.intermediate.survey_clean", locked=False)  # Parquet, in the catalog
 ```
 
 `data_save()` writes Parquet or CSV, which R can read too. Use it instead of

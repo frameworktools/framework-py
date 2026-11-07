@@ -18,10 +18,16 @@ whether something is safe, treat it as private.
 2. Raw data with identifiers goes in a `private/` folder.
 3. Only de-identified, aggregated data goes in a `public/` folder.
 4. Review every output before saving it to a public folder.
-5. Never publish anything from a private folder. Never pass
+5. Save sensitive data into a private folder:
+   `fw.data_save(df, "inputs.private.intermediate.cleaned")`, or a path under
+   `inputs/private/` or `outputs/private/`.
+6. Run `fw.git_security_audit()` before commits to scan for data leaks, and
+   keep the `data_security` git hook on (`fw.git_hooks_list()`,
+   `fw.git_hooks_enable("data_security")`).
+7. Never publish anything from a private folder. Never pass
    `include_private=True` to a publish function or answer its prompt on the
    user's behalf.
-6. Do not read or print restricted files. Values you print are sent to the
+8. Do not read or print restricted files. Values you print are sent to the
    model provider. Work from the data dictionary and simulated data instead.
 
 ## Data flow
@@ -33,6 +39,21 @@ Intermediate           -> inputs/private/intermediate/
     | aggregate, anonymize
 Public-safe data       -> inputs/public/final/
 ```
+
+## Learning a file's layout
+
+To learn what a private or restricted file holds, use
+`fw.data_info(name, columns=True)` instead of reading the file, printing it, or
+calling `.head()`, `.info()`, or `.describe()` on it:
+
+```python
+info = fw.data_info("inputs.private.raw.patients", columns=True)
+info.columns  # name, type, and count of missing values for each column
+info.rows  # number of rows
+```
+
+It never shows values, category levels, ranges, or examples, and it records
+nothing in framework.db.
 
 ## Writing code
 

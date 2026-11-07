@@ -17,10 +17,10 @@
         ".claude/skills/framework-data"
       ],
       "variant": "python",
-      "hash": "cd79a0e67fed6a3b49da10432dc5446ef8857dc154d953e6364da16038358eda",
+      "hash": "ba731c42ed7356dfbf1803136761b877feaeddf31512fbc1e270a031d1d7c7fa",
       "origin": {
         "skill_id": "framework:framework-data",
-        "hash": "cd79a0e67fed6a3b49da10432dc5446ef8857dc154d953e6364da16038358eda"
+        "hash": "ba731c42ed7356dfbf1803136761b877feaeddf31512fbc1e270a031d1d7c7fa"
       }
     },
     "package:framework-packages": {
