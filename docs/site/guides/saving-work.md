@@ -37,7 +37,7 @@ fw.save_table(summary.reset_index(), "site_summary", format="xlsx")
 
 A `name` with `/` saves into a subfolder of the tables folder, which is created: `fw.save_table(cohort, "meeting-2026-10-16/cohort")` writes `outputs/tables/meeting-2026-10-16/cohort.csv`.
 
-The formats are `csv` (the default), `parquet`, and `xlsx`, which needs the `excel` extra. Other keyword arguments go to the pandas writer. CSV files use `\n` line endings on every platform, so their hashes match the ones R records.
+The formats are `csv` (the default), `parquet`, and `xlsx`, which needs the `excel` extra. CSV files are written as R's `readr::write_csv()` writes them, as [data_save()](ref:data_save) writes them: whole numbers without `.0`, `TRUE` and `FALSE`, `NA` for missing values, and `\n` line endings on every platform. The same table saved from R and from Python gives the same bytes and the same hash. Other keyword arguments go to the pandas writer, on top of that form.
 
 ## Figures
 

@@ -20,7 +20,7 @@ from typing import Any, overload
 
 import pandas as pd
 
-from framework import db
+from framework import _csv, db
 from framework._log import inform
 from framework._paths import output_directory, relative_to_root
 from framework._private import private_read_note, warn_public_save
@@ -116,7 +116,10 @@ def save_table(
         public: In a sensitive project, save to the public tables folder. It warns when
             this session has read private data with ``data_read()``.
         overwrite: Replace an existing file.
-        **kwargs: Passed to the pandas writer.
+        **kwargs: Passed to the pandas writer. A CSV is written as R's ``readr::write_csv()``
+            writes it (``1`` not ``1.0``, ``TRUE``, ``NA``, ``\\n`` line endings), so the
+            same table gives the same bytes in both languages; options given here apply on
+            top of that.
 
     Returns:
         The saved file.
@@ -128,7 +131,12 @@ def save_table(
     path = _output_file("tables", public, f"{name}{_TABLE_FORMATS[format]}")
     _check_overwrite(path, overwrite)
     if format == "csv":
-        data.to_csv(path, index=False, **{"lineterminator": "\n", **kwargs})
+        if kwargs:
+            # The same readr form, with the caller's pandas options on top
+            options = {"lineterminator": "\n", "na_rep": _csv.NA, "encoding": "utf-8", **kwargs}
+            _csv.format_like_r(data).to_csv(path, index=False, **options)
+        else:
+            _csv.write_csv(data, path, sep=",")
     elif format == "parquet":
         data.to_parquet(path, index=False, **kwargs)
     else:

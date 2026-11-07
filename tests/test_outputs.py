@@ -364,3 +364,15 @@ def test_a_public_model_with_rows_after_private_reads_warns_once(project: Path) 
     assert len(messages) == 1
     assert "holds 2 data rows" in messages[0]
     assert "also read private data (inputs/private/ids.csv)" in messages[0]
+
+
+def test_save_table_writes_csv_as_readr_does(project: Path) -> None:
+    # Ports 2026-11-07: save_table() wrote 1.0, True, and empty cells where R writes 1,
+    # TRUE, and NA, so the two languages' tables differed byte for byte
+    frame = pd.DataFrame(
+        {"n": [1261940.0, 2.5], "flag": [True, False], "label": ["a", None], "x": [None, 1.0]}
+    )
+    path = fw.save_table(frame, "readr")
+    assert path.read_bytes() == b"n,flag,label,x\n1261940,TRUE,a,NA\n2.5,FALSE,NA,1\n"
+    tabbed = fw.save_table(frame, "tabbed", sep="\t")
+    assert tabbed.read_bytes() == b"n\tflag\tlabel\tx\n1261940\tTRUE\ta\tNA\n2.5\tFALSE\tNA\t1\n"
