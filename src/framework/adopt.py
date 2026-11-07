@@ -379,6 +379,8 @@ def adopt(
     *,
     type: str | None = None,
     sensitive: bool | None = None,
+    cloud: bool | None = None,
+    slug: str | None = None,
     force: bool = False,
 ) -> Path:
     """Make an existing folder a Framework project, in place.
@@ -422,6 +424,12 @@ def adopt(
             private by default and turns on the sensitive-data guards. None (the
             default) asks in the review when folders look private, and is False
             with ``yes=True``.
+        cloud: True registers the adopted project on Framework Cloud and links it
+            (``cloud_register()``); False never does. None (the default) asks in an
+            interactive session when you are signed in. If you don't register, it
+            offers to save the layout as a structure.
+        slug: With ``cloud``, the project's slug on Framework Cloud. Default: made from
+            the folder's name.
         force: Adopt the folder as a Python project even when its files say
             another language.
 
@@ -510,8 +518,7 @@ def adopt(
             "adopt --sensitive), or set security: sensitive: true in settings.yml.",
             file=sys.stderr,
         )
-    if not yes:
-        _offer_cloud(root, spec, plan)
+    _register(root, plan, cloud, slug, offer=cloud is None and not yes)
     return root
 
 
@@ -572,19 +579,32 @@ def adopt_spec(name: str, plan: AdoptPlan, use_git: bool = False) -> dict[str, A
     return spec
 
 
-def _offer_cloud(root: Path, spec: Mapping[str, Any], plan: AdoptPlan) -> None:
-    from framework.cloud import CloudError, cloud_server, cloud_token, host, register_project
+def _register(
+    root: Path, plan: AdoptPlan, cloud: bool | None, slug: str | None, offer: bool
+) -> None:
+    """Register on Framework Cloud when asked to, or, signed in and interactive, when the
+    person says yes (default No). Declining offers to save the layout as a structure."""
+    from framework.cloud import CloudError, cloud_register, cloud_server, cloud_token, host
 
-    try:
-        server = cloud_server().url
-    except CloudError:
-        return
-    if cloud_token(server) is None:
-        return
-    if _yes_no(input, f"Register this project on {host(server)}?"):
-        register_project(root, str(spec["name"]), str(spec["type"]), spec)
-    if _yes_no(input, f"Save this folder layout as a structure on {host(server)}?"):
-        _send_structure(str(spec["name"]), plan)
+    where = None
+    if offer:
+        try:
+            server = cloud_server().url
+        except CloudError:
+            return
+        if cloud_token(server) is None or not sys.stdin.isatty():
+            return
+        where = host(server)
+        cloud = _yes_no(input, f"Register this project on {where}?")
+    if cloud:
+        try:
+            cloud_register(root, slug=slug)
+        except FrameworkError as error:
+            print(f"Not registered on Framework Cloud: {error}", file=sys.stderr)
+    elif where is not None and _yes_no(
+        input, f"Save this folder layout as a structure on {where}?"
+    ):
+        _send_structure(root.name, plan)
 
 
 def structure_import(

@@ -190,19 +190,30 @@ def test_registering_an_adopted_project_keeps_the_token_out_of_git(
     if shutil.which("git"):
         subprocess.run(["git", "init", "-q", str(existing)], check=True)
     server = FakeCloud()
-    server.route(
-        "POST",
-        "/api/v1/projects",
-        lambda r: httpx.Response(201, json={"slug": "old", "token": "fwp_secret0123"}),
-    )
+    sent: list[str] = []
+
+    def create(request: httpx.Request) -> httpx.Response:
+        sent.append(request.content.decode("utf-8"))
+        body = {"slug": "old-study", "type": "project", "adopted": True}
+        return httpx.Response(201, json={**body, "url": "https://x/p/1", "token": "fwp_secret0123"})
+
+    server.route("POST", "/api/v1/projects", create)
     monkeypatch.setattr(cloud, "_transport", httpx.MockTransport(server))
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    # Accept the folders, no to sensitive, yes to register, no to the structure
-    answers = iter(["", "n", "y", "n"])
+    # Accept the folders, no to sensitive, yes to register
+    answers = iter(["", "n", "y"])
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
     caplog.set_level("INFO", logger="framework")
     fw.adopt(existing)
+    # One request: the spec as written, no structure first
+    assert server.paths() == ["POST /api/v1/projects"]
+    body = json.loads(sent[0])
+    assert body["spec"] == json.loads(
+        (existing / ".framework/spec.json").read_text(encoding="utf-8")
+    )
+    assert (body["name"], body["slug"], body["adopted"]) == ("old-study", "old-study", True)
+    assert "project_type" not in body and "structure" not in body
     assert "fwp_secret0123" in (existing / ".env").read_text(encoding="utf-8")
     assert ".env" in (existing / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert "fwp_secret0123" not in caplog.text

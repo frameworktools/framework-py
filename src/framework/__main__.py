@@ -4,7 +4,8 @@
     python -m framework create --name NAME --path DIR [--type TYPE] [--workflow ID]
         [--tool ID[=false]]... [--skill-set ID]... [--package-set ID]... [--interactive]
         [--offline]
-    python -m framework adopt [--path DIR] [--yes] [--type TYPE] [--sensitive] [--force]
+    python -m framework adopt [--path DIR] [--yes] [--type TYPE] [--sensitive]
+        [--cloud [--slug SLUG]] [--force]
     python -m framework bootstrap [--path DIR] [--interactive] [--no-packages]
     python -m framework hook pre-commit
 
@@ -86,6 +87,14 @@ def _parser() -> argparse.ArgumentParser:
         help="the project holds sensitive data: turn on Framework's guards for private folders",
     )
     adopt.add_argument(
+        "--cloud",
+        action="store_true",
+        help="after adopting, create the project on Framework Cloud and link it",
+    )
+    adopt.add_argument(
+        "--slug", help="with --cloud: the project's slug (default: made from the folder's name)"
+    )
+    adopt.add_argument(
         "--force",
         action="store_true",
         help="adopt the folder as Python even when its files say another language",
@@ -131,6 +140,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 yes=args.yes,
                 type=args.type,
                 sensitive=True if args.sensitive else None,
+                cloud=True if args.cloud else None,
+                slug=args.slug,
                 force=args.force,
             )
         elif args.command == "bootstrap":

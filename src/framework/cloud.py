@@ -1310,6 +1310,295 @@ def register_project(
     return result
 
 
+# Registering a local project ---------------------------------------------------------
+
+_SLUG = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def slugify(name: str) -> str:
+    """A slug from a name, as fw makes it: lowercase, each run of other characters a hyphen,
+    no hyphen at either end."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def _env_tracked(root: Path) -> bool:
+    if shutil.which("git") is None:
+        return False
+    result = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "--error-unmatch", ".env"],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _register_body(
+    spec_json: str, name: str, slug: str, description: str | None, adopted: bool
+) -> str:
+    """The JSON body of ``POST /api/v1/projects``: the spec as it is on disk (so empty
+    maps stay ``{}``), then name, slug, description (when given), and adopted (when true)."""
+    fields: dict[str, Any] = {"name": name, "slug": slug}
+    if description:
+        fields["description"] = description
+    if adopted:
+        fields["adopted"] = True
+    rest = json.dumps(fields, ensure_ascii=False)
+    return '{"spec":' + spec_json.strip() + "," + rest[1:]
+
+
+def _post_text(path: str, token: str, url: str, body: str) -> httpx.Response:
+    """A POST with a JSON body given as text. Error statuses are returned, not raised, so
+    the caller can read validation errors by field."""
+    try:
+        with _client() as client:
+            return client.post(
+                f"{url}{path}",
+                content=body.encode("utf-8"),
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            )
+    except httpx.HTTPError as error:
+        raise CloudOfflineError(f"Could not reach {host(url)}: {error}") from error
+
+
+def _field_problem(response: httpx.Response, field: str) -> str | None:
+    """The server's first validation error for ``field``, or None when the response
+    isn't a 422 about it."""
+    if response.status_code != 422:
+        return None
+    try:
+        errors = response.json().get("errors")
+    except Exception:
+        return None
+    problems = errors.get(field) if isinstance(errors, dict) else None
+    if isinstance(problems, list) and problems:
+        return str(problems[0])
+    return str(problems) if isinstance(problems, str) else None
+
+
+def _ask_yes(question: str) -> bool:
+    if not sys.stdin.isatty():
+        return False
+    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+
+
+def _slug_taken(root: Path, slug: str, problem: str, token: str, url: str) -> dict[str, Any]:
+    """A slug the server refused. One of your own projects gets the offer to link to it
+    instead (``fw project link --from``); one held by a project in the Trash, or a slug
+    refused for another reason, is an error."""
+    where = host(url)
+    if "deleted" in problem:
+        raise CloudError(
+            f"{slug} is the slug of a project in your Trash on {where}, so it can't be used "
+            f"again. Restore that project and run fw project link --from {slug}, or pass "
+            "slug= with another name."
+        )
+    if "already have" not in problem:
+        raise CloudError(f"{where} refused the slug {slug}: {problem}")
+    if _ask_yes(f"You already have a project {slug} on {where}. Link this folder to it instead?"):
+        minted = api(
+            f"/api/v1/projects/{slug}/pull-tokens",
+            token,
+            url,
+            method="POST",
+            body={"name": f"framework-py on {platform.node() or 'this computer'}"},
+        )
+        write_project_token(root, str(minted["token"]), str(minted.get("url") or url))
+        inform("To send this folder's spec to it, run: fw project push-spec")
+        return {
+            "slug": slug,
+            "url": None,
+            "type": None,
+            "adopted": None,
+            "created": False,
+            "linked": True,
+            "spec_changed": False,
+        }
+    raise CloudError(
+        f"You already have a project {slug} on {where}. To link this folder to it, run fw "
+        f"project link --from {slug}. To create a new project, pass slug= with another name."
+    )
+
+
+def cloud_register(
+    path: str | Path = ".",
+    name: str | None = None,
+    slug: str | None = None,
+    description: str | None = None,
+    dry_run: bool = False,
+    include_private: bool = False,
+) -> dict[str, Any]:
+    """Register a local project on Framework Cloud and link it.
+
+    Creates the Cloud project for a folder that is already a Framework
+    project (one you adopted with ``adopt()`` or brought up to date with
+    ``upgrade()``) and links the folder to it, in one step:
+
+    1. Sends ``.framework/spec.json`` as it is, with the name, slug, and
+       description, in one request (``POST /api/v1/projects``). Framework
+       Cloud stores the spec as the project's only layer, so the Cloud
+       project has exactly this folder's name, type, language, folders, and
+       tools, and none of your defaults. An adopted project is marked as
+       adopted.
+    2. Writes the project token and server to ``.env`` (``FW_PROJECT_TOKEN``,
+       ``FW_CLOUD_URL``), making sure git ignores ``.env`` first.
+
+    A project that already has a token in ``.env`` is left as it is. When you
+    already have a project with the slug, an interactive session offers to
+    link this folder to that project instead, and nothing is created. A slug
+    held by a project in your Trash can't be reused. A self-hosted server from
+    before the spec API builds the project from your defaults; the spec is
+    then sent separately (``PUT /api/v1/project/spec``). This is
+    ``fw project link --create``.
+
+    Args:
+        path: The project folder.
+        name: The Cloud project's name. Default: the spec's name, then the folder's name.
+        slug: The project's slug. Default: made from the name (lowercase letters, digits,
+            and hyphens).
+        description: An optional description.
+        dry_run: Print the request without sending it.
+        include_private: A project whose path has a folder named ``private`` (or
+            ``..._private``) asks first in an interactive session and stops otherwise;
+            True registers it anyway.
+
+    Returns:
+        ``slug``, ``url``, ``type``, ``adopted``, ``created``, ``linked``, and
+        ``spec_changed``; with ``dry_run``, the request body.
+
+    Raises:
+        FrameworkError: When the folder is not a Framework project or has no
+            ``.framework/spec.json``, when git tracks ``.env``, or when the project is in
+            a private folder.
+        CloudError: When you are not logged in, or the server refuses the project.
+    """
+    from framework._private import _SYSTEM_PREFIX, is_private_folder_name
+    from framework.project import settings_files
+
+    show_messages()
+    root = Path(path).expanduser().resolve()
+    if not root.is_dir() or not settings_files(root):
+        raise FrameworkError(f"Not a Framework project: {root}. Run framework.adopt() first.")
+    if dotenv.read(root / ".env").get("FW_PROJECT_TOKEN"):
+        inform(
+            "This project is already linked: .env has FW_PROJECT_TOKEN. Nothing changed. "
+            "To send its spec, run: fw project push-spec"
+        )
+        return {
+            "slug": None,
+            "url": None,
+            "type": None,
+            "adopted": None,
+            "created": False,
+            "linked": True,
+            "spec_changed": False,
+        }
+    spec_path = root / ".framework" / "spec.json"
+    if not spec_path.is_file():
+        raise FrameworkError(
+            "This project has no .framework/spec.json, which Framework Cloud is made from. "
+            f'Run framework.upgrade("{path}", dry_run=False) (python -m framework upgrade '
+            "--apply) first, then cloud_register() again."
+        )
+    spec_json = spec_path.read_text(encoding="utf-8")
+    try:
+        spec = json.loads(spec_json)
+    except json.JSONDecodeError as error:
+        raise FrameworkError(f".framework/spec.json is not valid JSON: {error}") from error
+    if not isinstance(spec, dict):
+        raise FrameworkError(".framework/spec.json is not a JSON object.")
+    if _env_tracked(root):
+        raise FrameworkError(
+            f"git tracks {root / '.env'}, so the project token would be committed. Run "
+            "`git rm --cached .env`, then cloud_register() again."
+        )
+    shown_path = root.as_posix()
+    if shown_path.startswith(_SYSTEM_PREFIX):
+        shown_path = shown_path[len(_SYSTEM_PREFIX) - 1 :]
+    inside_private = any(is_private_folder_name(p) for p in shown_path.split("/"))
+    question = f"{root} is inside a private folder. Register it on Framework Cloud anyway?"
+    if inside_private and not include_private and not _ask_yes(question):
+        raise FrameworkError(
+            "This project is inside a private folder, so it was not registered. Pass "
+            "include_private=True to register it anyway."
+        )
+
+    name = name or str(spec.get("name") or "") or root.name
+    slug = slug or slugify(name)
+    if not _SLUG.match(slug):
+        raise FrameworkError(
+            f'"{slug}" cannot be a slug: use lowercase letters, digits, and hyphens, as in '
+            'slug="old-study".'
+        )
+    source = spec.get("source")
+    adopted = isinstance(source, dict) and source.get("adopted") is True
+    body = _register_body(spec_json, name, slug, description, adopted)
+    server = cloud_server().url
+    where = host(server)
+    if dry_run:
+        shown = json.loads(body)
+        shown["spec"] = "<.framework/spec.json>"
+        print(f"Framework Cloud request for {name} (dry run: nothing sent):", file=sys.stderr)
+        print(f"\nPOST {server}/api/v1/projects", file=sys.stderr)
+        print(json.dumps(shown, indent=2, ensure_ascii=False), file=sys.stderr)
+        print("\nThen FW_PROJECT_TOKEN and FW_CLOUD_URL go into .env.", file=sys.stderr)
+        result: dict[str, Any] = json.loads(body)
+        return result
+
+    token = _require_token(server)
+    response = _post_text("/api/v1/projects", token, server, body)
+    problem = _field_problem(response, "slug")
+    if problem is not None:
+        return _slug_taken(root, slug, problem, token, server)
+    if response.is_error:
+        raise _error(response, "Creating the project")
+    created = response.json()
+    if not isinstance(created, dict) or not created.get("slug") or not created.get("token"):
+        raise CloudError("The server returned an unexpected project.")
+    inform(f"Created {created['slug']} on {where}: {created.get('url')}")
+    # A server from before the spec API ignores the spec and slug, builds the project from
+    # the user's defaults, and reports no type. The spec is then sent separately.
+    stored = bool(created.get("type"))
+    if not stored:
+        warnings.warn(
+            f"{where} is older than the spec API, so it made the project from your defaults "
+            f"at {created['slug']}. The spec is sent next; the project's layers stay your "
+            "defaults until the server is updated.",
+            FrameworkWarning,
+            stacklevel=2,
+        )
+    try:
+        write_project_token(root, str(created["token"]), server)
+    except Exception as error:
+        raise FrameworkError(
+            f"Created {created['slug']} on {where}, but linking this folder failed: {error}. "
+            f"To finish, run: fw project link --from {created['slug']}"
+        ) from error
+    if not stored:
+        try:
+            api(
+                "/api/v1/project/spec",
+                str(created["token"]),
+                server,
+                method="PUT",
+                body={"spec": spec},
+            )
+            inform("Sent .framework/spec.json.")
+        except CloudError as error:
+            raise CloudError(
+                f"Created {created['slug']} on {where} and linked this folder, but sending the "
+                f"spec failed: {error}. Run: fw project push-spec"
+            ) from error
+    return {
+        "slug": created["slug"],
+        "url": created.get("url"),
+        "type": created.get("type"),
+        "adopted": created.get("adopted") is True,
+        "created": True,
+        "linked": True,
+        "spec_changed": True,
+    }
+
+
 def fetch_layers(key: str, url: str | None = None) -> tuple[dict[str, Any], str]:
     """A project's layers file from the cloud, by its project token."""
     server = cloud_server(url).url
