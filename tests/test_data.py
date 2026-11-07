@@ -77,8 +77,8 @@ def test_save_adds_a_missing_extension(data_project: Path) -> None:
     [
         ("inputs.intermediate.x", {"type": "rds"}, "R-only"),
         ("inputs/raw/x.rds", {}, "R-only"),
-        ("inputs.nowhere.x", {}, "Unknown directory 'inputs.nowhere'"),
-        ("inputs.raw", {}, "at least three parts"),
+        ("inputs.nowhere.x", {}, r"Unknown directory in 'inputs\.nowhere\.x'"),
+        ("inputs.raw", {}, r"Unknown directory in 'inputs\.raw'"),
         ("plain", {}, "has no directory"),
         ("outputs/new/x.csv", {}, "does not exist. Use force=True"),
         ("inputs/raw/x.txt", {}, "Cannot auto-detect"),
@@ -87,6 +87,17 @@ def test_save_adds_a_missing_extension(data_project: Path) -> None:
 def test_save_errors(data_project: Path, path: str, kwargs: dict[str, str], message: str) -> None:
     with pytest.raises(fw.FrameworkError, match=message):
         fw.data_save(FRAME, path, **kwargs)  # type: ignore[arg-type]
+
+
+def test_save_by_name_with_a_one_word_folder_key(project: Path) -> None:
+    # A course keeps its data in directories: data
+    (project / "settings.yml").write_text(
+        "default:\n  directories:\n    data: data\n", encoding="utf-8"
+    )
+    (project / "data").mkdir()
+    fw.data_save(FRAME, "data.week1_visits", type="csv")
+    assert (project / "data/week1_visits.csv").is_file()
+    pd.testing.assert_frame_equal(fw.data_read("data.week1_visits"), FRAME)
 
 
 def test_save_with_force_creates_the_folder(data_project: Path) -> None:

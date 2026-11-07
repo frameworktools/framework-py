@@ -320,26 +320,22 @@ def _save_target(path: str, type: str | None) -> tuple[Path, str, bool]:
             f"  - Use dot notation: 'inputs.raw.{path}' or 'inputs.intermediate.{path}'\n"
             f"  - Provide a full path: 'inputs/raw/{path}.{suffix}'"
         )
-    if len(parts) < 3:
-        raise FrameworkError(
-            "Dot notation requires at least three parts (e.g., 'inputs.raw.filename')"
-        )
 
     config = settings_read()
     directories = config.get("directories")
     if not isinstance(directories, dict):
         directories = {}
     # The longest run of leading parts that names a directory key selects the
-    # folder, so inputs.private.raw.x uses inputs_private_raw. R joins only
-    # the first two parts, so it cannot reach three-part keys.
-    for end in range(len(parts) - 1, 1, -1):
+    # folder, so inputs.private.raw.x uses inputs_private_raw and data.x (a
+    # course's one-word key) uses data, as in R.
+    for end in range(len(parts) - 1, 0, -1):
         folder = directories.get("_".join(parts[:end]))
         if isinstance(folder, str) and folder:
             break
     else:
         available = ", ".join(k.replace("_", ".") for k in directories) or "none"
         raise FrameworkError(
-            f"Unknown directory '{parts[0]}.{parts[1]}'. Use a configured directory.\n\n"
+            f"Unknown directory in '{path}'. Start the name with a configured directory.\n\n"
             f"Available directories:\n  {available}\n\n"
             "Examples:\n  data_save(df, 'inputs.raw.mydata')\n"
             "  data_save(df, 'outputs.private.results')"

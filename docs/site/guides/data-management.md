@@ -101,7 +101,7 @@ clean = survey.dropna()
 fw.data_save(clean, "inputs.intermediate.survey_clean")
 ```
 
-When the target is a catalog name, its leading parts select a folder from `directories` and the remaining parts become the file name. The longest run of leading parts that names a directory key wins. `inputs.intermediate.survey_clean` uses the `inputs_intermediate` folder and writes `inputs/intermediate/survey_clean.parquet`, and `inputs.private.intermediate.patients_clean` uses `inputs_private_intermediate` in a privacy-sensitive project. A name is also added to the catalog, so `data_read()` finds it under the same name. A name needs at least three parts.
+When the target is a catalog name, its leading parts select a folder from `directories` and the remaining parts become the file name. The longest run of leading parts that names a directory key wins. `inputs.intermediate.survey_clean` uses the `inputs_intermediate` folder and writes `inputs/intermediate/survey_clean.parquet`, and `inputs.private.intermediate.patients_clean` uses `inputs_private_intermediate` in a privacy-sensitive project. A name is also added to the catalog, so `data_read()` finds it under the same name. A one-word key works too: in a course, `data.week1_visits` uses the `data` folder.
 
 Names are saved as Parquet by default. Pass `type="csv"` for CSV, with `delimiter` to choose the separator.
 
@@ -115,8 +115,6 @@ When the target is a path ending in `.csv` or `.parquet`, the file is written th
 fw.data_save(clean, "exports/patients_clean.parquet")
 fw.data_add("exports/patients_clean.parquet", name="exports.patients_clean")
 ```
-
-The R package's `data_save()` selects the folder by the first two parts only, so in R a name cannot reach a three-part key such as `inputs_private_intermediate`.
 
 Saved files are locked by default. The target folder must exist unless you pass `force=True`.
 
