@@ -26,3 +26,27 @@ copies it, then drawn and saved, because `Compose.save()` ignores `width` and `h
 R: `ggsave()` already sizes patchwork compositions and doesn't touch the plot, so only rule
 1 needs work: create `dirname(file_path)` with `dir.create(recursive = TRUE)` in
 `save_figure()`, `save_table()`, and `save_model()` before writing.
+
+## D14. `save_figure()` saves several formats, and eps and emf
+
+Rule:
+
+1. `format` accepts one format or a vector/list of them. Each format writes
+   `<name>.<format>` and gets its own results row. The return value is the path for a
+   single format (a string in Python, a length-1 character vector in R) and the paths in
+   the given order for several. Duplicates are dropped, keeping the first.
+2. Allowed formats: `png`, `pdf`, `svg`, `eps`, `jpg`, `jpeg`, `tiff`, `emf`.
+3. Every format, and every existing file when `overwrite` is false, is checked before any
+   file is written, so a failed call writes nothing.
+4. `emf` is written when the language has a device for it, and otherwise is an error that
+   says to save svg or pdf and convert.
+
+Python: `format: str | list[str] | tuple[str, ...]`, typed with overloads (`Path` for a
+string, `list[Path]` for a list). eps comes from matplotlib's PostScript backend. Python
+raises `UnsupportedFormatError` for emf unless a matplotlib backend is registered for it,
+which none is today.
+
+R: `checkmate::assert_subset(format, c(..., "eps", "emf"))`, then loop. eps through
+`ggsave(device = grDevices::cairo_ps)` or `"eps"`, and for recorded plots
+`grDevices::postscript(onefile = FALSE, horizontal = FALSE, paper = "special")`. emf
+through `devEMF::emf` when installed (a Suggests), else the same error as Python.

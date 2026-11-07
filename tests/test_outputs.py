@@ -142,6 +142,25 @@ def test_save_figure_sizes_a_plotnine_composition(
     assert composition.size == (6.4, 4.8)
 
 
+def test_save_figure_saves_several_formats_and_eps(project: Path) -> None:
+    # Ports 2026-11-07: journals want pdf, eps, svg, and png of one figure
+    figure, axis = plt.subplots()
+    axis.plot([1, 2], [3, 4])
+    paths = fw.save_figure(figure, "journal/figure_2", format=["pdf", "eps", "png"], dpi=20)
+    folder = project / "outputs/figures/journal"
+    assert paths == [folder / "figure_2.pdf", folder / "figure_2.eps", folder / "figure_2.png"]
+    assert paths[1].read_bytes().startswith(b"%!PS-Adobe")
+    assert set(fw.result_list(type="figure")["name"]) == {
+        f"outputs/figures/journal/figure_2.{kind}" for kind in ("pdf", "eps", "png")
+    }
+    with pytest.raises(fw.FrameworkError, match="File already exists"):
+        fw.save_figure(figure, "journal/figure_2", format=["svg", "png"], overwrite=False)
+    assert not (folder / "figure_2.svg").exists()  # Nothing is written when one file exists
+    with pytest.raises(fw.UnsupportedFormatError, match="emf"):
+        fw.save_figure(figure, "journal/figure_2", format=["png", "emf"])
+    plt.close("all")
+
+
 def test_save_figure_rejects_other_objects(project: Path) -> None:
     with pytest.raises(fw.FrameworkError, match="savefig"):
         fw.save_figure(object(), "nothing")

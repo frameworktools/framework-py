@@ -54,7 +54,13 @@ fw.save_figure(fig, "score_by_site", format="svg", width=10, height=4)
 fw.save_figure(None, "current_plot")
 ```
 
-The formats are `png` (the default), `pdf`, `svg`, `jpg`, `jpeg`, and `tiff`. `width` and `height` are in inches, with defaults of 8 and 6, as in R, and `dpi` defaults to 300. They set the size of the file, not of your figure: a matplotlib figure is resized only while it is saved and keeps its own size afterwards, and a plotnine composition is sized on a copy. To keep a figure's own size in the file, pass it, as in `width=fig.get_figwidth(), height=fig.get_figheight()`.
+The formats are `png` (the default), `pdf`, `svg`, `eps`, `jpg`, `jpeg`, `tiff`, and `emf`. A list saves one file per format and returns the paths in that order, as journals often want:
+
+```python
+fw.save_figure(fig, "figure_2", format=["pdf", "eps", "svg", "png"])
+```
+
+Every format is checked, and every existing file with `overwrite=False`, before any file is written. `emf` needs a plotting backend that writes it; matplotlib has none, so Python raises `UnsupportedFormatError` for it. Save `svg` or `pdf` and convert them instead. `width` and `height` are in inches, with defaults of 8 and 6, as in R, and `dpi` defaults to 300. They set the size of the file, not of your figure: a matplotlib figure is resized only while it is saved and keeps its own size afterwards, and a plotnine composition is sized on a copy. To keep a figure's own size in the file, pass it, as in `width=fig.get_figwidth(), height=fig.get_figheight()`.
 
 As for tables, a `name` with `/` saves into a subfolder, which is created: `fw.save_figure(fig, "meeting-2026-10-16/cohort-flow")`.
 

@@ -16,7 +16,7 @@ import tempfile
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 import pandas as pd
 
@@ -28,7 +28,7 @@ from framework.integrity import file_hash
 from framework.settings import settings_read
 
 _TABLE_FORMATS = {"csv": ".csv", "parquet": ".parquet", "xlsx": ".xlsx"}
-_FIGURE_FORMATS = ("png", "pdf", "svg", "jpg", "jpeg", "tiff")
+_FIGURE_FORMATS = ("png", "pdf", "svg", "eps", "jpg", "jpeg", "tiff", "emf")
 _NOTEBOOK_FORMATS = {"html": ".html", "pdf": ".pdf", "docx": ".docx"}
 _RESULT_TYPES = ("table", "figure", "model", "report", "notebook")
 
@@ -195,18 +195,73 @@ def _save_composition(
         plt.close(figure)
 
 
+def _figure_formats(format: str | Sequence[str]) -> list[str]:
+    """The formats to save, checked before any file is written."""
+    formats = [format] if isinstance(format, str) else list(dict.fromkeys(format))
+    if not formats or not all(isinstance(f, str) for f in formats):
+        raise FrameworkError("format must be a format name or a list of them")
+    unknown = [f for f in formats if f not in _FIGURE_FORMATS]
+    if unknown:
+        raise FrameworkError(
+            f"format must be one of {', '.join(_FIGURE_FORMATS)} (got {unknown[0]})"
+        )
+    if "emf" in formats and not _backend_writes("emf"):
+        raise UnsupportedFormatError(
+            "emf needs a plotting backend that writes it, and matplotlib has none installed. "
+            "Save svg or pdf and convert them (for example with Inkscape or LibreOffice)."
+        )
+    return formats
+
+
+def _backend_writes(format: str) -> bool:
+    """Whether a matplotlib backend is registered for ``format``."""
+    try:
+        from matplotlib.backend_bases import get_registered_canvas_class
+    except ImportError:
+        return False
+    return get_registered_canvas_class(format) is not None
+
+
+@overload
 def save_figure(
     plot: Any,
     name: str,
-    format: str = "png",
+    format: str = ...,
+    width: float = ...,
+    height: float = ...,
+    dpi: int = ...,
+    public: bool = ...,
+    overwrite: bool = ...,
+    **kwargs: Any,
+) -> Path: ...
+
+
+@overload
+def save_figure(
+    plot: Any,
+    name: str,
+    format: list[str] | tuple[str, ...],
+    width: float = ...,
+    height: float = ...,
+    dpi: int = ...,
+    public: bool = ...,
+    overwrite: bool = ...,
+    **kwargs: Any,
+) -> list[Path]: ...
+
+
+def save_figure(
+    plot: Any,
+    name: str,
+    format: str | list[str] | tuple[str, ...] = "png",
     width: float = 8,
     height: float = 6,
     dpi: int = 300,
     public: bool = False,
     overwrite: bool = True,
     **kwargs: Any,
-) -> Path:
-    """Save a figure to the figures output folder.
+) -> Path | list[Path]:
+    """Save a figure to the figures output folder, in one format or several.
 
     The file is ``width`` by ``height`` inches. The figure you pass keeps its own size:
     a matplotlib figure is resized only while it is saved, and a plotnine composition is
@@ -218,7 +273,9 @@ def save_figure(
             anything else with ``save()``, or None for the current matplotlib figure.
         name: File name without extension. It may name subfolders of the figures folder,
             such as ``"meeting-2026-10-16/cohort-flow"``, which are created.
-        format: png, pdf, svg, jpg, jpeg, or tiff.
+        format: png, pdf, svg, eps, jpg, jpeg, tiff, or emf, or a list of them, such as
+            ``["pdf", "png", "svg"]``, to save one file per format. emf needs a plotting
+            backend that writes it; matplotlib has none, so it raises an error.
         width: Width in inches.
         height: Height in inches.
         dpi: Resolution for raster formats.
@@ -227,10 +284,14 @@ def save_figure(
         **kwargs: Passed to ``savefig()`` or ``save()``.
 
     Returns:
-        The saved file.
+        The saved file, or for a list of formats, the saved files in that order.
+
+    Raises:
+        FrameworkError: When a format is unknown, ``plot`` can't be saved, or a file
+            exists and ``overwrite`` is False. Nothing is written then.
+        UnsupportedFormatError: When no backend writes a format (emf).
     """
-    if format not in _FIGURE_FORMATS:
-        raise FrameworkError(f"format must be one of {', '.join(_FIGURE_FORMATS)}")
+    formats = _figure_formats(format)
     if width < 0.1 or height < 0.1 or dpi < 1:
         raise FrameworkError("width and height must be at least 0.1 and dpi at least 1")
     figure = _current_figure() if plot is None else plot
@@ -242,18 +303,22 @@ def save_figure(
             "plot must have a savefig() method (matplotlib, seaborn) or a save() method "
             "(plotnine), or be None to save the current matplotlib figure"
         )
-    path = _output_file("figures", public, f"{name}.{format}")
-    _check_overwrite(path, overwrite)
+    paths = [_output_file("figures", public, f"{name}.{kind}") for kind in formats]
+    for path in paths:
+        _check_overwrite(path, overwrite)
 
-    if hasattr(figure, "savefig"):
-        _save_matplotlib(figure, path, format, width, height, dpi, kwargs)
-    elif _is_composition(figure):
-        _save_composition(figure, path, format, width, height, dpi, kwargs)
-    else:
-        figure.save(path, width=width, height=height, dpi=dpi, units="in", verbose=False, **kwargs)
-    inform(f"Saved figure to {path}")
-    _record(path, "figure", public)
-    return path
+    for kind, path in zip(formats, paths, strict=True):
+        if hasattr(figure, "savefig"):
+            _save_matplotlib(figure, path, kind, width, height, dpi, kwargs)
+        elif _is_composition(figure):
+            _save_composition(figure, path, kind, width, height, dpi, kwargs)
+        else:
+            figure.save(
+                path, width=width, height=height, dpi=dpi, units="in", verbose=False, **kwargs
+            )
+        inform(f"Saved figure to {path}")
+        _record(path, "figure", public)
+    return paths[0] if isinstance(format, str) else paths
 
 
 def _data_rows(model: Any) -> int:
