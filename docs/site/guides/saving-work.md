@@ -128,7 +128,7 @@ Framework doesn't track which data each result was made from, but it does rememb
 FrameworkWarning: Saved summary.csv as public, and this session read private data (inputs.private.raw.visits). Check that it holds only aggregated or de-identified results before sharing it.
 ```
 
-The save still happens. The warning is a reminder to check the result, not a judgment of it, and it lasts until Python restarts.
+The save still happens. The warning is a reminder to check the result, not a judgment of it, and it lasts until Python restarts. When `save_model()` also warns that the model holds data rows, the one warning names the private data too.
 
 In other project types, every output of a kind goes to the one folder for that kind. The `public` flag is still recorded in `framework.db`, so [result_list()](ref:result_list) can filter on it.
 
