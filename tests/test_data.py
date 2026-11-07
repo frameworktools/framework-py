@@ -309,7 +309,7 @@ def test_generic_types_from_r_use_the_extension(
     )
     used = []
 
-    def fake_reader(file_type: str) -> Any:
+    def fake_reader(file_type: str, r_args: Any = None) -> Any:
         used.append(file_type)
         return lambda *args: pd.DataFrame({"a": [1]})
 
@@ -357,3 +357,54 @@ def test_xls_without_xlrd_names_the_package(project: Path, monkeypatch: pytest.M
     (project / "old.xls").write_bytes(b"not really excel")
     with pytest.raises(fw.FrameworkError, match="pip install xlrd"):
         fw.data_read("old.xls")
+
+
+def test_csv_missing_values_follow_readr(data_project: Path) -> None:
+    path = data_project / "inputs/raw/states.csv"
+    path.write_text("state,group,n\nMD,None,1\nVA,N/A,2\nDC,NA,3\nPA,,4\n", encoding="utf-8")
+    frame = fw.data_read("inputs/raw/states.csv")
+    assert frame["group"].tolist()[:2] == ["None", "N/A"]
+    assert frame["group"].isna().tolist() == [False, False, True, True]
+    assert len(frame.dropna(subset=["state"])) == 4
+
+
+def test_csv_na_argument_replaces_the_missing_strings(data_project: Path) -> None:
+    path = data_project / "inputs/raw/codes.csv"
+    path.write_text("code\n.\nNA\n7\n", encoding="utf-8")
+    frame = fw.data_read("inputs/raw/codes.csv", na=".")
+    assert frame["code"].isna().tolist() == [True, False, False]
+    assert fw.data_read("inputs/raw/codes.csv", na=[]).loc[0, "code"] == "."
+    assert fw.data_read("inputs/raw/codes.csv", keep_default_na=True)["code"].isna().sum() == 1
+    with pytest.raises(fw.FrameworkError, match="not both"):
+        fw.data_read("inputs/raw/codes.csv", na=".", na_values=["."])
+
+
+def test_csv_whitespace_is_trimmed_as_readr_does(data_project: Path) -> None:
+    path = data_project / "inputs/raw/padded.tsv"
+    path.write_text(
+        " id \t value\t label\n    1 \t          NA\t  hi \n   22\t   3.5 \t\"  in  \"\n",
+        encoding="utf-8",
+    )
+    frame = fw.data_read("inputs/raw/padded.tsv")
+    assert list(frame.columns) == ["id", "value", "label"]
+    assert frame["id"].tolist() == [1, 22]
+    assert frame["value"].dtype == "float64"
+    assert frame["value"].isna().tolist() == [True, False]
+    assert frame["label"].tolist() == ["hi", "in"]
+
+    kept = fw.data_read("inputs/raw/padded.tsv", trim_ws=False)
+    assert kept[" label"].tolist() == ["  hi ", "  in  "]
+
+
+def test_csv_columns_typed_with_dtype_are_trimmed_but_not_retyped(data_project: Path) -> None:
+    path = data_project / "inputs/raw/ids.csv"
+    path.write_text("id,n\n 007 , 1\n008,2\n", encoding="utf-8")
+    frame = fw.data_read("inputs/raw/ids.csv", dtype={"id": str})
+    assert frame["id"].tolist() == ["007", "008"]
+    assert frame["n"].tolist() == [1, 2]
+
+
+def test_r_reader_arguments_are_refused_for_other_formats(data_project: Path) -> None:
+    FRAME.to_parquet(data_project / "inputs/raw/x.parquet")
+    with pytest.raises(fw.FrameworkError, match="na= does not apply to parquet"):
+        fw.data_read("inputs/raw/x.parquet", na="")

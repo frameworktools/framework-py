@@ -14,13 +14,13 @@ from __future__ import annotations
 import importlib.util
 import re
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from framework import _yaml, db
+from framework import _tabular, _yaml, db
 from framework._log import inform
 from framework._paths import in_root, relative_to_root
 from framework.catalog import DataInfo, catalog_locate, data_info
@@ -84,6 +84,12 @@ _GENERIC_TYPES = {("spss", ".por"): "spss_por", ("sas", ".xpt"): "sas_xpt"}
 
 _SAVE_TYPES = ("csv", "parquet")
 
+# R's argument names data_read() takes, by the reader types that use them
+_R_ARGUMENT_TYPES: dict[str, tuple[str, ...]] = {
+    "csv": ("na", "trim_ws"),
+    "tsv": ("na", "trim_ws"),
+}
+
 _R_ONLY = (
     "{path} is an .rds file, which only R can read. "
     "Save it from R as Parquet or CSV to use it in Python, for example "
@@ -122,12 +128,18 @@ def _read_spss(path: Path, keep_attributes: bool, kwargs: dict[str, Any], portab
     return frame
 
 
-def _reader(file_type: str) -> Callable[[Path, str | None, bool, dict[str, Any]], Any]:
+def _reader(
+    file_type: str, r_args: dict[str, Any] | None = None
+) -> Callable[[Path, str | None, bool, dict[str, Any]], Any]:
+    """The reader for a file type. ``r_args`` are R's argument names, such as ``na``, for
+    the readers that take them (see ``_R_ARGUMENT_TYPES``)."""
+    r_args = r_args or {}
+
     def csv(path: Path, delimiter: str | None, _: bool, kwargs: dict[str, Any]) -> Any:
-        return pd.read_csv(path, sep=_separator(delimiter), **kwargs)
+        return _tabular.read_delimited(path, _separator(delimiter), kwargs=kwargs, **r_args)
 
     def tsv(path: Path, _d: str | None, _k: bool, kwargs: dict[str, Any]) -> Any:
-        return pd.read_csv(path, sep="\t", **kwargs)
+        return _tabular.read_delimited(path, "\t", kwargs=kwargs, **r_args)
 
     def parquet(path: Path, _d: str | None, _k: bool, kwargs: dict[str, Any]) -> Any:
         return pd.read_parquet(path, **kwargs)
@@ -245,7 +257,13 @@ def _existing_file(path: str | Path) -> Path | None:
 
 
 def data_read(
-    path: str, delim: str | None = None, keep_attributes: bool = False, **kwargs: Any
+    path: str | Path,
+    delim: str | None = None,
+    keep_attributes: bool = False,
+    *,
+    na: str | Sequence[str] | None = None,
+    trim_ws: bool | None = None,
+    **kwargs: Any,
 ) -> pd.DataFrame:
     """Read data by catalog name or file path.
 
@@ -261,6 +279,14 @@ def data_read(
             Default: the catalog's ``delimiter``, then the file extension.
         keep_attributes: Keep value labels from Stata and SPSS files as
             categories. By default the stored codes are returned, as in R.
+        na: Strings read as missing in CSV and TSV files. Default: ``""`` and ``"NA"``
+            only, as R's readr reads them. pandas would also read "None", "N/A", "null",
+            and others as missing. pandas' own ``na_values`` and ``keep_default_na`` are
+            used as given instead, when passed.
+        trim_ws: Trim leading and trailing whitespace from text values and column names
+            in CSV and TSV files, as readr's ``trim_ws = TRUE`` does. Default: True. A value
+            that is missing after trimming (``"  NA"``) is missing, and a text column whose
+            values are all numbers after trimming is numeric.
         **kwargs: Passed to the pandas (or pyreadstat) reader.
 
     Raises:
@@ -269,6 +295,10 @@ def data_read(
             format Python cannot read.
         IntegrityError: A locked file changed since its hash was recorded.
     """
+    path = str(path)
+    r_args = {
+        name: value for name, value in (("na", na), ("trim_ws", trim_ws)) if value is not None
+    }
     direct = _existing_file(path)
     if direct is not None:
         extension = direct.suffix.lower().lstrip(".")
@@ -296,8 +326,18 @@ def data_read(
             stacklevel=2,
         )
     file_type = _GENERIC_TYPES.get((info.type, info.path.suffix.lower()), info.type)
+    accepted = _R_ARGUMENT_TYPES.get(file_type, ())
+    unused = [f"{name}=" for name in r_args if name not in accepted]
+    if unused:
+        raise FrameworkError(
+            f"{', '.join(unused)} does not apply to {file_type} files, only to the "
+            f"{', '.join(kind for kind in _R_ARGUMENT_TYPES)} files R reads with readr "
+            "or readxl."
+        )
     try:
-        data: pd.DataFrame = _reader(file_type)(info.path, delimiter, keep_attributes, dict(kwargs))
+        data: pd.DataFrame = _reader(file_type, r_args)(
+            info.path, delimiter, keep_attributes, dict(kwargs)
+        )
     except (FrameworkError, ImportError):
         raise
     except Exception as error:

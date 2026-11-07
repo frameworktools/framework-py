@@ -92,6 +92,22 @@ fw.data_read("inputs.raw.survey", usecols=["id", "score"])
 
 For Stata and SPSS files, `keep_attributes=True` returns value labels as categories. By default the stored codes are returned, as in R.
 
+### Missing values and whitespace
+
+CSV and TSV files follow R's rules (readr's), so one file gives the same rows in both languages:
+
+- Only empty fields and `NA` are missing. pandas on its own also reads `None`, `N/A`, `null`, `NaN`, and others as missing, which would silently drop rows R keeps.
+- Leading and trailing whitespace is trimmed from values and column names. A padded `"   NA"` is missing, and a padded number is a number.
+
+`na=` replaces the list of missing-value strings, and `trim_ws=False` keeps the whitespace.
+
+```python
+fw.data_read("inputs.raw.prams", na=["", "NA", "."])
+fw.data_read("inputs.raw.fixed_width_export", trim_ws=False)
+```
+
+pandas' own `na_values` and `keep_default_na` still work, and are used as given.
+
 ## Saving data
 
 [data_save()](ref:data_save) writes a DataFrame, records its hash, and returns the DataFrame, so a call can end a pipeline.

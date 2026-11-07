@@ -136,7 +136,7 @@ status = "ported"
 [functions.data_read]
 python = "data_read"
 status = "ported"
-note = "`.rds` raises `UnsupportedFormatError`. A relative file path is looked for from the project root, then the working directory"
+note = "`.rds` raises `UnsupportedFormatError`. A relative file path is looked for from the project root, then the working directory. CSV and TSV read only `\"\"` and `NA` as missing and trim whitespace (`na=`, `trim_ws=`), as readr does; R's `trim_ws = TRUE` default is proposed in docs/parity-proposals.md"
 
 [functions.data_save]
 python = "data_save"
