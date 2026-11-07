@@ -570,12 +570,16 @@ def test_site_root_layout_keeps_only_the_latest_publish(
     fw.publish(pd.DataFrame({"n": [1]}), to="pages", slug="counts")
     names = sorted(p.name for p in site.iterdir())
     assert "CNAME" in names and "data.csv" in names and "v" not in names
+    # Versions count per slug (N7): "counts" starts at 1, not the deck's 2
+    assert json.loads((site / ".framework-site.json").read_text())["version"] == 1
+    fw.publish(pd.DataFrame({"n": [2]}), to="pages", slug="counts")
     assert json.loads((site / ".framework-site.json").read_text())["version"] == 2
     listed = fw.publish_list(to="pages")
     assert listed["key"].tolist() == ["counts/"]
     assert listed["url"].tolist() == ["https://me.github.io/deck/"]
     fw.publish(deck, to="pages")
     assert sorted(p.name for p in site.iterdir()) == [".framework-site.json", "CNAME", "index.html"]
+    assert json.loads((site / ".framework-site.json").read_text())["version"] == 1
 
 
 def test_site_root_publishes_only_rendered_output(

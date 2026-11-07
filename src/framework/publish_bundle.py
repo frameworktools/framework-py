@@ -421,7 +421,9 @@ def folder_deliver_root(bundle: Path, site: Path, base_url: str | None = None) -
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, target)
         written.append(relative.as_posix())
-    version = int(previous.get("version") or 0) + 1
+    # Versions count per slug: a different artifact in the folder starts again at 1
+    same_slug = previous.get("slug") == manifest.get("slug")
+    version = int(previous.get("version") or 0) + 1 if same_slug else 1
     record = {
         "schema": "framework.site/v1",
         "version": version,

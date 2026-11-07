@@ -832,8 +832,9 @@ Rules:
       `.ipynb`, `.Rmd`: only rendered output is published) or an `.html`/`.htm` file
       byte-identical to `index.html` (so a deck is written once);
    3. writes `.framework-site.json`:
-      `{"schema": "framework.site/v1", "version": <previous + 1, from 1>, "slug", "title",
-      "kind", "description", "created_at", "files": [<written, sorted>]}`.
+      `{"schema": "framework.site/v1", "version": <n>, "slug", "title", "kind",
+      "description", "created_at", "files": [<written, sorted>]}`. Versions count per
+      slug: the previous record's version + 1 when its slug is the same, else 1.
 
    No `<slug>/`, `v/<n>/`, `index.json`, or site `index.html` is written. Files Framework
    didn't write (`CNAME`, `.nojekyll`) stay. `.framework-site.json` sits in the published
