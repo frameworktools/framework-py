@@ -153,6 +153,10 @@ python = "db_connect"
 status = "ported"
 note = "Returns a DB-API connection that is also a context manager. `read_only=` overrides the setting per call (proposed for R)"
 
+[functions.db_copy_from]
+python = "db_copy_from"
+status = "ported"
+
 [functions.db_drivers_install]
 status = "r-only"
 note = "Installs R packages. Python drivers come from extras"
@@ -164,6 +168,10 @@ note = "Reports which optional extras are installed"
 
 [functions.db_execute]
 python = "db_execute"
+status = "ported"
+
+[functions.db_execute_file]
+python = "db_execute_file"
 status = "ported"
 
 [functions.db_list]
@@ -266,6 +274,10 @@ status = "ported"
 
 [functions.ledger_push]
 python = "ledger_push"
+status = "ported"
+
+[functions.load_model]
+python = "load_model"
 status = "ported"
 
 [functions.load_settings_catalog]
@@ -397,6 +409,11 @@ python = "project_list"
 status = "ported"
 note = "Reads the shared `projects.yml`"
 
+[functions.project_path]
+python = "path"
+status = "renamed"
+note = "Python adds project_path() next"
+
 [functions.publish]
 python = "publish"
 status = "ported"
@@ -516,6 +533,10 @@ status = "folded"
 usage = "new(key=..., url=...)"
 note = "The token path becomes `new(key, url=)` as in the R 2.0 plan. The GUI part is R-only"
 
+[functions.show_table]
+python = "show_table"
+status = "ported"
+
 [functions.spec_check]
 python = "spec_check"
 status = "ported"
@@ -574,11 +595,6 @@ status = "folded"
 names = [
     "framework_template_path",
     "tools_available",
-    "path",  # proposed: path()
-    "load_model",  # proposed: load_model()
-    "db_execute_file",  # proposed: db_execute_file()
-    "db_copy_from",  # proposed: db_copy_from()
-    "show_table",  # proposed: show_table()
 ]
 
 [functions.skills_sync]

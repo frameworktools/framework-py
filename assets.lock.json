@@ -1,5 +1,5 @@
 {
-  "commit": "a67c8498a864ebe6617a5093ad6615cd392382cf",
+  "commit": "804c93e8200d8f3e993b4cddf184c750b65b80c8",
   "files": {
     "docs/docs-site.md": {
       "sha256": "2b86e376b11401881ef77a595d20af203ffc50ed95d99a55e895157e8f8dca25",
@@ -206,7 +206,7 @@
       "source": "tests/integration/sqlserver/init.sql"
     },
     "tests/shared/NAMESPACE": {
-      "sha256": "d14163d5d6241daad7bb47b1337fdde0110649d332256b243bd7f55d09452299",
+      "sha256": "b32090b5836201a981eb83e243e84166e723bc60ac11571074b98d1b98a06f37",
       "source": "NAMESPACE"
     },
     "tests/shared/conformance/README.md": {
@@ -302,15 +302,15 @@
       "source": "inst/conformance/create/python/project-scripts.json"
     },
     "tests/shared/conformance/create/python/project_sensitive-jupyter.json": {
-      "sha256": "a7418fbdfb93fc617e825d23ababb9f92b39c3666133f8b369c49240a3209766",
+      "sha256": "0ee4bbd2097954f1d0e579cde35a6af7964f1df09eb5e1b7116b29344262373c",
       "source": "inst/conformance/create/python/project_sensitive-jupyter.json"
     },
     "tests/shared/conformance/create/python/project_sensitive-quarto.json": {
-      "sha256": "724d471845b7ecfec030763cb38786fdabe7a4a8a25ddf363248c031dd8b62e4",
+      "sha256": "f0d3b31a8deaf36adbfc0abff7b93ccda75f401542a1dba2ac2a55dc85e63f03",
       "source": "inst/conformance/create/python/project_sensitive-quarto.json"
     },
     "tests/shared/conformance/create/python/project_sensitive-scripts.json": {
-      "sha256": "7ced8301f455554d505b1725b97fee7b0616854c36c7bd3bd42f52c06e02a9ec",
+      "sha256": "1dba4bfa35d7b25d50627befd050e02f43799ec98d85763bf3a321af8e58c618",
       "source": "inst/conformance/create/python/project_sensitive-scripts.json"
     },
     "tests/shared/conformance/merge/atomic-entries.json": {
@@ -338,6 +338,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "a67c8498a864ebe6617a5093ad6615cd392382cf",
+  "ref": "804c93e8200d8f3e993b4cddf184c750b65b80c8",
   "source": "framework (R package)"
 }
