@@ -74,6 +74,18 @@ def test_save_by_absolute_path_records_the_path_from_the_root(data_project: Path
     assert db.get_data_record(str(data_project / "inputs/raw/abs.csv")) is None
 
 
+def test_save_and_verify_share_one_record_for_spellings_of_a_path(data_project: Path) -> None:
+    # Shared with R: "./x.csv", "x.csv", and "a/../x.csv" inside the project are one row,
+    # recorded in the clean project-relative form
+    for spelling in ("./inputs/raw/same.csv", "inputs/raw/../raw/same.csv", "inputs//raw/same.csv"):
+        fw.data_save(FRAME, spelling)
+    with db.connect() as connection:
+        rows = connection.execute("SELECT name, path FROM data").fetchall()
+    assert [tuple(row) for row in rows] == [("inputs/raw/same.csv", "inputs/raw/same.csv")]
+    assert fw.data_verify("./inputs/raw/same.csv")
+    assert fw.data_verify("inputs/raw/same.csv")
+
+
 def test_save_adds_a_missing_extension(data_project: Path) -> None:
     fw.data_save(FRAME, "inputs/raw/raw", type="parquet")
     assert (data_project / "inputs/raw/raw.parquet").is_file()
