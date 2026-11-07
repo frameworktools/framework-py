@@ -1166,6 +1166,8 @@ def _folder_list(selected: Any, prefix: str | None, max: int) -> pd.DataFrame:
     root = folder_path(selected.options["path"])
     base = selected.options.get("url")
     rows = []
+    if selected.options.get("layout") == "site-root":
+        return _site_root_list(root, base, prefix, max)
     for file in sorted(root.glob("*/artifact.json")) if root.is_dir() else []:
         try:
             manifest = json.loads(file.read_text(encoding="utf-8"))
@@ -1188,6 +1190,28 @@ def _folder_list(selected: Any, prefix: str | None, max: int) -> pd.DataFrame:
     if prefix is not None:
         frame = frame[frame["key"].str.startswith(prefix)].reset_index(drop=True)
     return frame.head(max)
+
+
+def _site_root_list(root: Path, base: Any, prefix: str | None, max: int) -> pd.DataFrame:
+    """publish_list() for a site-root folder: the one artifact at its root, if any."""
+    from framework.publish_bundle import SITE_RECORD
+
+    columns = ["key", "size", "last_modified", "url"]
+    try:
+        record = json.loads((root / SITE_RECORD).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return pd.DataFrame([], columns=columns)
+    slug = record.get("slug") if isinstance(record, dict) else None
+    if not isinstance(slug, str) or (prefix is not None and not slug.startswith(prefix)):
+        return pd.DataFrame([], columns=columns)
+    files = [root / str(f) for f in record.get("files") or []]
+    row = {
+        "key": f"{slug}/",
+        "size": sum(f.stat().st_size for f in files if f.is_file()),
+        "last_modified": record.get("created_at"),
+        "url": f"{str(base).rstrip('/')}/" if base else str(root / "index.html"),
+    }
+    return pd.DataFrame([row], columns=columns).head(max)
 
 
 def publish_list(

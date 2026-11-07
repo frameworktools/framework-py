@@ -530,3 +530,58 @@ def test_publish_notebook_to_a_folder_takes_the_yaml_title(
     fw.publish_notebook(notebook, title="Override", description="Short")
     manifest = json.loads((project / "published/report/artifact.json").read_text())
     assert (manifest["title"], manifest["description"]) == ("Override", "Short")
+
+
+def test_site_root_layout_keeps_only_the_latest_publish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Ports 2026-11-07: a deck published to docs/ became docs/<slug>/v/1/ plus an index,
+    # four copies of 7.8 MB, where `cp deck.html docs/index.html` was wanted
+    site = tmp_path / "docs"
+    config = {
+        "publish": {
+            "destinations": {
+                "pages": {
+                    "driver": "folder",
+                    "path": str(site),
+                    "url": "https://me.github.io/deck",
+                    "layout": "site-root",
+                }
+            }
+        }
+    }
+    monkeypatch.setattr(
+        importlib.import_module("framework.settings"), "settings_read", lambda: config
+    )
+    monkeypatch.setattr("framework.storage.settings_read", lambda: config)
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+    site.mkdir()
+    (site / "CNAME").write_text("deck.example.org", encoding="utf-8")
+    deck = tmp_path / "deck.html"
+    deck.write_text("<html><body>Slides</body></html>", encoding="utf-8")
+
+    assert fw.publish(deck, to="pages") == "https://me.github.io/deck/"
+    assert sorted(p.name for p in site.iterdir()) == [".framework-site.json", "CNAME", "index.html"]
+    assert (site / "index.html").read_text(encoding="utf-8") == deck.read_text(encoding="utf-8")
+    record = json.loads((site / ".framework-site.json").read_text(encoding="utf-8"))
+    assert (record["version"], record["slug"], record["files"]) == (1, "deck", ["index.html"])
+
+    # A table replaces the deck: the deck's files go, the folder's own files stay
+    fw.publish(pd.DataFrame({"n": [1]}), to="pages", slug="counts")
+    names = sorted(p.name for p in site.iterdir())
+    assert "CNAME" in names and "data.csv" in names and "v" not in names
+    assert json.loads((site / ".framework-site.json").read_text())["version"] == 2
+    listed = fw.publish_list(to="pages")
+    assert listed["key"].tolist() == ["counts/"]
+    assert listed["url"].tolist() == ["https://me.github.io/deck/"]
+    fw.publish(deck, to="pages")
+    assert sorted(p.name for p in site.iterdir()) == [".framework-site.json", "CNAME", "index.html"]
+
+
+def test_layout_is_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    from framework.publish_bundle import Destination, validate
+
+    with pytest.raises(fw.FrameworkError, match="versioned or site-root"):
+        validate(Destination("x", "folder", {"path": "x", "layout": "flat"}), None, None, None)
+    with pytest.raises(fw.FrameworkError, match="folder destinations only"):
+        validate(Destination("x", "s3", {"layout": "site-root"}), None, None, None)

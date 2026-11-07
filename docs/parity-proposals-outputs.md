@@ -373,3 +373,55 @@ plotly: documented only (`docs/site/guides/quarto.md`, "plotly with embed-resour
 `embed-resources: true`, write each figure's HTML with plotly.js only once and no MathJax.
 R's htmlwidgets have the same issue with `embed-resources`; the R docs could note
 `plotly::partial_bundle()` or `selfcontained = FALSE` there.
+
+## D13. Folder destinations with `layout: site-root`
+
+New destination option for `driver: folder`:
+
+```yaml
+publish:
+  destinations:
+    pages:
+      driver: folder
+      path: docs
+      url: https://me.github.io/my-talk   # optional
+      visibility: public
+      layout: site-root                   # default: versioned
+```
+
+Rules:
+
+1. `layout` is `versioned` (the default, today's behavior) or `site-root`. Another value is
+   an error ("A folder destination's layout must be versioned or site-root."), and `layout`
+   on a non-folder destination is an error ("layout applies to folder destinations only.").
+   Both are checked before anything is rendered or written.
+2. A `site-root` publish builds the same bundle as a versioned one, then:
+   1. reads `<path>/.framework-site.json`, and deletes each file in its `files` list
+      (paths relative to the folder; anything resolving outside it, or not a file, is
+      skipped), then removes folders this left empty, up to the destination folder;
+   2. copies every bundle file to the folder, keeping its relative path and replacing a file
+      of the same name, except `artifact.json`, and except the bundle's `original` file when
+      it is an `.html`/`.htm` file at the bundle's top, isn't `index.html`, and is
+      byte-identical to `index.html` (so a deck is written once);
+   3. writes `.framework-site.json`:
+      `{"schema": "framework.site/v1", "version": <previous + 1, from 1>, "slug", "title",
+      "kind", "description", "created_at", "files": [<written, sorted>]}`.
+
+   No `<slug>/`, `v/<n>/`, `index.json`, or site `index.html` is written. Files Framework
+   didn't write (`CNAME`, `.nojekyll`) stay.
+3. The receipt: `url` is `<url>/` when the destination has one, else none; `location` is
+   `<path>/index.html`; `version` is the record's version. The message is the usual
+   "Published version N: <location>".
+4. `publish_list()` for a site-root destination returns at most one row: key `<slug>/`,
+   size (sum of the recorded files that exist), `last_modified` (`created_at`), and `url`
+   (`<url>/`, or the `index.html` path).
+5. Cloud tracking is unchanged (the manifest and receipt are the same shape).
+
+Interaction with B3: a site-root folder for GitHub Pages should have `visibility: public`,
+or new projects ignore it and the audit warns about it (in sensitive projects it's checked
+either way).
+
+Python: `publish_bundle.LAYOUTS`, `folder_deliver_root()`, `storage._site_root_list()`.
+
+R: `R/publish_drivers.R`'s folder driver and destination validation, and the folder branch
+of `publish_list()`.

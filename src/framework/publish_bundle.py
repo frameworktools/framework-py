@@ -67,6 +67,12 @@ def artifact_slug(value: str) -> str:
     return result
 
 
+# Folder layouts: every publish kept under <slug>/v/<n>/ with a site index, or the latest
+# publish alone at the folder's root, as a GitHub Pages docs/ folder wants
+LAYOUTS = ("versioned", "site-root")
+SITE_RECORD = ".framework-site.json"
+
+
 @dataclass(frozen=True)
 class Destination:
     name: str
@@ -134,6 +140,12 @@ def validate(
 
         if not private_pages():
             raise FrameworkError("GitHub has not confirmed private Pages access for this project.")
+    layout = destination.options.get("layout")
+    if layout is not None:
+        if destination.driver != "folder":
+            raise FrameworkError("layout applies to folder destinations only.")
+        if layout not in LAYOUTS:
+            raise FrameworkError(f"A folder destination's layout must be {' or '.join(LAYOUTS)}.")
     if destination.driver == "folder":
         if not destination.options.get("path"):
             raise FrameworkError("A folder destination needs a path in publish.destinations.")
@@ -353,6 +365,75 @@ def folder_deliver(bundle: Path, site: Path, base_url: str | None = None) -> dic
     }
 
 
+def folder_deliver_root(bundle: Path, site: Path, base_url: str | None = None) -> dict[str, Any]:
+    """Put the latest publish alone at the folder's root, with no versions or index.
+
+    The files the previous publish wrote, listed in ``.framework-site.json``, are removed
+    first; other files in the folder (``CNAME``, ``.nojekyll``) are left alone. The bundle's
+    ``artifact.json`` isn't written, nor a copy of an HTML source identical to
+    ``index.html``, so a deck is written once.
+    """
+    manifest = json.loads((bundle / "artifact.json").read_text(encoding="utf-8"))
+    if site.is_symlink():
+        raise FrameworkError("The publishing destination cannot be a symbolic link.")
+    site.mkdir(parents=True, exist_ok=True)
+    record_path = site / SITE_RECORD
+    try:
+        previous = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = {}
+    previous = previous if isinstance(previous, dict) else {}
+    index = (bundle / "index.html").read_bytes() if (bundle / "index.html").is_file() else None
+    original = manifest.get("original")
+    files = [
+        path
+        for path in sorted(bundle.rglob("*"))
+        if path.is_file()
+        and path.name != "artifact.json"
+        and not (
+            path.parent == bundle
+            and path.name == original
+            and path.name != "index.html"
+            and path.suffix.lower() in (".html", ".htm")
+            and path.read_bytes() == index
+        )
+    ]
+    root = site.resolve()
+    for relative in previous.get("files") or []:
+        old = (site / str(relative)).resolve()
+        if old.is_relative_to(root) and old != root and old.is_file():
+            old.unlink()
+            for folder in old.parents:
+                if folder == root or any(folder.iterdir()):
+                    break
+                folder.rmdir()
+    written = []
+    for path in files:
+        relative = path.relative_to(bundle)
+        target = site / relative
+        if target.is_symlink():
+            raise FrameworkError(f"The publishing destination has a symbolic link: {target}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        written.append(relative.as_posix())
+    version = int(previous.get("version") or 0) + 1
+    record = {
+        "schema": "framework.site/v1",
+        "version": version,
+        **{key: manifest.get(key) for key in ("slug", "title", "kind", "description")},
+        "created_at": manifest.get("created_at"),
+        "files": written,
+    }
+    record_path.write_text(_json(record), encoding="utf-8")
+    return {
+        "driver": "folder",
+        "url": f"{base_url.rstrip('/')}/" if base_url else None,
+        "version": version,
+        "version_url": None,
+        "location": str(site / "index.html"),
+    }
+
+
 def track_external(
     manifest: dict[str, Any], receipt: dict[str, Any], bundle: Path, visibility: str | None
 ) -> None:
@@ -431,7 +512,12 @@ def publish_external(
             self_contained=self_contained,
         )
         if selected.driver == "folder":
-            receipt = folder_deliver(
+            deliver = (
+                folder_deliver_root
+                if selected.options.get("layout") == "site-root"
+                else folder_deliver
+            )
+            receipt = deliver(
                 bundle, folder_path(selected.options["path"]), selected.options.get("url")
             )
         elif selected.driver == "github":

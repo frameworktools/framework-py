@@ -375,6 +375,29 @@ The index of a private destination stays private. A public index lists only publ
 GitHub Pages warns above 800 MB and rejects sites above 1 GB before committing
 or pushing. The size includes retained versions and the rest of the published site.
 
+### A folder as a site root
+
+A folder destination with `layout: site-root` keeps only the latest publish, at the folder's root: a rendered deck becomes `docs/index.html`, with no `<slug>/` folder, version archive, or site index. This replaces `cp deck.html docs/index.html` for a GitHub Pages site served from `docs/`.
+
+```yaml
+publish:
+  destinations:
+    pages:
+      driver: folder
+      path: docs
+      url: https://me.github.io/my-talk
+      visibility: public
+      layout: site-root
+```
+
+```python
+fw.publish_notebook("presentation.qmd", to="pages")
+```
+
+Each publish first removes the files the previous one wrote, which `docs/.framework-site.json` lists, and leaves other files, such as `CNAME` or `.nojekyll`, alone. A file the new publish writes replaces one of the same name. An HTML source is written once, as `index.html`. Objects and other files get the same offline reader, data, and representation files as a versioned folder, at the root. [publish_list()](ref:publish_list) shows the one artifact. The default layout is `versioned`.
+
+Set `visibility: public` on a folder meant to be committed, as a Pages folder is. Otherwise new projects add the folder to `.gitignore`, and the security audit warns about it.
+
 Static destinations reject passwords, collections, and unlisted access before
 delivery. Folder access follows the share's permissions. Configure its `visibility`
 to match the share before requesting explicit public or private access. Private
