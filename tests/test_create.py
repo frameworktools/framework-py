@@ -478,3 +478,28 @@ def test_sensitive_project_starts_with_hooks_on_and_installed(
 
     plain = fw.new("Open Study", tmp_path / "open", "project", interactive=False)
     assert not fw.git_hooks_list(plain / "settings.yml").attrs["installed"]
+
+
+def test_folder_publishing_destinations_are_ignored(tmp_path: Path) -> None:
+    # Ports 2026-11-07: published/ held a rendered private notebook that git would commit
+    spec = fw.spec_resolve(
+        python_layer(
+            type="project",
+            publish={
+                "default": "local",
+                "destinations": {
+                    "local": {"driver": "folder", "path": "published"},
+                    "pages": {"driver": "folder", "path": "docs", "visibility": "public"},
+                    "share": {"driver": "folder", "path": "/Volumes/share"},
+                    "cloud": {"driver": "cloud"},
+                },
+            },
+            git={"use_git": False},
+        ),
+        "Publishing",
+    ).spec
+    root = fw.project_create(spec, tmp_path / "publishing")
+    lines = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "/published/" in lines
+    assert "/docs/" not in lines
+    assert not any("Volumes" in line for line in lines)

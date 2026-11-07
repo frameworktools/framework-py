@@ -61,7 +61,7 @@ git:
 | Check | Effect |
 |-------|--------|
 | `data_security` | Runs [git_security_audit()](ref:git_security_audit) and fails the commit when a check fails. |
-| `check_sensitive_dirs` | Warns about folders whose names contain `private`, `confidential`, `sensitive`, `cache`, or `scratch` and that git does not ignore. At a terminal, it asks before committing. |
+| `check_sensitive_dirs` | Warns about folders whose names contain `private`, `confidential`, `sensitive`, `cache`, or `scratch` and that git does not ignore. At a terminal, it asks before committing. The skills Framework installs, such as `.claude/skills/framework-sensitive-data`, are left out. |
 | `check_notebook_outputs` | Fails the commit when a staged Jupyter notebook (`.ipynb`) has cell outputs or execution counts, since printed tables and previews are saved in the file. The message names each notebook and how to clear its outputs. |
 
 A privacy-sensitive project (`project_sensitive`) starts with `data_security` and `check_sensitive_dirs` on, so its repository gets the hook as soon as it is created. In other projects all three checks are off by default. The older name `warn_unignored_sensitive` is accepted for `check_sensitive_dirs`. The R package's `ai_sync` check was removed, because projects keep AI instructions in `AGENTS.md` and skills, and an `ai_sync` setting is ignored.
@@ -92,7 +92,7 @@ The hook belongs to a project at the top of its own repository. A project inside
 
 ## The security audit
 
-[git_security_audit()](ref:git_security_audit) checks that private data and secrets stay out of the repository. It runs five checks.
+[git_security_audit()](ref:git_security_audit) checks that private data and secrets stay out of the repository. It runs six checks. Each file is reported once, under the deepest folder that holds it, even when several settings keys name the same folder.
 
 | Check | Fails when |
 |-------|------------|
@@ -101,6 +101,9 @@ The hook belongs to a project at the top of its own repository. A project inside
 | `git_history` | A past commit added, changed, or deleted a data file in a private data folder |
 | `secrets_exposure` | Git tracks a `.env` file or a variant such as `.env.local`. Files ending in `.example`, `.template`, or `.sample` are allowed. |
 | `orphaned_files` | Warns, without failing, about data files outside the configured folders that git does not ignore |
+| `published_outputs` | Warns, without failing, about folder publishing destinations inside the project that hold files git does not ignore, since rendered notebooks there can show private results. In a project that is not privacy-sensitive, a destination with `visibility: public`, such as a GitHub Pages `docs/` folder, is meant to be committed and is left out. |
+
+A new project adds each folder destination the `published_outputs` check covers to its `.gitignore`, such as `/published/`.
 
 ```python
 result = fw.git_security_audit()
@@ -120,6 +123,8 @@ The arguments adjust the audit.
 - `verbose=False` skips the printed report.
 
 ### Private folders
+
+The audit watches the folders in `directories` whose keys start with `inputs_` or `outputs_`, the `cache`, `scratch`, and `logs` folders, and any folder whose key or path is named like `private`, `confidential`, or `sensitive`, such as `original_private_tables`. Folders outside the project, given as absolute paths, are skipped, since git can't commit them from this repository. The report lists them under "Skipped", and `result.metadata["skipped_directories"]` holds them.
 
 The audit treats a folder in `directories` as private when its key contains `private`, when its path has a segment whose name contains `private`, `confidential`, or `sensitive`, or when its key is `cache`, `scratch`, or `logs`. Folder keys that contain `_public` are exempt. These are the folders every project type's `.gitignore` ignores, so new standard and privacy-sensitive projects pass the audit.
 

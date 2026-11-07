@@ -376,10 +376,21 @@ def git_hooks_list(settings_file: str | Path | None = None) -> pd.DataFrame:
 _PROBE = ".framework-ignore-probe"
 
 
+def _framework_skill(parent: Path, name: str) -> bool:
+    """A skill Framework installs, such as ``.claude/skills/framework-sensitive-data``:
+    its name says "sensitive", but it holds instructions, not data."""
+    return parent.name == "skills" and name.startswith("framework-")
+
+
 def _unignored_sensitive_dirs(root: Path) -> list[str]:
     found: list[str] = []
     for current, dirnames, _ in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in (".git", ".venv", "node_modules")]
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in (".git", ".venv", "node_modules", ".framework")
+            and not _framework_skill(Path(current), d)
+        ]
         for name in dirnames:
             if any(fnmatch.fnmatch(name.lower(), pattern) for pattern in _SENSITIVE_PATTERNS):
                 found.append((Path(current) / name).relative_to(root).as_posix())

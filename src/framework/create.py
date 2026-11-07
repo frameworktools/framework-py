@@ -187,6 +187,31 @@ def _write_settings(root: Path, spec: Mapping[str, Any]) -> None:
     _yaml.write(root / "settings.yml", {"default": main})
 
 
+def _ignore_publish_folders(root: Path, spec: Mapping[str, Any]) -> None:
+    """Add each folder publishing destination inside the project to ``.gitignore``, as the
+    security audit expects: rendered notebooks there can show private results. A public
+    destination (meant to be committed, such as a GitHub Pages ``docs/``) is left alone,
+    except in a sensitive project."""
+    from framework.security import folder_destinations
+
+    folders = folder_destinations(
+        {"publish": spec.get("publish"), "security": spec.get("security")}, root
+    )
+    if not folders:
+        return
+    path = root / ".gitignore"
+    text = path.read_text(encoding="utf-8") if path.exists() else ""
+    existing = {line.strip() for line in text.splitlines()}
+    added = [f"/{folder}/" for folder in folders.values() if f"/{folder}/" not in existing]
+    if not added:
+        return
+    if text and not text.endswith("\n"):
+        text += "\n"
+    path.write_text(
+        text + "\n# Folder publishing destinations\n" + "\n".join(added) + "\n", encoding="utf-8"
+    )
+
+
 def _write_env(root: Path, spec: Mapping[str, Any]) -> None:
     lines = [
         f"{key.upper()}={value if value is not None else ''}"
@@ -460,6 +485,7 @@ def project_create(
         _write_env(root, spec)
     _write(root, ".gitignore", str((spec.get("git") or {}).get("gitignore_content", "")) + "\n")
     ensure_secrets_ignored(root)
+    _ignore_publish_folders(root, spec)
     if not bare and (spec.get("ai") or {}).get("enabled"):
         write_ai_files(root, dict(spec))
     if not bare:

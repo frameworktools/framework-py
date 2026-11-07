@@ -8,6 +8,13 @@ The checks match R's ``git_security_audit()``:
 - orphaned_files: data files sit inside the configured folders. Files git
   ignores are not counted.
 - secrets_exposure: git tracks no ``.env`` file.
+- published_outputs: folder publishing destinations inside the project that hold
+  files are ignored by git. In projects that are not sensitive, a destination
+  with ``visibility: public`` is meant to be shared, such as a GitHub Pages
+  ``docs/`` folder, and is left out. Python adds this check; R will follow.
+
+Folders configured outside the project are skipped, since git can't commit
+them from here, and listed in the report and in ``metadata``.
 
 Where git is available, ``git check-ignore`` decides what is ignored. Without
 git, a port of R's ``.gitignore`` matcher does.
@@ -45,6 +52,7 @@ CHECKS = (
     "git_history",
     "orphaned_files",
     "secrets_exposure",
+    "published_outputs",
 )
 
 _EXCLUDED_DIRS = (
@@ -181,14 +189,24 @@ class _IgnoreRules:
 
 
 def _data_directories(config: dict[str, Any], root: Path) -> dict[str, str]:
-    """The folders the audit watches: the settings' data folders, then R's fallbacks."""
+    """The folders the audit watches: the settings' data folders, then R's fallbacks.
+
+    A settings folder counts when its key starts with ``inputs_`` or ``outputs_``, is
+    ``cache``, ``scratch``, or ``logs``, or when its key or path is named like private,
+    confidential, or sensitive (``original_private_tables``). Folders outside the project
+    are left to ``_outside_directories()``: git can't commit them from here.
+    """
     folders: dict[str, str] = {}
-    directories = config.get("directories")
-    for key, value in (directories if isinstance(directories, dict) else {}).items():
-        if not isinstance(value, str) or not value:
+    for key, value in _configured_directories(config).items():
+        if _outside(root, value):
             continue
-        if re.match(r"^(inputs|outputs)_", key) or key in ("cache", "scratch", "logs"):
-            folders[key] = value.removeprefix("./").rstrip("/")
+        if (
+            re.match(r"^(inputs|outputs)_", key)
+            or key in ("cache", "scratch", "logs")
+            or re.search("private|confidential|sensitive", key, re.IGNORECASE)
+            or has_private_segment(value)
+        ):
+            folders[key] = _relative_folder(root, value)
 
     def fallback(key: str, path: str) -> None:
         if key not in folders and (root / path).is_dir():
@@ -204,6 +222,45 @@ def _data_directories(config: dict[str, Any], root: Path) -> dict[str, str]:
     for name in ("tables", "figures", "models", "notebooks", "docs", "final"):
         fallback(f"outputs_{name}_public", f"outputs/public/{name}")
     return folders
+
+
+def _configured_directories(config: dict[str, Any]) -> dict[str, str]:
+    directories = config.get("directories")
+    return {
+        str(key): value.removeprefix("./").rstrip("/")
+        for key, value in (directories if isinstance(directories, dict) else {}).items()
+        if isinstance(value, str) and value
+    }
+
+
+def _outside(root: Path, folder: str) -> bool:
+    """Whether a settings folder (relative to the root unless absolute) is outside it."""
+    path = Path(folder).expanduser()
+    if not path.is_absolute():
+        path = root / path
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return True
+    return False
+
+
+def _relative_folder(root: Path, folder: str) -> str:
+    """An absolute folder inside the project, as a path from the root."""
+    path = Path(folder).expanduser()
+    if not path.is_absolute():
+        return folder
+    relative = path.resolve().relative_to(root.resolve()).as_posix()
+    return "." if relative == "" else relative
+
+
+def _outside_directories(config: dict[str, Any], root: Path) -> dict[str, str]:
+    """Settings folders outside the project, which the audit skips and reports."""
+    return {
+        key: value
+        for key, value in _configured_directories(config).items()
+        if _outside(root, value)
+    }
 
 
 def _private_directories(folders: dict[str, str]) -> dict[str, str]:
@@ -222,6 +279,11 @@ def _private_directories(folders: dict[str, str]) -> dict[str, str]:
         if "_public" not in key
         and ("private" in key or has_private_segment(path) or key in ("cache", "scratch", "logs"))
     }
+
+
+def _deepest_first(folders: dict[str, str]) -> list[tuple[str, str]]:
+    """Folders with the deepest first, keeping settings order among equals."""
+    return sorted(folders.items(), key=lambda item: -len(Path(item[1]).parts))
 
 
 def _is_data_file(path: str, extensions: tuple[str, ...]) -> bool:
@@ -248,9 +310,11 @@ def _check_gitignore(
         return _frame(rows, ["file", "directory", "severity", "reason"]), [
             "Create a .gitignore file to protect sensitive data"
         ]
-    for key, folder in private.items():
-        if not (root / folder).is_dir():
+    reported: set[str] = set()
+    for key, folder in _deepest_first(private):
+        if not (root / folder).is_dir() or folder in reported:
             continue
+        reported.add(folder)
         if not rules.folder_ignored(folder):
             rows.append(
                 {
@@ -260,7 +324,12 @@ def _check_gitignore(
                     "reason": "Private data directory not in .gitignore",
                 }
             )
-        data_files = [f for f in _files_under(root, folder) if _is_data_file(f, extensions)]
+        data_files = [
+            f
+            for f in _files_under(root, folder)
+            if _is_data_file(f, extensions) and f not in reported
+        ]
+        reported.update(data_files)
         ignored = rules.ignored(data_files)
         rows.extend(
             {
@@ -286,16 +355,19 @@ def _check_gitignore(
 def _check_exposure(
     root: Path, private: dict[str, str], tracked: list[str], extensions: tuple[str, ...]
 ) -> tuple[pd.DataFrame, list[str]]:
-    rows = [
-        {"file": name, "directory": key, "git_status": "tracked"}
-        for key, folder in private.items()
-        if (root / folder).is_dir()
-        for name in tracked
-        if _inside(name, folder)
-    ]
+    # Each file once, under the deepest folder that holds it: settings keys can name the
+    # same folder twice (outputs_private_tables and R's outputs_tables fallback).
+    rows: list[dict[str, str]] = []
+    reported: set[str] = set()
+    for key, folder in _deepest_first(private):
+        if not (root / folder).is_dir():
+            continue
+        for name in tracked:
+            if _inside(name, folder) and name not in reported:
+                reported.add(name)
+                rows.append({"file": name, "directory": key, "git_status": "tracked"})
     # Also data files in any folder named private, confidential, or sensitive,
     # such as inputs/private itself, which no setting names.
-    reported = {row["file"] for row in rows}
     rows += [
         {"file": name, "directory": str(Path(name).parent.as_posix()), "git_status": "tracked"}
         for name in tracked
@@ -426,6 +498,62 @@ def _check_orphans(
     return _frame(rows, ["path", "size", "modified", "extension"]), advice
 
 
+def folder_destinations(config: dict[str, Any], root: Path) -> dict[str, str]:
+    """Folder publishing destinations inside the project that git should ignore, as paths
+    from the root: every one in a sensitive project, and in other projects those without
+    ``visibility: public`` (or ``private: false``)."""
+    publish = config.get("publish")
+    destinations = publish.get("destinations") if isinstance(publish, dict) else None
+    security = config.get("security")
+    sensitive = isinstance(security, dict) and security.get("sensitive") is True
+    found: dict[str, str] = {}
+    for name, options in (destinations if isinstance(destinations, dict) else {}).items():
+        if not isinstance(options, dict) or options.get("driver") != "folder":
+            continue
+        path = options.get("path")
+        if not isinstance(path, str) or not path or _outside(root, path):
+            continue
+        public = options.get("visibility") == "public" or options.get("private") is False
+        if public and not sensitive:
+            continue
+        relative = _relative_folder(root, path.removeprefix("./").rstrip("/"))
+        if relative != ".":
+            found[str(name)] = relative
+    return found
+
+
+def _check_published(
+    root: Path, config: dict[str, Any], rules: _IgnoreRules, tracked: list[str]
+) -> tuple[pd.DataFrame, list[str]]:
+    """Folder destinations that hold files git doesn't ignore: rendered notebooks and
+    exported tables there can be committed."""
+    rows: list[dict[str, Any]] = []
+    for name, folder in folder_destinations(config, root).items():
+        if not (root / folder).is_dir():
+            continue
+        files = _files_under(root, folder)
+        ignored = rules.ignored(files)
+        exposed = [f for f in files if f not in ignored]
+        if exposed:
+            rows.append(
+                {
+                    "destination": name,
+                    "path": folder,
+                    "files": len(exposed),
+                    "tracked": len(set(exposed) & set(tracked)),
+                }
+            )
+    advice = (
+        [
+            "Add folder publishing destinations to .gitignore (for example /published/), "
+            "or set visibility: public on a destination meant to be committed"
+        ]
+        if rows
+        else []
+    )
+    return _frame(rows, ["destination", "path", "files", "tracked"]), advice
+
+
 def _walk_files(root: Path) -> list[Path]:
     """Every file under the root, skipping excluded top-level folders, and at any depth
     the ``*_files`` and ``*_cache`` folders Quarto and Jupyter write beside a document."""
@@ -509,6 +637,7 @@ def _report(result: AuditResult) -> str:
         "git_history": "Git History Leaks",
         "secrets_exposure": "Tracked Secrets Files",
         "orphaned_files": "Orphaned Data Files",
+        "published_outputs": "Publishing Folders Not Ignored by Git",
     }
     for check, title in sections.items():
         frame = result.findings[check]
@@ -528,10 +657,21 @@ def _report(result: AuditResult) -> str:
                 )
             elif check == "secrets_exposure":
                 lines.append(f"  {number}. {row.file} (tracked in git)")
+            elif check == "published_outputs":
+                lines.append(
+                    f"  {number}. {row.path}/ (destination {row.destination}: {row.files} "
+                    f"file(s) not ignored, {row.tracked} tracked)"
+                )
             else:
                 lines.append(f"  {number}. {row.path} ({round(float(str(row.size)) / 1024, 1)} KB)")
         if len(frame) > 10:
             lines.append(f"     ... and {len(frame) - 10} more")
+
+    skipped = result.metadata.get("skipped_directories") or {}
+    if skipped:
+        lines += ["", "--- Skipped: Folders Outside the Project ---"]
+        lines += [f"  {key}: {path}" for key, path in skipped.items()]
+        lines.append("     Git can't commit them from this project, so they weren't checked.")
 
     if result.recommendations:
         lines += ["", "=== Recommendations ===", ""]
@@ -601,6 +741,7 @@ def git_security_audit(
     if not use_git and verbose:
         inform("Git not available. Skipping git-specific checks.")
     folders = _data_directories(config, root)
+    skipped = _outside_directories(config, root)
     private = _private_directories(folders)
     tracked = _tracked_files(root) if use_git else []
     rules = _IgnoreRules(root, use_git)
@@ -620,6 +761,7 @@ def git_security_audit(
         findings["git_history"] = _frame([], ["commit", "file", "action", "date"])
     record("secrets_exposure", _check_secrets(tracked))
     record("orphaned_files", _check_orphans(root, folders, exts, rules))
+    record("published_outputs", _check_published(root, config, rules, tracked))
 
     coverage = findings["gitignore_coverage"]
     statuses = {
@@ -640,6 +782,7 @@ def git_security_audit(
         else "fail"
         if len(findings["secrets_exposure"])
         else "pass",
+        "published_outputs": "warning" if len(findings["published_outputs"]) else "pass",
     }
     summary = pd.DataFrame(
         {
@@ -663,6 +806,7 @@ def git_security_audit(
             "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
             "framework_version": __version__,
             "config_directories": folders,
+            "skipped_directories": skipped,
             "git_available": use_git,
             "auto_fix_applied": auto_fix,
         },

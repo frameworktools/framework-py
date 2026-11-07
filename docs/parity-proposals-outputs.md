@@ -192,3 +192,52 @@ Python: `_private.note_private_read()`, `warn_public_save()`; the warning is a
 
 R: keep the names in `.framework_env$private_reads` from `data_read()`, and warn with
 `cli::cli_warn()` from `save_table()`, `save_figure()`, and `save_model()`.
+
+## B3. Security audit and hook: duplicates, Framework's skills, publishing folders, outside folders
+
+Rules:
+
+1. **Each file once.** `gitignore_coverage` and `private_data_exposure` visit private
+   folders deepest first (most path segments; settings order among equals) and report each
+   file, and each unignored folder, once, under the deepest folder's key. R's fallback keys
+   (`outputs_tables` -> `outputs/private/tables`) alias folders, which listed one staged file
+   three times.
+2. **Framework's own skills.** The `check_sensitive_dirs` hook skips any folder named
+   `framework-*` whose parent folder is named `skills` (`.claude/skills/framework-sensitive-data`,
+   `.agents/skills/...`), and doesn't descend into it, and skips `.framework/`.
+3. **New check `published_outputs`** (sixth in the summary, after `secrets_exposure`).
+   Candidates are `publish.destinations` entries with `driver: folder` whose `path` (relative
+   to the project root unless absolute, `~` expanded) is inside the project and isn't the
+   root itself. In a project with `security: sensitive: true` every such destination is
+   checked; in other projects, one with `visibility: public` or `private: false` is skipped,
+   since it's meant to be committed (a GitHub Pages `docs/`). A destination is a finding
+   when its folder holds files that git doesn't ignore. Finding columns: `destination`,
+   `path`, `files` (count not ignored), `tracked` (count of those git tracks). Status:
+   `warning` when there are findings, else `pass`. Recommendation: "Add folder publishing
+   destinations to .gitignore (for example /published/), or set visibility: public on a
+   destination meant to be committed".
+4. **Generated `.gitignore`.** Project creation appends, after the type's template and the
+   `.env` rule, a `# Folder publishing destinations` comment and `/<path>/` for each
+   destination rule 3 would check, unless the line is already there.
+5. **Folders outside the project.** A `directories` entry whose path resolves outside the
+   project root is not checked, since git can't commit it from here. The result's metadata
+   gets `skipped_directories` (key -> path as configured), and the printed report adds:
+
+   ```text
+   --- Skipped: Folders Outside the Project ---
+     original_private_tables: /data/other-project/outputs/private/tables
+        Git can't commit them from this project, so they weren't checked.
+   ```
+
+   A path inside the project given as absolute is checked as the relative path.
+6. **Watched folders.** Besides `inputs_*`, `outputs_*`, `cache`, `scratch`, and `logs`,
+   the audit watches any `directories` key or path named like private, confidential, or
+   sensitive (`original_private_tables`, `review/confidential`).
+
+Python: `security.py` (`_deepest_first()`, `folder_destinations()`, `_check_published()`,
+`_outside_directories()`), `hooks._framework_skill()`, `create._ignore_publish_folders()`.
+
+R: `R/security_audit.R` (`.get_data_directories()`, `.identify_private_dirs()`, the
+coverage and exposure checks, the report), the hook's sensitive-folder walk, and project
+creation's `.gitignore` writer. `CHECKS` order matters for the summary table, so append
+`published_outputs` after `secrets_exposure` (and D9's and D8's checks after it).

@@ -168,6 +168,13 @@ def test_hook_run_warns_about_sensitive_folders(
     err = capsys.readouterr().err
     assert "notes/confidential" in err
     assert "data/private" not in err
+    # Ports 2026-11-07: Framework's own skill folders were reported
+    for skills in (".claude/skills", ".agents/skills"):
+        (repo / skills / "framework-sensitive-data").mkdir(parents=True)
+    (repo / "notes/confidential").rmdir()
+    assert hook_run("pre-commit") == 0
+    assert "framework-sensitive-data" not in capsys.readouterr().err
+    (repo / "notes/confidential").mkdir()
     monkeypatch.setattr("framework.hooks._confirm", lambda question: False)
     assert hook_run("pre-commit") == 1
 
