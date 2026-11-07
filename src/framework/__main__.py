@@ -4,7 +4,7 @@
     python -m framework create --name NAME --path DIR [--type TYPE] [--workflow ID]
         [--tool ID[=false]]... [--skill-set ID]... [--package-set ID]... [--interactive]
         [--offline]
-    python -m framework adopt [--path DIR] [--yes]
+    python -m framework adopt [--path DIR] [--yes] [--type TYPE] [--sensitive] [--force]
     python -m framework bootstrap [--path DIR] [--interactive] [--no-packages]
     python -m framework hook pre-commit
 
@@ -75,6 +75,21 @@ def _parser() -> argparse.ArgumentParser:
     adopt = commands.add_parser("adopt", help="make an existing folder a Framework project")
     adopt.add_argument("--path", default=".", help="the project folder (default: .)")
     adopt.add_argument("--yes", action="store_true", help="accept the proposed folders")
+    adopt.add_argument(
+        "--type",
+        choices=["project", "project_sensitive", "course", "presentation", "bare"],
+        help="the project type (default: inferred from the folders)",
+    )
+    adopt.add_argument(
+        "--sensitive",
+        action="store_true",
+        help="the project holds sensitive data: turn on Framework's guards for private folders",
+    )
+    adopt.add_argument(
+        "--force",
+        action="store_true",
+        help="adopt the folder as Python even when its files say another language",
+    )
 
     bootstrap = commands.add_parser("bootstrap", help="prepare a cloned project")
     bootstrap.add_argument("--path", default=".", help="the project folder (default: .)")
@@ -111,7 +126,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "adopt":
             from framework.adopt import adopt
 
-            path = adopt(args.path, yes=args.yes)
+            path = adopt(
+                args.path,
+                yes=args.yes,
+                type=args.type,
+                sensitive=True if args.sensitive else None,
+                force=args.force,
+            )
         elif args.command == "bootstrap":
             from framework.bootstrap import bootstrap
 
@@ -147,7 +168,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
     except FrameworkError as error:
         # The functions' advice names Python arguments; the command line has flags
-        message = str(error).replace("Pass yes=True.", "Pass --yes.")
+        message = (
+            str(error)
+            .replace("Pass yes=True.", "Pass --yes.")
+            .replace("pass force=True", "pass --force")
+        )
         print(f"Error: {message}", file=sys.stderr)
         return 1
     print(path)

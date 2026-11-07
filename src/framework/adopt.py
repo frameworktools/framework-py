@@ -238,23 +238,97 @@ def _extra_key(path: str, taken: set[str]) -> str:
     return candidate
 
 
+# Language ------------------------------------------------------------------------------
+
+_PYTHON_CHUNK = re.compile(r"^```\{python", re.MULTILINE)
+_R_CHUNK = re.compile(r"^```\{r[ ,}]", re.MULTILINE)
+
+
+def _qmd_language(path: Path) -> str:
+    """A Quarto document's language: python when it has Python chunks and no R chunks,
+    otherwise r, Quarto's knitr engine. Only the first 64 KB are read."""
+    try:
+        with path.open("rb") as handle:
+            text = handle.read(64 << 10).decode("utf-8", errors="replace")
+    except OSError:
+        return "r"
+    return "python" if _PYTHON_CHUNK.search(text) and not _R_CHUNK.search(text) else "r"
+
+
+def detect_language(root: Path) -> tuple[str | None, str | None]:
+    """The language a folder's top-level files say, and the file that decided, as fw
+    decides it (``fw adopt``).
+
+    Strong signals: ``pyproject.toml`` (Python); ``renv.lock``, ``DESCRIPTION``, or an
+    ``.Rproj`` (R); a ``.do`` file (Stata). Weaker ones, used only without a strong
+    one: ``setup.py``, ``setup.cfg``, ``requirements*.txt``, or ``.ipynb`` (Python),
+    ``.R`` or ``.Rmd`` (R), and ``.qmd`` by its code chunks. Signals for more than one
+    language at the same strength decide nothing.
+    """
+    strong: dict[str, str] = {}
+    weak: dict[str, str] = {}
+    try:
+        entries = sorted(root.iterdir(), key=lambda p: p.name)
+    except OSError:
+        return None, None
+    for entry in entries:
+        if entry.is_dir():
+            continue
+        name, lower = entry.name, entry.name.lower()
+        if name == "pyproject.toml":
+            strong.setdefault("python", name)
+        elif name in ("renv.lock", "DESCRIPTION") or name.endswith(".Rproj"):
+            strong.setdefault("r", name)
+        elif lower.endswith(".do"):
+            strong.setdefault("stata", name)
+        elif (
+            name in ("setup.py", "setup.cfg")
+            or lower.endswith(".ipynb")
+            or (lower.startswith("requirements") and lower.endswith(".txt"))
+        ):
+            weak.setdefault("python", name)
+        elif lower.endswith((".r", ".rmd")):
+            weak.setdefault("r", name)
+        elif lower.endswith(".qmd"):
+            weak.setdefault(_qmd_language(entry), name)
+    for found in (strong, weak):
+        if len(found) == 1:
+            return next(iter(found.items()))
+        if found:
+            return None, None
+    return None, None
+
+
+_LANGUAGE_NAMES = {"r": "an R", "stata": "a Stata", "python": "a Python"}
+
+
 # Review --------------------------------------------------------------------------------
 
 
+def _rows(plan: AdoptPlan) -> list[tuple[str, str]]:
+    """The table's rows, as R prints them: each folder with a role, then render folders."""
+    rows = []
+    for path, role in plan.roles.items():
+        shown = "(left out)" if role is None else ("(other folder)" if role == EXTRA else role)
+        rows.append((path, shown))
+    rows += [(path, f"(rendered {key})") for key, path in plan.render_dirs.items()]
+    return rows
+
+
 def _table(plan: AdoptPlan) -> str:
-    width = max((len(p) for p in plan.roles), default=0)
-    lines = []
-    for number, (path, role) in enumerate(plan.roles.items(), start=1):
-        shown = "left out" if role is None else ("a folder of its own" if role == EXTRA else role)
-        lines.append(f"  {number:>2}. {path:<{width}}  -> {shown}")
+    sensitive = ", sensitive data" if plan.sensitive else ""
+    lines = [f"Proposed mapping (type: {plan.type}{sensitive}):"]
+    width = max(30, *(len(path) for path, _ in _rows(plan))) if _rows(plan) else 30
+    for number, (path, shown) in enumerate(_rows(plan), start=1):
+        lines.append(f"  {number:>2}. {path:<{width}} {shown}")
     return "\n".join(lines)
 
 
 def _review(plan: AdoptPlan, ask: Callable[[str], str], cancelled: str) -> AdoptPlan:
     """Let the person accept the plan, change a folder's role, leave a folder out, or cancel."""
-    paths = list(plan.roles)
     while True:
-        print("Proposed folders:\n" + _table(plan), file=sys.stderr)
+        rows = _rows(plan)
+        print(_table(plan), file=sys.stderr)
         answer = ask(
             "Press Enter to accept, type a number to change that folder's role, "
             "-number to leave it out, or q to cancel: "
@@ -265,12 +339,12 @@ def _review(plan: AdoptPlan, ask: Callable[[str], str], cancelled: str) -> Adopt
             raise FrameworkError(cancelled)
         out = answer.startswith("-")
         number = answer.lstrip("-")
-        if not number.isdigit() or not 1 <= int(number) <= len(paths):
-            print(f"Type a number from 1 to {len(paths)}.", file=sys.stderr)
+        if not number.isdigit() or not 1 <= int(number) <= len(rows):
+            print(f"Type a number from 1 to {len(rows)}.", file=sys.stderr)
             continue
-        path = paths[int(number) - 1]
+        path = rows[int(number) - 1][0]
         if out:
-            plan.roles[path] = None
+            _set_role(plan, path, None)
             continue
         role = ask(f"Role for {path} (a directory key such as inputs_raw, or {EXTRA}): ").strip()
         if role != EXTRA and not _KEY.match(role):
@@ -278,7 +352,16 @@ def _review(plan: AdoptPlan, ask: Callable[[str], str], cancelled: str) -> Adopt
         elif role != EXTRA and role in plan.directories and plan.directories[role] != path:
             print(f"{plan.directories[role]} already has the role {role}.", file=sys.stderr)
         else:
-            plan.roles[path] = role
+            _set_role(plan, path, role)
+
+
+def _set_role(plan: AdoptPlan, path: str, role: str | None) -> None:
+    """Give a folder a role. A render folder given one is no longer a render folder, and
+    a role keeps the folder's place in byte order, so extra keys are numbered the same way
+    whatever order the changes came in."""
+    plan.render_dirs = {key: p for key, p in plan.render_dirs.items() if p != path}
+    plan.roles[path] = role
+    plan.roles = dict(sorted(plan.roles.items(), key=lambda item: item[0].encode("utf-8")))
 
 
 def _yes_no(ask: Callable[[str], str], question: str) -> bool:
@@ -287,95 +370,179 @@ def _yes_no(ask: Callable[[str], str], question: str) -> bool:
 
 # Public API ----------------------------------------------------------------------------
 
+ADOPT_TYPES = ("project", "project_sensitive", "course", "presentation", "bare")
 
-def adopt(path: str | Path = ".", yes: bool = False) -> Path:
+
+def adopt(
+    path: str | Path = ".",
+    yes: bool = False,
+    *,
+    type: str | None = None,
+    sensitive: bool | None = None,
+    force: bool = False,
+) -> Path:
     """Make an existing folder a Framework project, in place.
 
     The folder's subfolders are scanned (names only, at most three levels) and
     each gets a proposed role: a Framework directory key such as
-    ``inputs_raw``, a folder of its own (``extra_directories``), or none.
-    You review the proposal, then ``settings.yml`` and ``.framework/spec.json``
-    are written for the folders that are there. Nothing is moved, and nothing
-    else is created.
+    ``inputs_raw``, a folder of its own (``extra_directories``), a folder of
+    rendered notebooks (``render_dirs``), or none. Framework's ``settings/``
+    folder and Quarto's ``*_files/`` folders are never proposed. You review the
+    proposal (with ``yes=True`` it is printed and accepted), then
+    ``settings.yml`` and ``.framework/spec.json`` are written for the folders
+    that are there. Nothing is moved, and nothing else is created. A folder
+    with no subfolders is adopted with no folders.
 
-    A folder path that contains "private" gets a warning that suggests the
-    Privacy Sensitive layout. The sensitive setting is turned on only when you
-    say yes in the review.
+    The type follows from the folders unless ``type`` is given: ``course``
+    when there are course folders such as ``slides/`` and ``modules/``,
+    ``project_sensitive`` when private and public folders such as
+    ``inputs/private/raw/`` match the Privacy Sensitive layout, ``project``
+    when any folder matches a Framework directory, and ``bare`` otherwise.
+
+    The spec records the folder as it is, as R's ``adopt()`` writes it: the
+    mapped folders only, no tools, no default packages, AI files off, and git
+    on when the folder is a git repository.
+
+    framework-py adopts Python projects. When the folder's files say another
+    language (an ``.Rproj``, ``renv.lock``, or ``.R`` files for R), it stops
+    unless ``force`` is True.
 
     Args:
         path: The project folder.
-        yes: Accept the proposal without asking, as a script must. The sensitive
-            setting stays off.
+        yes: Accept the proposal without asking, as a script must.
+        type: The project type: "project", "project_sensitive", "course",
+            "presentation", or "bare". Default: inferred from the folders.
+            "project_sensitive" implies ``sensitive=True``.
+        sensitive: True when the project holds sensitive data
+            (``security: sensitive: true``): Framework treats its outputs as
+            private by default and turns on the sensitive-data guards. None (the
+            default) asks in the review when folders look private, and is False
+            with ``yes=True``.
+        force: Adopt the folder as a Python project even when its files say
+            another language.
 
     Returns:
         The project folder.
 
     Raises:
         FrameworkError: When the folder doesn't exist or is already a Framework project,
-            or when the review needs a terminal and ``yes`` is False.
+            when its files say another language and ``force`` is False, when the
+            arguments disagree, or when the review needs a terminal and ``yes`` is False.
     """
     show_messages()
     root = Path(path).expanduser().resolve()
     if not root.is_dir():
         raise FrameworkError(f"Not a folder: {root}")
+    if type is not None and type not in ADOPT_TYPES:
+        raise FrameworkError(f"type must be one of {', '.join(ADOPT_TYPES)}, not '{type}'.")
+    if type == "project_sensitive":
+        if sensitive is False:
+            raise FrameworkError(
+                'type="project_sensitive" holds sensitive data; leave sensitive out or set '
+                "it to True."
+            )
+        sensitive = True
     from framework.project import settings_files
 
-    existing = [path.name for path in settings_files(root)]
+    existing = [p.name for p in settings_files(root)]
     if (root / ".framework/spec.json").exists():
         existing.append(".framework/spec.json")
     if existing:
         raise FrameworkError(
-            f"{root} is already a Framework project (it has {', '.join(existing)})."
+            f"{root} is already a Framework project (found {existing[0]}). Nothing was changed."
         )
+    language, source = detect_language(root)
+    if language not in (None, "python"):
+        described = f"{_LANGUAGE_NAMES[language]} project (from {source})"
+        if not force:
+            raise FrameworkError(
+                f"{root} looks like {described}, and framework-py adopts Python projects. "
+                "Adopt it in its own language (in R: framework::adopt(); or fw adopt), or "
+                "pass force=True to adopt it as Python. Nothing was changed."
+            )
+        print(f"Warning: {root} looks like {described}. Adopting it as Python.", file=sys.stderr)
     if not yes and not sys.stdin.isatty():
         raise FrameworkError("adopt() needs a terminal to review the folders. Pass yes=True.")
 
-    plan = adopt_plan(scan_folders(root))
-    sensitive = False
-    if not yes:
-        plan = _review(plan, input, "Cancelled. Nothing was written.")
-    if plan.private:
+    plan = adopt_plan(scan_folders(root), type=type)
+    if plan.type == "project_sensitive":
+        sensitive = True
+    plan.sensitive = sensitive is True
+    for folder in plan.private:
         # The same wording as R's adopt()
-        for folder in plan.private:
-            print(
-                f"'{folder}' looks private. Keep it out of git and away from AI assistants.",
-                file=sys.stderr,
-            )
         print(
-            "The Privacy Sensitive layout keeps private and public data in separate "
-            "folders and adds safeguards for AI assistants.",
+            f"Warning: '{folder}' looks private. Keep it out of git and away from AI assistants.",
             file=sys.stderr,
         )
-        if not yes:
-            sensitive = _yes_no(input, "Turn on the sensitive-data setting for this project?")
+    if plan.empty:
+        print(
+            "No folders to map: settings.yml will list none. Add folders to it as you make them.",
+            file=sys.stderr,
+        )
+    elif yes:
+        print(_table(plan), file=sys.stderr)
+    else:
+        plan = _review(plan, input, "Cancelled. Nothing was written.")
+        if plan.private and sensitive is None:
+            plan.sensitive = _yes_no(
+                input,
+                "Does this project hold sensitive data? Framework will treat its outputs as "
+                "private by default.",
+            )
 
-    spec = adopt_spec(root.name, plan, sensitive)
+    spec = adopt_spec(root.name, plan, use_git=(root / ".git").exists())
     from framework.create import _record, _write_settings
 
     _write_settings(root, spec)
     _record(root, spec)
-    inform(f"Adopted {root} as a Framework project")
+    inform(f"[ok] {root.name} is a Framework project. Run framework.scaffold() in it to start.")
+    if plan.private and not plan.sensitive:
+        print(
+            "Some folders look private. Keep them out of git. If the project holds sensitive "
+            "data, adopt it with sensitive=True (python -m framework adopt --sensitive, or fw "
+            "adopt --sensitive), or set security: sensitive: true in settings.yml.",
+            file=sys.stderr,
+        )
     if not yes:
         _offer_cloud(root, spec, plan)
     return root
 
 
-def adopt_spec(name: str, plan: AdoptPlan, sensitive: bool = False) -> dict[str, Any]:
-    """The resolved spec for an adopted folder: bare, flat settings, no tools."""
+def adopt_spec(name: str, plan: AdoptPlan, use_git: bool = False) -> dict[str, Any]:
+    """The resolved spec for an adopted folder, as R's ``adopt()`` records it.
+
+    A project of the mapped type with exactly the mapped folders: the type's own
+    folders and render folders are not added. No tools, no default packages, no
+    skills, and no AI files. Git is on when the folder is a git repository.
+    """
     from framework.spec.resolve import spec_resolve
 
+    sensitive = plan.sensitive or plan.type == "project_sensitive"
     layer = {
-        "type": "bare",
+        "type": plan.type,
         "language": "python",
         "core_files": False,
         "settings_layout": "flat",
         "tools": {"quarto": False, "uv": False},
-        "directories": plan.directories,
-        "extra_directories": plan.extra_directories,
+        "git": {"use_git": use_git},
+        "ai": {"enabled": False},
         "security": {"sensitive": sensitive},
     }
-    spec = spec_resolve([layer], name).spec
-    spec["source"] = {"origin": "python"}
+    spec = spec_resolve([layer], name, check=False).spec
+    spec["directories"] = plan.directories
+    spec["extra_directories"] = plan.extra_directories
+    spec["render_dirs"] = dict(plan.render_dirs)
+    spec["packages"] = {**(spec.get("packages") or {}), "default_packages": {}}
+    spec["skills"] = {}
+    spec["source"] = {"origin": "python", "adopted": True}
+    from framework.spec.check import spec_check
+    from framework.spec.merge import SpecError
+
+    problems = spec_check(spec)
+    if problems:
+        raise SpecError(
+            "The adopted project's spec is invalid:\n" + "\n".join(f"  - {p}" for p in problems)
+        )
     return spec
 
 
@@ -389,7 +556,7 @@ def _offer_cloud(root: Path, spec: Mapping[str, Any], plan: AdoptPlan) -> None:
     if cloud_token(server) is None:
         return
     if _yes_no(input, f"Register this project on {host(server)}?"):
-        register_project(root, str(spec["name"]), "bare", spec)
+        register_project(root, str(spec["name"]), str(spec["type"]), spec)
     if _yes_no(input, f"Save this folder layout as a structure on {host(server)}?"):
         _send_structure(str(spec["name"]), plan)
 

@@ -83,13 +83,36 @@ def test_adopt_writes_settings_and_nothing_else(
         "settings.yml",
     ]
     config = _yaml.read(existing / "settings.yml")["default"]
-    assert (config["project_name"], config["project_type"]) == ("old-study", "bare")
+    assert (config["project_name"], config["project_type"]) == ("old-study", "project")
+    assert config["language"] == "python"
     assert config["directories"]["inputs_raw"] == "data/raw"
     assert config["security"] == {"sensitive": False}
-    assert "inputs_private" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    # The mapping is shown with yes=True too, as R shows it
+    assert "Proposed mapping (type: project):" in err
+    assert "data/raw" in err
+    assert "'inputs_private' looks private" in err
+    assert "sensitive=True" in err
     spec = json.loads((existing / ".framework/spec.json").read_text(encoding="utf-8"))
+    # The adopted spec, as R records it
+    assert spec["type"] == "project"
     assert spec["core_files"] is False
     assert spec["settings_layout"] == "flat"
+    assert spec["tools"] == {"quarto": False, "uv": False}
+    assert spec["directories"] == {
+        "functions": "R",
+        "scripts": "analysis",
+        "inputs_final": "data/processed",
+        "inputs_raw": "data/raw",
+        "outputs_figures": "figures",
+    }
+    assert spec["render_dirs"] == {}
+    assert spec["git"]["use_git"] is True  # the folder has .git
+    assert spec["ai"]["enabled"] is False
+    assert spec["skills"] == {}
+    assert spec["packages"]["default_packages"] == {}
+    assert spec["source"]["adopted"] is True
+    assert spec["source"]["origin"] == "python"
 
     with pytest.raises(fw.FrameworkError, match="already a Framework project"):
         fw.adopt(existing, yes=True)
@@ -253,3 +276,82 @@ def test_plan_infers_the_type(tmp_path: Path) -> None:
     assert adopt_plan(["scripts"]).type == "project"
     assert adopt_plan(["misc"]).type == "bare"
     assert adopt_plan(["slides", "Modules"], type="project").directories == {}
+
+
+def test_adopt_takes_a_type_and_sensitive(existing: Path) -> None:
+    with pytest.raises(fw.FrameworkError, match="leave sensitive out"):
+        fw.adopt(existing, yes=True, type="project_sensitive", sensitive=False)
+    with pytest.raises(fw.FrameworkError, match="type must be one of"):
+        fw.adopt(existing, yes=True, type="shiny")
+    fw.adopt(existing, yes=True, sensitive=True)
+    config = _yaml.read(existing / "settings.yml")["default"]
+    assert config["security"] == {"sensitive": True}
+    assert config["project_type"] == "project"
+
+
+def test_adopt_type_project_sensitive_is_sensitive(existing: Path) -> None:
+    assert main(["adopt", "--path", str(existing), "--yes", "--type", "project_sensitive"]) == 0
+    config = _yaml.read(existing / "settings.yml")["default"]
+    assert (config["project_type"], config["security"]) == (
+        "project_sensitive",
+        {"sensitive": True},
+    )
+
+
+def test_the_sensitive_layout_is_inferred(tmp_path: Path) -> None:
+    root = tmp_path / "cohort"
+    for folder in ("inputs/private/raw", "inputs/public/raw", "outputs/private/tables", "R"):
+        (root / folder).mkdir(parents=True)
+    fw.adopt(root, yes=True)
+    spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
+    assert spec["type"] == "project_sensitive"
+    assert spec["security"]["sensitive"] is True
+    assert spec["git"]["use_git"] is False
+    assert spec["directories"]["inputs_private_raw"] == "inputs/private/raw"
+
+
+def test_a_folder_with_no_subfolders(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = tmp_path / "loose"
+    root.mkdir()
+    (root / "analysis.qmd").write_text("```{python}\n1\n```\n", encoding="utf-8")
+    fw.adopt(root, yes=True)
+    assert "No folders to map" in capsys.readouterr().err
+    spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
+    assert (spec["type"], spec["directories"], spec["extra_directories"]) == ("bare", {}, {})
+
+
+@pytest.mark.parametrize(
+    ("files", "language", "source"),
+    [
+        ({"study.Rproj": ""}, "r", "study.Rproj"),
+        ({"pyproject.toml": "", "analysis.R": ""}, "python", "pyproject.toml"),
+        ({"requirements.txt": ""}, "python", "requirements.txt"),
+        ({"clean.R": ""}, "r", "clean.R"),
+        ({"report.qmd": "```{python}\nx = 1\n```\n"}, "python", "report.qmd"),
+        ({"report.qmd": "```{r}\nx <- 1\n```\n"}, "r", "report.qmd"),
+        ({"run.do": "", "renv.lock": ""}, None, None),
+        ({}, None, None),
+    ],
+)
+def test_detect_language_as_fw_does(
+    tmp_path: Path, files: dict[str, str], language: str | None, source: str | None
+) -> None:
+    from framework.adopt import detect_language
+
+    for name, text in files.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    assert detect_language(tmp_path) == (language, source)
+
+
+def test_an_r_project_is_not_adopted_as_python(
+    existing: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (existing / "old-study.Rproj").write_text("Version: 1.0\n", encoding="utf-8")
+    with pytest.raises(fw.FrameworkError, match=r"an R project \(from old-study\.Rproj\)"):
+        fw.adopt(existing, yes=True)
+    assert not (existing / "settings.yml").exists()
+    assert main(["adopt", "--path", str(existing), "--yes"]) == 1
+    assert "--force" in capsys.readouterr().err
+    assert main(["adopt", "--path", str(existing), "--yes", "--force"]) == 0
+    assert "Adopting it as Python" in capsys.readouterr().err
+    assert _yaml.read(existing / "settings.yml")["default"]["language"] == "python"
