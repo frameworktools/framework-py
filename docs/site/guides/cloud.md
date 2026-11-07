@@ -147,7 +147,7 @@ fw.ledger_list("inputs.raw.survey")
 
 ### Verifying a file
 
-[data_verify()](ref:data_verify) hashes a catalog file and compares the hash with its `framework.db` record and, when the project has a token, with the newest ledger entry. It returns `True` when every available record matches, and issues a warning otherwise.
+[data_verify()](ref:data_verify) hashes a catalog file, or a file given by its path from the project root, and compares the hash with its `framework.db` record and, when the project has a token, with the newest ledger entry. It returns `True` when every available record matches, and issues a warning otherwise.
 
 ```python
 fw.data_verify("inputs.raw.survey")

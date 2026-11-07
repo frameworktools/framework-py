@@ -1394,3 +1394,18 @@ def test_publish_list_points_cloud_projects_to_the_artifacts_page(cloud_project:
         fw.publish_list()
     assert "S3 storage buckets" in str(error.value)
     assert "https://cloud.example.edu/published" in str(error.value)
+
+
+def test_data_verify_takes_a_saved_path_from_a_subfolder(
+    cloud_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    os.environ.pop("FW_PROJECT_TOKEN", None)
+    (cloud_project / ".env").write_text("", encoding="utf-8")
+    (cloud_project / "outputs/public").mkdir(parents=True)
+    (cloud_project / "notebooks").mkdir()
+    monkeypatch.chdir(cloud_project / "notebooks")
+    fw.data_save(pd.DataFrame({"a": [1, 2, 3]}), "outputs/public/summary.csv")
+    assert fw.data_verify("outputs/public/summary.csv") is True
+    (cloud_project / "outputs/public/summary.csv").write_text("a\n9\n", encoding="utf-8")
+    with pytest.warns(fw.FrameworkWarning, match="Integrity mismatch"):
+        assert fw.data_verify("outputs/public/summary.csv") is False

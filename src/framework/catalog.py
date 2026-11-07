@@ -215,9 +215,10 @@ def _not_found(name: str, data: Any) -> DataNotFoundError:
 def data_info(path: str) -> DataInfo:
     """How to read a data file, given a catalog name or a file path.
 
-    ``path`` is a dot-notation catalog name (``"inputs.raw.survey"``), a path
-    relative to the current folder (anything with a slash), or an absolute
-    path. Catalog paths are relative to the project root.
+    ``path`` is a dot-notation catalog name (``"inputs.raw.survey"``), a relative
+    path (anything with a slash), or an absolute path. A relative path is looked for
+    from the project root, then from the current folder. Catalog paths are relative to
+    the project root.
 
     Args:
         path: A dot-notation catalog name, a relative path containing a slash, or an absolute
@@ -232,7 +233,10 @@ def data_info(path: str) -> DataInfo:
     settings_file = find_settings_file()
     root = settings_file.parent if settings_file else None
     if _is_absolute(path) or "/" in path or "\\" in path:
-        return _build(path, Path.cwd(), None, None, root)
+        # A relative path starts at the project root when the file is there, as
+        # data_save() writes it, else at the current folder
+        found = root is not None and (root / Path(path).expanduser()).exists()
+        return _build(path, root if found and root else Path.cwd(), None, None, root)
 
     base = root or Path.cwd()
     data = settings_read(settings_file).get("data")

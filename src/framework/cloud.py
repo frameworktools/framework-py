@@ -925,7 +925,9 @@ def data_verify(name: str) -> bool:
     mismatch.
 
     Args:
-        name: A catalog name or file path, as accepted by ``data_info()``.
+        name: A catalog name or file path, as accepted by ``data_info()``. A relative path
+            is looked for from the project root first, so the path ``data_save()`` wrote
+            works from a notebook in ``notebooks/``.
 
     Returns:
         True when every available record matches the file, otherwise False.
