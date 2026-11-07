@@ -218,8 +218,9 @@ def _figure_formats(format: str | Sequence[str]) -> list[str]:
         )
     if "emf" in formats and not _backend_writes("emf"):
         raise UnsupportedFormatError(
-            "emf needs a plotting backend that writes it, and matplotlib has none installed. "
-            "Save svg or pdf and convert them (for example with Inkscape or LibreOffice)."
+            "emf needs a matplotlib backend that writes it, which isn't installed. "
+            "Install one that registers emf, or save svg or pdf and convert them "
+            "(for example with Inkscape or LibreOffice)."
         )
     return formats
 
@@ -345,7 +346,8 @@ def _data_rows(model: Any) -> int:
     if isinstance(frame, pd.DataFrame) and len(frame):
         return len(frame)
     endog = getattr(inner, "endog", None)
-    if endog is not None and getattr(endog, "ndim", 0) >= 1 and len(endog):
+    # As in R, a kept response counts when it has more than one value
+    if endog is not None and getattr(endog, "ndim", 0) >= 1 and len(endog) > 1:
         return len(endog)
     attributes = getattr(model, "__dict__", None)
     if isinstance(attributes, dict):

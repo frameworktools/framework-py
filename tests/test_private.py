@@ -70,6 +70,15 @@ def test_a_terminal_asks_first(
             confirm_private_upload(secret, include_private=False)
 
 
+def test_the_question_matches_r(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    asked: list[str] = []
+    monkeypatch.setattr("builtins.input", lambda prompt: asked.append(prompt) or "y")
+    confirm_private_upload([tmp_path / "private/ids.csv"], include_private=False)
+    confirm_private_upload([tmp_path / "x.csv"], include_private=False, reasons=["Sensitive."])
+    assert asked == ["Upload them anyway? [y/N] ", "Upload anyway? [y/N] "]
+
+
 # Sensitive projects and notebooks that read private data (ports 2026-11-07) -----------
 
 

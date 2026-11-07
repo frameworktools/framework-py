@@ -100,3 +100,15 @@ def test_public_model_with_data_rows_warns(sensitive: Path) -> None:
     with pytest.warns(fw.FrameworkWarning, match="holds 6 data rows.*Remove them"):
         fw.save_model(Holder(), "holder", public=True)
     fw.save_model({"coef": 1}, "coef", public=True)
+
+
+def test_a_kept_response_counts_only_with_more_than_one_value() -> None:
+    from types import SimpleNamespace
+
+    from framework.outputs import _data_rows
+
+    def fitted(endog: list[float]) -> SimpleNamespace:
+        return SimpleNamespace(model=SimpleNamespace(endog=np.array(endog)))
+
+    assert _data_rows(fitted([1.0])) == 0
+    assert _data_rows(fitted([1.0, 2.0, 3.0])) == 3

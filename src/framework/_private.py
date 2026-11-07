@@ -139,7 +139,9 @@ def confirm_private_upload(
             f"Not uploading {what} without confirmation. "
             "Review it, then pass include_private=True to upload it."
         )
-    answer = input("Upload anyway? [y/N] ").strip().lower()
+    # As R asks: "them" when only paths are flagged
+    question = "Upload anyway?" if reasons else "Upload them anyway?"
+    answer = input(f"{question} [y/N] ").strip().lower()
     if answer not in ("y", "yes"):
         raise FrameworkError("Cancelled. Nothing was uploaded.")
 
