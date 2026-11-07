@@ -387,7 +387,9 @@ def _git_init(root: Path) -> None:
 def _is_temporary(root: Path) -> bool:
     temp = Path(tempfile.gettempdir()).resolve()
     resolved = root.resolve()
-    return resolved.is_relative_to(temp) or str(resolved).startswith(("/tmp/", "/private/tmp/"))
+    return resolved.is_relative_to(temp) or str(resolved).startswith(
+        ("/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/")
+    )
 
 
 # Public API -----------------------------------------------------------------

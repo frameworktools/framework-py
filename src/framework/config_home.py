@@ -204,14 +204,30 @@ def project_unregister(project: int | str | Path) -> bool:
 
 
 def project_list() -> pd.DataFrame:
-    """Registered projects, with columns id, path, and created."""
+    """Registered projects, with columns id, path, created, and exists.
+
+    A project whose folder no longer exists (such as one made in a temporary folder) has
+    ``exists`` False, and a message names it. Remove it with ``project_unregister(id)``.
+    """
+    from framework._log import inform
+
     projects = global_settings().get("projects") or []
     rows = [
         {
             "id": int(p.get("id", 0)),
             "path": str(p.get("path", "")),
             "created": str(p.get("created", "")),
+            "exists": Path(str(p.get("path", ""))).expanduser().is_dir(),
         }
         for p in projects
     ]
-    return pd.DataFrame(rows, columns=["id", "path", "created"])
+    missing = [row for row in rows if not row["exists"]]
+    if missing:
+        one = len(missing) == 1
+        names = ", ".join(f"{row['path']} (id {row['id']})" for row in missing)
+        inform(
+            f"{len(missing)} registered project folder{'' if one else 's'} no longer "
+            f"exist{'s' if one else ''}: {names}. Remove {'it' if one else 'them'} with "
+            "project_unregister(id)."
+        )
+    return pd.DataFrame(rows, columns=["id", "path", "created", "exists"])

@@ -312,6 +312,28 @@ def test_registry() -> None:
     assert fw.project_list().empty
 
 
+def test_project_list_marks_missing_folders(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    here = tmp_path / "here"
+    here.mkdir()
+    kept = fw.project_register(here)
+    gone = fw.project_register(tmp_path / "gone")
+    caplog.set_level("INFO", logger="framework")
+    listed = fw.project_list().set_index("id")["exists"].to_dict()
+    assert listed == {kept: True, gone: False}
+    assert f"1 registered project folder no longer exists: {tmp_path / 'gone'}" in caplog.text
+    assert f"(id {gone})" in caplog.text and "project_unregister(id)" in caplog.text
+
+
+def test_tests_never_touch_the_user_registry() -> None:
+    from framework.config_home import config_dir
+
+    # conftest points XDG_CONFIG_HOME at a per-test folder, so the registry is separate
+    assert not config_dir().resolve().is_relative_to((Path.home() / ".config").resolve())
+    assert "FW_CONFIG_HOME" not in os.environ
+
+
 def test_project_add_directory(r_project: Path) -> None:
     folder = fw.project_add_directory(r_project, "interviews", "Interviews", "inputs/interviews")
     assert folder.is_dir()

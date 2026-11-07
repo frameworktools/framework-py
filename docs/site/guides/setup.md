@@ -125,7 +125,7 @@ catalog["defaults"]["scaffold"]
 
 Framework records each project it creates in the `projects` list of the global `settings.yml`. Projects created inside the system's temporary folder are not recorded.
 
-- [project_list()](ref:project_list) returns the registered projects as a DataFrame with the columns `id`, `path`, and `created`.
+- [project_list()](ref:project_list) returns the registered projects as a DataFrame with the columns `id`, `path`, `created`, and `exists`. A project whose folder is gone has `exists` False, and a message names it so you can remove it with `project_unregister()`. Projects created in a temporary folder are not registered.
 - [project_register()](ref:project_register) adds a folder and returns its id.
 - [project_unregister()](ref:project_unregister) removes a project by id or path.
 
