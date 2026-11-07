@@ -427,12 +427,17 @@ def _check_orphans(
 
 
 def _walk_files(root: Path) -> list[Path]:
-    """Every file under the root, skipping excluded top-level folders."""
+    """Every file under the root, skipping excluded top-level folders, and at any depth
+    the ``*_files`` and ``*_cache`` folders Quarto and Jupyter write beside a document."""
     found: list[Path] = []
     for current, dirnames, filenames in os.walk(root):
         if Path(current) == root:
             dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
-        dirnames[:] = [d for d in dirnames if d not in (".git", "__pycache__")]
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in (".git", "__pycache__") and not d.endswith(("_files", "_cache"))
+        ]
         found.extend(Path(current) / name for name in filenames)
     return sorted(found)
 

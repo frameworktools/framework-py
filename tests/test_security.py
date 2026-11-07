@@ -150,6 +150,11 @@ def test_orphaned_files_skip_what_git_ignores(repo: Path) -> None:
     (repo / "published/table").mkdir(parents=True)
     (repo / "published/table/data.csv").write_text("x\n1\n", encoding="utf-8")
     (repo / "loose.csv").write_text("x\n1\n", encoding="utf-8")
+    # Quarto's render folders beside a notebook, at any depth
+    (repo / "notebooks/report_files/libs").mkdir(parents=True)
+    (repo / "notebooks/report_files/libs/data.json").write_text("{}", encoding="utf-8")
+    (repo / "notebooks/report_cache").mkdir()
+    (repo / "notebooks/report_cache/chunk.csv").write_text("x\n", encoding="utf-8")
     result = fw.git_security_audit(verbose=False)
     assert list(result.findings["orphaned_files"]["path"]) == ["loose.csv"]
 
