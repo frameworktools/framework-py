@@ -50,6 +50,14 @@ def _folder(kind: str, public: bool) -> Path:
     return folder
 
 
+def _output_file(kind: str, public: bool, file_name: str) -> Path:
+    """The file in the output folder for ``kind``. A name with ``/`` names subfolders,
+    which are created."""
+    path = _folder(kind, public) / file_name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def _check_overwrite(path: Path, overwrite: bool) -> None:
     if path.exists() and not overwrite:
         raise FrameworkError(f"File already exists: {path}. Use overwrite=True to replace.")
@@ -101,7 +109,8 @@ def save_table(
 
     Args:
         data: The table.
-        name: File name without extension.
+        name: File name without extension. It may name subfolders of the tables folder,
+            such as ``"meeting-2026-10-16/cohort"``, which are created.
         format: ``"csv"``, ``"parquet"``, or ``"xlsx"`` (needs the ``excel`` extra).
         public: In a sensitive project, save to the public tables folder.
         overwrite: Replace an existing file.
@@ -114,7 +123,7 @@ def save_table(
         raise UnsupportedFormatError(".rds tables are R-only. Use csv, parquet, or xlsx.")
     if format not in _TABLE_FORMATS:
         raise FrameworkError(f"format must be one of {', '.join(_TABLE_FORMATS)}")
-    path = _folder("tables", public) / f"{name}{_TABLE_FORMATS[format]}"
+    path = _output_file("tables", public, f"{name}{_TABLE_FORMATS[format]}")
     _check_overwrite(path, overwrite)
     if format == "csv":
         data.to_csv(path, index=False, **{"lineterminator": "\n", **kwargs})
@@ -144,6 +153,48 @@ def _current_figure() -> Any:
     return plt.gcf()
 
 
+def _is_composition(plot: Any) -> bool:
+    """Whether ``plot`` is a plotnine composition (``p1 | p2``, ``p1 / p2``), by class name,
+    so plotnine is never imported here."""
+    return any(
+        cls.__module__.startswith("plotnine.composition") and cls.__name__ == "Compose"
+        for cls in type(plot).__mro__
+    )
+
+
+def _save_matplotlib(
+    figure: Any, path: Path, format: str, width: float, height: float, dpi: int, kwargs: Any
+) -> None:
+    """Save at ``width`` by ``height`` and put the caller's figure back at its own size."""
+    target = getattr(figure, "figure", figure)
+    resize = hasattr(target, "set_size_inches") and hasattr(target, "get_size_inches")
+    original = tuple(target.get_size_inches()) if resize else None
+    if resize:
+        target.set_size_inches(width, height)
+    try:
+        figure.savefig(path, dpi=dpi, format=format, **kwargs)
+    finally:
+        if original is not None:
+            target.set_size_inches(*original)
+
+
+def _save_composition(
+    plot: Any, path: Path, format: str, width: float, height: float, dpi: int, kwargs: Any
+) -> None:
+    """plotnine's ``Compose.save()`` ignores width and height, so the size goes in as a
+    theme on a copy (``&`` copies the composition), and the drawn figure is saved."""
+    from plotnine import theme  # type: ignore[import-not-found,unused-ignore]
+
+    sized = plot & theme(figure_size=(width, height), dpi=dpi)
+    figure = sized.draw()
+    try:
+        figure.savefig(path, dpi=dpi, format=format, **kwargs)
+    finally:
+        import matplotlib.pyplot as plt
+
+        plt.close(figure)
+
+
 def save_figure(
     plot: Any,
     name: str,
@@ -157,11 +208,16 @@ def save_figure(
 ) -> Path:
     """Save a figure to the figures output folder.
 
+    The file is ``width`` by ``height`` inches. The figure you pass keeps its own size:
+    a matplotlib figure is resized only while it is saved, and a plotnine composition is
+    sized on a copy.
+
     Args:
         plot: A matplotlib or seaborn figure (anything with ``savefig()``), a matplotlib
-            Axes (its figure is saved), a plotnine plot (anything with ``save()``), or None
-            for the current matplotlib figure.
-        name: File name without extension.
+            Axes (its figure is saved), a plotnine plot or composition (``p1 | p2``),
+            anything else with ``save()``, or None for the current matplotlib figure.
+        name: File name without extension. It may name subfolders of the figures folder,
+            such as ``"meeting-2026-10-16/cohort-flow"``, which are created.
         format: png, pdf, svg, jpg, jpeg, or tiff.
         width: Width in inches.
         height: Height in inches.
@@ -181,21 +237,20 @@ def save_figure(
     if not hasattr(figure, "savefig") and hasattr(figure, "get_figure"):
         # matplotlib Axes, which axes-level seaborn plots return, as publish() accepts
         figure = figure.get_figure() or figure
-    path = _folder("figures", public) / f"{name}.{format}"
-    _check_overwrite(path, overwrite)
-
-    if hasattr(figure, "savefig"):
-        target = getattr(figure, "figure", figure)
-        if hasattr(target, "set_size_inches"):
-            target.set_size_inches(width, height)
-        figure.savefig(path, dpi=dpi, format=format, **kwargs)
-    elif hasattr(figure, "save"):
-        figure.save(path, width=width, height=height, dpi=dpi, units="in", verbose=False, **kwargs)
-    else:
+    if not (hasattr(figure, "savefig") or hasattr(figure, "save")):
         raise FrameworkError(
             "plot must have a savefig() method (matplotlib, seaborn) or a save() method "
             "(plotnine), or be None to save the current matplotlib figure"
         )
+    path = _output_file("figures", public, f"{name}.{format}")
+    _check_overwrite(path, overwrite)
+
+    if hasattr(figure, "savefig"):
+        _save_matplotlib(figure, path, format, width, height, dpi, kwargs)
+    elif _is_composition(figure):
+        _save_composition(figure, path, format, width, height, dpi, kwargs)
+    else:
+        figure.save(path, width=width, height=height, dpi=dpi, units="in", verbose=False, **kwargs)
     inform(f"Saved figure to {path}")
     _record(path, "figure", public)
     return path
@@ -237,7 +292,7 @@ def save_model(model: Any, name: str, public: bool = False, overwrite: bool = Tr
 
     Args:
         model: The model, or any object pickle can save.
-        name: The file name without extension.
+        name: The file name without extension. It may name subfolders, which are created.
         public: In a sensitive project, save to the public models folder.
         overwrite: Replace an existing file.
 
@@ -269,10 +324,10 @@ def save_model(model: Any, name: str, public: bool = False, overwrite: bool = Tr
                 FrameworkWarning,
                 stacklevel=2,
             )
-    path = _folder("models", public) / f"{name}.pkl"
+    path = _output_file("models", public, f"{name}.pkl")
     _check_overwrite(path, overwrite)
     # Pickle to a temporary file first, so a failed dump leaves any existing model intact
-    descriptor, temp = tempfile.mkstemp(prefix=f".{name}.", suffix=".tmp", dir=path.parent)
+    descriptor, temp = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(descriptor, "wb") as handle:
             pickle.dump(model, handle)

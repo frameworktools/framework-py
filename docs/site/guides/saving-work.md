@@ -35,11 +35,13 @@ fw.save_table(summary.reset_index(), "site_summary", format="parquet")
 fw.save_table(summary.reset_index(), "site_summary", format="xlsx")
 ```
 
+A `name` with `/` saves into a subfolder of the tables folder, which is created: `fw.save_table(cohort, "meeting-2026-10-16/cohort")` writes `outputs/tables/meeting-2026-10-16/cohort.csv`.
+
 The formats are `csv` (the default), `parquet`, and `xlsx`, which needs the `excel` extra. Other keyword arguments go to the pandas writer. CSV files use `\n` line endings on every platform, so their hashes match the ones R records.
 
 ## Figures
 
-[save_figure()](ref:save_figure) saves any object with a `savefig()` method, such as a matplotlib or seaborn figure, a matplotlib Axes, which axes-level seaborn plots return, and any object with a `save()` method, such as a plotnine plot. Passing `None` saves the current matplotlib figure. framework-py does not depend on any plotting package.
+[save_figure()](ref:save_figure) saves any object with a `savefig()` method, such as a matplotlib or seaborn figure, a matplotlib Axes, which axes-level seaborn plots return, and any object with a `save()` method, such as a plotnine plot or a plotnine composition (`p1 | p2`, `p1 / p2`). Passing `None` saves the current matplotlib figure. framework-py does not depend on any plotting package.
 
 ```python
 import matplotlib.pyplot as plt
@@ -52,7 +54,9 @@ fw.save_figure(fig, "score_by_site", format="svg", width=10, height=4)
 fw.save_figure(None, "current_plot")
 ```
 
-The formats are `png` (the default), `pdf`, `svg`, `jpg`, `jpeg`, and `tiff`. `width` and `height` are in inches, with defaults of 8 and 6, and `dpi` defaults to 300.
+The formats are `png` (the default), `pdf`, `svg`, `jpg`, `jpeg`, and `tiff`. `width` and `height` are in inches, with defaults of 8 and 6, as in R, and `dpi` defaults to 300. They set the size of the file, not of your figure: a matplotlib figure is resized only while it is saved and keeps its own size afterwards, and a plotnine composition is sized on a copy. To keep a figure's own size in the file, pass it, as in `width=fig.get_figwidth(), height=fig.get_figheight()`.
+
+As for tables, a `name` with `/` saves into a subfolder, which is created: `fw.save_figure(fig, "meeting-2026-10-16/cohort-flow")`.
 
 ## Models
 

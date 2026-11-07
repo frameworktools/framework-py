@@ -76,7 +76,7 @@ def test_save_figure(project: Path) -> None:
     path = fw.save_figure(figure, "line", width=4, height=3, dpi=50)
     assert path == project / "outputs/figures/line.png"
     assert path.read_bytes()[:4] == b"\x89PNG"
-    assert tuple(figure.get_size_inches()) == (4, 3)
+    assert tuple(figure.get_size_inches()) == (6.4, 4.8)  # The caller's figure keeps its size
     assert fw.save_figure(None, "current", format="svg").suffix == ".svg"
     plt.close("all")
 
@@ -88,6 +88,58 @@ def test_save_figure_with_a_save_method(project: Path) -> None:
 
     path = fw.save_figure(Plot(), "plotnine", format="pdf")
     assert "units" in path.read_text(encoding="utf-8")
+
+
+def test_save_figure_creates_subfolders_named_in_name(project: Path) -> None:
+    # Ports 2026-11-07: "meeting/figure_1" raised FileNotFoundError
+    figure, axis = plt.subplots()
+    axis.plot([1, 2], [3, 4])
+    path = fw.save_figure(figure, "meeting-2026-10-16/figure_1", dpi=20)
+    assert path == project / "outputs/figures/meeting-2026-10-16/figure_1.png"
+    assert path.is_file()
+    table = fw.save_table(FRAME, "meeting-2026-10-16/cohort")
+    assert table == project / "outputs/tables/meeting-2026-10-16/cohort.csv"
+    model = fw.save_model({"a": 1}, "meeting-2026-10-16/fit")
+    assert model == project / "outputs/models/meeting-2026-10-16/fit.pkl"
+    plt.close("all")
+
+
+def test_save_figure_sizes_a_plotnine_composition(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Ports 2026-11-07: plotnine's Compose.save() ignores width and height, so
+    # compositions came out 6.4 by 4.8 inches
+    import sys
+    import types
+
+    class Theme:
+        def __init__(self, **options: object) -> None:
+            self.options = options
+
+    class Compose:
+        def __init__(self, size: tuple[float, float] = (6.4, 4.8)) -> None:
+            self.size = size
+
+        def __and__(self, other: Theme) -> Compose:
+            size = other.options["figure_size"]
+            assert isinstance(size, tuple)
+            return Compose(size)
+
+        def draw(self) -> object:
+            return plt.figure(figsize=self.size)
+
+        def save(self, *args: object, **kwargs: object) -> None:
+            raise AssertionError("Compose.save() ignores the size")
+
+    Compose.__module__ = "plotnine.composition._compose"
+    monkeypatch.setitem(sys.modules, "plotnine", types.SimpleNamespace(theme=Theme))
+    composition = Compose()
+    path = fw.save_figure(composition, "panels", width=10, height=5, dpi=10)
+    from PIL import Image
+
+    with Image.open(path) as image:
+        assert image.size == (100, 50)
+    assert composition.size == (6.4, 4.8)
 
 
 def test_save_figure_rejects_other_objects(project: Path) -> None:
