@@ -142,6 +142,33 @@ def test_transactions_commit_and_roll_back(database: tuple[str, str]) -> None:
     assert fw.db_query(f"SELECT label FROM {table}", name)["label"].tolist() == ["kept"]
 
 
+def test_execute_file_and_copy_from(database: tuple[str, str], project: Path) -> None:
+    name, table = database
+    extra = f"{table}_x"
+    (project / "load.sql").write_text(
+        f"-- set up\nCREATE TABLE {extra} (id INTEGER, label VARCHAR(50));\n"
+        f"INSERT INTO {extra} (id, label) VALUES (1, 'a; b');\n",
+        encoding="utf-8",
+    )
+    try:
+        assert fw.db_execute_file(name, "load.sql") == 2
+        assert fw.db_query(f"SELECT label FROM {extra}", name)["label"].tolist() == ["a; b"]
+    finally:
+        fw.db_execute(f"DROP TABLE {extra}", name)
+
+    (project / "people.csv").write_text('id,label\n10,x\n11,NA\n12,"y, z"\n', encoding="utf-8")
+    assert fw.db_copy_from(name, table, "people.csv") == 3
+    frame = fw.db_query(f"SELECT id, label FROM {table} ORDER BY id", name)
+    assert frame["id"].tolist() == [10, 11, 12]
+    assert frame["label"].tolist()[0] == "x" and frame["label"].tolist()[2] == "y, z"
+    assert frame["label"].isna().tolist() == [False, True, False]
+
+    (project / "dupes.csv").write_text("id,label\n20,a\n10,dup\n", encoding="utf-8")
+    with pytest.raises(fw.FrameworkError, match="nothing was loaded"):
+        fw.db_copy_from(name, table, "dupes.csv")
+    assert len(fw.db_query(f"SELECT id FROM {table}", name)) == 3
+
+
 def test_listing_and_errors(database: tuple[str, str]) -> None:
     name, _ = database
     listed = fw.db_list()

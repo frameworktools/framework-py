@@ -333,11 +333,20 @@ class Connection:
         return f"<framework Connection {self.name!r} ({self.driver})>"
 
 
-def db_connect(name: str) -> Connection:
+_FILE_DRIVERS = ("sqlite", "duckdb")
+
+
+def db_connect(name: str, read_only: bool | None = None) -> Connection:
     """Open a database connection defined in the settings.
 
     Args:
         name: The connection's name under ``connections`` in the settings.
+        read_only: Open a sqlite or duckdb file read-only (True) or writable (False) for this
+            call, whatever the connection's ``read_only`` setting says. A job that builds a
+            database other code reads with ``read_only: true`` opens it with
+            ``read_only=False``. Default: the setting. Server databases (postgres, mysql,
+            sqlserver) control writes with the database user's permissions, so True is an
+            error for them and False changes nothing.
 
     Returns:
         A ``Connection`` that wraps the driver's connection object. Use it in a ``with`` block
@@ -345,21 +354,31 @@ def db_connect(name: str) -> Connection:
 
     Raises:
         FrameworkError: The connection is not configured, its driver package
-            is not installed, or connecting failed.
+            is not installed, connecting failed, or ``read_only=True`` names a server
+            database.
     """
     entry = _database_config(name)
     driver_name = str(entry["driver"]).lower()
     if driver_name not in DRIVERS:
         raise FrameworkError(f"Unsupported database driver for '{name}': {entry['driver']}")
     driver = DRIVERS[driver_name][0]
+    if read_only is not None:
+        if driver not in _FILE_DRIVERS:
+            if read_only:
+                raise FrameworkError(
+                    f"read_only=True applies to sqlite and duckdb files, and '{name}' is "
+                    f"{driver}. Connect as a database user without write access instead."
+                )
+        else:
+            entry = {**entry, "read_only": read_only}
     try:
         raw = _CONNECTORS[driver](entry)
     except FrameworkError:
         raise
     except Exception as error:
         raise FrameworkError(f"Failed to connect to '{name}': {error}") from error
-    read_only = driver in ("sqlite", "duckdb") and bool(entry.get("read_only"))
-    return Connection(name, driver, raw, read_only)
+    read_only_open = driver in _FILE_DRIVERS and bool(entry.get("read_only"))
+    return Connection(name, driver, raw, read_only_open)
 
 
 # Queries ------------------------------------------------------------------------------
@@ -371,7 +390,10 @@ def _frame(cursor: Any) -> pd.DataFrame:
 
 
 def db_query(
-    query: str, connection_name: str, params: Sequence[Any] | Mapping[str, Any] | None = None
+    query: str,
+    connection_name: str,
+    params: Sequence[Any] | Mapping[str, Any] | None = None,
+    read_only: bool | None = None,
 ) -> pd.DataFrame:
     """Run a query and return the rows as a DataFrame.
 
@@ -384,6 +406,10 @@ def db_query(
         connection_name: The connection's name in the settings. The connection is opened for
             this query and closed afterward.
         params: Values for the query's placeholders, as a sequence or a mapping.
+        read_only: Open the connection read-only (True) or writable (False) for this query,
+            as ``db_connect()`` does. Default: the connection's setting. A read-only DuckDB
+            file can be open in several processes at once, so ``read_only=True`` lets a
+            notebook query a database another job holds open read-only too.
 
     Returns:
         The result rows, with the query's column names.
@@ -391,7 +417,7 @@ def db_query(
     Raises:
         FrameworkError: When the connection cannot be opened or the query fails.
     """
-    with db_connect(connection_name) as connection:
+    with db_connect(connection_name, read_only=read_only) as connection:
         cursor = connection.cursor()
         try:
             cursor.execute(query, params) if params is not None else cursor.execute(query)
@@ -497,6 +523,236 @@ def db_transaction(connection: Connection) -> Iterator[Connection]:
         raise FrameworkError(f"Transaction failed and was rolled back: {error}") from error
     finally:
         connection._in_transaction = False
+
+
+# Files ---------------------------------------------------------------------------------
+
+
+@contextmanager
+def _opened(connection: Connection | str) -> Iterator[Connection]:
+    """``connection`` itself, or the named connection, opened and closed around the block."""
+    if isinstance(connection, Connection):
+        yield connection
+        return
+    with db_connect(connection) as opened:
+        yield opened
+
+
+def _writable_connection(connection: Connection, what: str) -> None:
+    if connection.read_only:
+        raise FrameworkError(
+            f"Connection '{connection.name}' is read-only. {what} needs a writable "
+            f"connection: db_connect('{connection.name}', read_only=False)."
+        )
+
+
+def _project_file(path: str | Path) -> Path:
+    """A file by path: relative to the project root, then to the current folder."""
+    candidate = Path(path).expanduser()
+    if candidate.is_absolute():
+        found = candidate
+    else:
+        from framework.project import find_settings_file
+
+        settings_file = find_settings_file()
+        bases = [settings_file.parent] if settings_file else []
+        found = next(
+            (base / candidate for base in [*bases, Path.cwd()] if (base / candidate).is_file()),
+            (bases or [Path.cwd()])[0] / candidate,
+        )
+    if not found.is_file():
+        raise FrameworkError(f"File not found: {path}")
+    return found
+
+
+def db_execute_file(
+    connection: Connection | str, path: str | Path, transaction: bool = True
+) -> int:
+    """Run every statement in a ``.sql`` file, in order.
+
+    Statements end at a ``;`` outside quotes and comments (and PostgreSQL ``$$`` quotes).
+    SQLite trigger bodies stay whole. SQL Server files are split into batches at lines that
+    hold only ``GO``, as sqlcmd does. MySQL's client-side ``DELIMITER`` command is not
+    supported.
+
+    Args:
+        connection: An open connection from ``db_connect()``, or a connection name, which is
+            opened for the file and closed afterward.
+        path: The ``.sql`` file. A relative path is looked for from the project root, then
+            from the current folder.
+        transaction: Run the whole file in one transaction, so a failure leaves the
+            database as it was. MySQL commits schema changes (CREATE, ALTER, DROP) at once
+            whatever the client does. Pass False for statements that cannot run in a
+            transaction, such as PostgreSQL's ``CREATE INDEX CONCURRENTLY`` or ``VACUUM``;
+            each statement then commits as it runs.
+
+    Returns:
+        The number of statements (or SQL Server batches) run.
+
+    Raises:
+        FrameworkError: The file is missing, the connection is read-only, or a statement
+            failed. The message names the statement's number and line.
+    """
+    from framework import _sql
+
+    source = _project_file(path)
+    with _opened(connection) as opened:
+        _writable_connection(opened, "db_execute_file()")
+        statements = _sql.split(source.read_text(encoding="utf-8-sig"), opened.driver)
+
+        def run_all() -> None:
+            for number, statement in enumerate(statements, start=1):
+                cursor = opened.cursor()
+                try:
+                    cursor.execute(statement.sql)
+                except Exception as error:
+                    raise FrameworkError(
+                        f"Statement {number} of {len(statements)} in {source.name} (line "
+                        f"{statement.line}) failed: {error}"
+                    ) from error
+                finally:
+                    cursor.close()
+                if not transaction:
+                    opened.commit()
+
+        if transaction:
+            try:
+                with db_transaction(opened):
+                    run_all()
+            except FrameworkError as error:
+                failed = error.__cause__
+                if isinstance(failed, FrameworkError):
+                    raise FrameworkError(f"{failed} The file was rolled back.") from failed
+                raise
+        else:
+            run_all()
+    return len(statements)
+
+
+def _quote(identifier: str, driver: str) -> str:
+    if driver == "mysql":
+        return "`" + identifier.replace("`", "``") + "`"
+    if driver == "sqlserver":
+        return "[" + identifier.replace("]", "]]") + "]"
+    return '"' + identifier.replace('"', '""') + '"'
+
+
+def _table_name(table: str, driver: str) -> str:
+    """A table name, quoted, with ``schema.table`` quoted part by part."""
+    return ".".join(_quote(part, driver) for part in table.split("."))
+
+
+_PLACEHOLDERS = {"sqlite": "?", "sqlserver": "?", "mysql": "%s", "postgres": "%s", "duckdb": "?"}
+_CHUNK_ROWS = 50_000
+
+
+def db_copy_from(
+    connection: Connection | str,
+    table: str,
+    csv: str | Path,
+    delim: str = "comma",
+    na: Sequence[str] = ("", "NA"),
+) -> int:
+    """Load a CSV file into an existing table, fast where the driver allows.
+
+    The CSV's header names the columns, which must exist in the table; other columns get
+    their defaults. Values go to the database as text, and the database converts them to
+    the columns' types. PostgreSQL loads with ``COPY ... FROM STDIN``, DuckDB from the
+    parsed file directly, SQL Server with pyodbc's fast ``executemany``, and SQLite and
+    MySQL with ``executemany``. Rows load in chunks, so a large file does not need to fit
+    in memory.
+
+    Args:
+        connection: An open connection from ``db_connect()``, or a connection name, which is
+            opened for the load and closed afterward.
+        table: The table, optionally with its schema (``"cdm.concept"``). Each part is
+            quoted, so names keep their case.
+        csv: The CSV file. A relative path is looked for from the project root, then from
+            the current folder.
+        delim: The delimiter: comma, tab, semicolon, or space.
+        na: Values loaded as NULL. Default: empty fields and ``NA``, as ``data_read()``
+            reads them.
+
+    Returns:
+        The number of rows loaded.
+
+    Raises:
+        FrameworkError: The file is missing, the connection is read-only, or the load
+            failed. The whole load runs in one transaction, so a failure loads nothing.
+    """
+    from framework.data import DELIMITERS
+
+    if delim not in DELIMITERS:
+        raise FrameworkError(f"Unknown delimiter: {delim}. Use comma, tab, semicolon, or space")
+    source = _project_file(csv)
+    with _opened(connection) as opened:
+        _writable_connection(opened, "db_copy_from()")
+        driver = opened.driver
+        reader = pd.read_csv(
+            source,
+            sep=DELIMITERS[delim],
+            dtype=str,
+            keep_default_na=False,
+            na_values=list(na),
+            na_filter=bool(na),
+            chunksize=_CHUNK_ROWS,
+            encoding="utf-8-sig",
+        )
+        loaded = 0
+        try:
+            with reader as chunks, db_transaction(opened):
+                for chunk in chunks:
+                    columns = [str(name) for name in chunk.columns]
+                    rows = [
+                        tuple(None if pd.isna(value) else value for value in row)
+                        for row in chunk.itertuples(index=False, name=None)
+                    ]
+                    _load_rows(opened, driver, table, columns, rows, chunk)
+                    loaded += len(rows)
+        except FrameworkError as error:
+            cause = error.__cause__ or error
+            raise FrameworkError(
+                f"Failed to load {source.name} into {table}; nothing was loaded: {cause}"
+            ) from cause
+    return loaded
+
+
+def _load_rows(
+    connection: Connection,
+    driver: str,
+    table: str,
+    columns: list[str],
+    rows: list[tuple[Any, ...]],
+    chunk: pd.DataFrame,
+) -> None:
+    if not rows:
+        return
+    target = _table_name(table, driver)
+    names = ", ".join(_quote(column, driver) for column in columns)
+    raw = connection.raw
+    if driver == "postgres":
+        with raw.cursor() as cursor, cursor.copy(f"COPY {target} ({names}) FROM STDIN") as copy:
+            for row in rows:
+                copy.write_row(row)
+        return
+    if driver == "duckdb":
+        view = "__framework_copy"
+        frame = chunk.astype(object).where(chunk.notna(), None)
+        raw.register(view, frame)
+        try:
+            selected = ", ".join(_quote(column, driver) for column in columns)
+            raw.execute(f"INSERT INTO {target} ({names}) SELECT {selected} FROM {view}")
+        finally:
+            raw.unregister(view)
+        return
+    marks = ", ".join([_PLACEHOLDERS[driver]] * len(columns))
+    cursor = raw.cursor()
+    try:
+        if driver == "sqlserver":
+            cursor.fast_executemany = True
+        cursor.executemany(f"INSERT INTO {target} ({names}) VALUES ({marks})", rows)
+    finally:
+        cursor.close()
 
 
 # Listing ------------------------------------------------------------------------------

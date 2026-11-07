@@ -151,7 +151,7 @@ status = "ported"
 [functions.db_connect]
 python = "db_connect"
 status = "ported"
-note = "Returns a DB-API connection that is also a context manager"
+note = "Returns a DB-API connection that is also a context manager. `read_only=` overrides the setting per call (proposed for R)"
 
 [functions.db_drivers_install]
 status = "r-only"
@@ -173,7 +173,7 @@ status = "ported"
 [functions.db_query]
 python = "db_query"
 status = "ported"
-note = "Returns a DataFrame. Parameters are passed separately, never formatted into SQL"
+note = "Returns a DataFrame. Parameters are passed separately, never formatted into SQL. `read_only=` overrides the setting per call (proposed for R)"
 
 [functions.db_transaction]
 python = "db_transaction"
@@ -576,6 +576,8 @@ names = [
     "tools_available",
     "path",  # proposed: path()
     "load_model",  # proposed: load_model()
+    "db_execute_file",  # proposed: db_execute_file()
+    "db_copy_from",  # proposed: db_copy_from()
 ]
 
 [functions.skills_sync]

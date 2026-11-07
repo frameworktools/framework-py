@@ -1,7 +1,7 @@
 ---
 id: connections
 title: Database connections
-description: Database connections in the settings, and queries with db_query(), db_execute(), and db_transaction()
+description: Database connections in the settings, queries, transactions, SQL files, and CSV loading
 section: features
 position: 9
 ---
@@ -120,6 +120,19 @@ with fw.db_connect("warehouse") as conn:
 
 The driver's object is available as `conn.raw` for features outside the DB-API.
 
+### Read-only for one call
+
+`read_only=` on [db_connect()](ref:db_connect) and [db_query()](ref:db_query) overrides a SQLite or DuckDB connection's `read_only` setting for that call. A database that notebooks share read-only (`read_only: true`) can be rebuilt by a job that opens it writable, with no second connection entry and no copy of its path:
+
+```python
+with fw.db_connect("vizient", read_only=False) as conn:
+    fw.db_execute_file(conn, "sql/build.sql")
+
+fw.db_query("SELECT count(*) AS n FROM encounters", "vizient", read_only=True)
+```
+
+Server databases control writes with the database user's permissions, so `read_only=True` on a PostgreSQL, MySQL, or SQL Server connection is an error, and `read_only=False` changes nothing. A DuckDB file opened read-only can be open in several processes at once; one opened writable locks it until the connection closes.
+
 ## Transactions
 
 [db_transaction()](ref:db_transaction) groups statements so that they are committed together. When the block raises an exception, every statement in it is rolled back, and Framework raises `FrameworkError` with the original exception as its cause.
@@ -134,6 +147,31 @@ with fw.db_connect("local") as conn, fw.db_transaction(conn):
 A transaction inside another transaction on the same connection joins the outer one.
 
 On SQLite, DuckDB, PostgreSQL, and SQL Server, a rollback also undoes `CREATE TABLE` and other schema changes. MySQL and MariaDB commit schema changes at once, so a rollback cannot undo them.
+
+## SQL files
+
+[db_execute_file()](ref:db_execute_file) runs every statement in a `.sql` file, in order, in one transaction, and returns the number of statements. It takes an open connection or a connection name. A relative path starts at the project root.
+
+```python
+fw.db_execute_file("omop", "sql/omop_cdm_ddl.sql")
+
+with fw.db_connect("omop") as conn:
+    fw.db_execute_file(conn, "sql/constraints.sql")
+```
+
+Statements end at a `;` outside quotes, comments, and PostgreSQL `$$` quotes. A SQLite trigger's `BEGIN ... END` body stays whole. SQL Server files are split at lines holding only `GO`, as sqlcmd splits them, and each batch runs whole. MySQL's `DELIMITER` command is a feature of the mysql client, not SQL, and is not supported.
+
+When a statement fails, the file is rolled back and the error names the statement's number and line. `transaction=False` commits each statement as it runs, for statements that cannot run in a transaction, such as PostgreSQL's `CREATE INDEX CONCURRENTLY`.
+
+## Loading CSV files
+
+[db_copy_from()](ref:db_copy_from) loads a CSV file into an existing table and returns the number of rows. The header names the columns; columns the file leaves out get their defaults. Values reach the database as text, and the database converts them to the columns' types. Empty fields and `NA` load as NULL, as [data_read()](ref:data_read) reads them; `na=` changes that.
+
+```python
+fw.db_copy_from("omop", "cdm.concept", "inputs/raw/vocabulary/CONCEPT.csv", delim="tab")
+```
+
+PostgreSQL loads with `COPY ... FROM STDIN`, DuckDB inserts each parsed chunk in one statement, SQL Server uses pyodbc's fast `executemany`, and SQLite and MySQL use `executemany`. The file is read in chunks, and the whole load is one transaction, so a failure loads nothing. A `schema.table` name is quoted part by part, so names keep their case.
 
 ## Listing connections
 

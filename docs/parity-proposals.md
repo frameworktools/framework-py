@@ -330,3 +330,67 @@ the model keeps `y`; `x = TRUE` and `qr` also hold the design matrix. Hint: refi
 checks a statsmodels result's estimation data, the object itself when it is a DataFrame,
 and DataFrame attributes; a statsmodels formula result keeps its data frame even after
 `remove_data()`, and the hint says so. No warning for `public = FALSE`.
+
+## Database helpers: db_execute_file(), db_copy_from(), and read_only per call [D10]
+
+```r
+db_connect(name, read_only = NULL)
+db_query(query, connection_name, ..., read_only = NULL)
+db_execute_file(conn, path, transaction = TRUE)
+db_copy_from(conn, table, csv, delim = "comma", na = c("", "NA"))
+```
+
+### read_only
+
+`NULL` uses the connection's `read_only` setting. `TRUE`/`FALSE` override it for this
+call on sqlite and duckdb connections (R: `RSQLite::SQLITE_RO` flags and
+`duckdb(dbdir, read_only = )`). For server drivers (postgres, mysql/mariadb, sqlserver)
+`read_only = TRUE` is an error (`read_only=True applies to sqlite and duckdb files, and
+'<name>' is <driver>. Connect as a database user without write access instead.`) and
+`FALSE` changes nothing. A connection opened with `read_only = FALSE` is writable for
+`db_execute_file()`, `db_copy_from()`, and `db_transaction()`. `db_execute()` keeps its
+signature: it opens by name, so a build step that writes to a `read_only: true` database
+uses `db_connect(name, read_only = FALSE)` and the helpers that take a connection.
+
+### db_execute_file(conn, path, transaction = TRUE)
+
+- `conn`: an open connection, or a connection name (opened and closed around the call).
+- `path`: a relative path is looked for from the project root, then the working
+  directory. Read as UTF-8; a byte-order mark is dropped.
+- Splitting: statements end at `;` outside single quotes (`''` escapes), double quotes,
+  backticks, `--` and `/* */` comments, and PostgreSQL dollar quotes (`$$` / `$tag$`);
+  MySQL also has `#` comments and backslash escapes. SQLite files are split with
+  SQLite's `sqlite3_complete()` rule (Python's `sqlite3.complete_statement()`): `;`-ended
+  pieces accumulate until they form a complete statement, so `CREATE TRIGGER ... BEGIN
+  ... END;` stays one statement. R needs the same rule. SQL Server splits into batches
+  at lines holding only `GO` (case-insensitive, optional trailing `--` comment); each
+  batch runs whole. Statements holding only comments are dropped. MySQL `DELIMITER` is
+  not supported.
+- `transaction = TRUE`: all statements in one `db_transaction()`. On failure, roll back
+  and stop: `Statement <n> of <total> in <file name> (line <line of its first word>)
+  failed: <driver message> The file was rolled back.` `transaction = FALSE`: commit after
+  each statement; the same message without the last sentence.
+- Refuses a read-only connection (`Connection '<name>' is read-only. db_execute_file()
+  needs a writable connection: db_connect('<name>', read_only=False).`).
+- Returns the number of statements (batches for SQL Server) run.
+
+### db_copy_from(conn, table, csv, delim = "comma", na = c("", "NA"))
+
+- `conn` and `csv` resolve as for `db_execute_file()`.
+- `table`: an existing table, optionally `schema.table`; each part is quoted for the
+  driver (`"x"`, `` `x` ``, `[x]`), so names keep their case.
+- The CSV's header names the target columns; other columns get their defaults. Values
+  are sent as text (or NULL for values in `na`) and the database casts them. No
+  whitespace trimming.
+- Loading: postgres `COPY <table> (<cols>) FROM STDIN` (R: `RPostgres::dbWriteTable`
+  with `copy = TRUE` into the existing table, or `postgresqlCopyInDataframe`); duckdb
+  inserts each parsed chunk with one `INSERT ... SELECT` (R: `duckdb_register()` or
+  `dbAppendTable()`); sqlserver `executemany` with `fast_executemany` (R:
+  `dbAppendTable()` with odbc's batching); sqlite and mysql `executemany` (R:
+  `dbAppendTable()`). Chunks of 50,000 rows.
+- One transaction for the whole file; on failure nothing is loaded:
+  `Failed to load <file name> into <table>; nothing was loaded: <driver message>`.
+- Refuses a read-only connection, as above. Returns the number of rows loaded.
+
+Not done: `db_cli_args(name)` (the a2cps report's third suggestion, credentials for
+`psql`) is out of scope here.

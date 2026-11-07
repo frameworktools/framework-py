@@ -76,7 +76,7 @@
   title: Database
   description: Database connections and queries
   common: [db_query, db_execute]
-  names: [db_query, db_execute, db_connect, db_transaction, db_list, connections_list,
+  names: [db_query, db_execute, db_connect, db_transaction, db_execute_file, db_copy_from, db_list, connections_list,
           db_drivers_status]
 
 - id: ai
