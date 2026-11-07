@@ -464,7 +464,7 @@ status = "ported"
 [functions.save_figure]
 python = "save_figure"
 status = "ported"
-note = "Any object with `savefig()` (matplotlib, seaborn) or `save()` (plotnine). No plotting dependency. A list of formats and eps are proposed for R (docs/parity-proposals-outputs.md, D14); emf is R-only in practice"
+note = "Any object with `savefig()` (matplotlib, seaborn) or `save()` (plotnine). No plotting dependency. A list of formats and eps are proposed for R (docs/parity-proposals.md, D14); emf is R-only in practice"
 
 [functions.save_model]
 python = "save_model"
