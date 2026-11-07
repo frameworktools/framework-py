@@ -61,9 +61,10 @@ class DataInfo:
         name: The catalog name, when the file was found by name.
         extra: Any other fields of the catalog entry.
         columns: With ``data_info(..., columns=True)``: one row per column, with its
-            ``name``, its ``type`` (logical, integer, double, character, factor, date,
-            datetime, time, duration, or other), and its count of ``missing`` values.
-            Never any values. None otherwise.
+            ``name``, its ``type`` in R's words (logical, integer, double, character,
+            factor, date, datetime, time, duration, or other), its pandas ``dtype``
+            (``int64``, ``object``, ...), and its count of ``missing`` values. Never any
+            values. None otherwise.
         rows: With ``columns=True``, the number of rows. None otherwise.
     """
 
@@ -229,12 +230,12 @@ def data_info(path: str, columns: bool = False) -> DataInfo:
     the project root.
 
     With ``columns=True``, the file is read and summarized without showing any values:
-    each column's name, type, and missing count, and the number of rows. An agent under
-    the sensitive-data rules can learn a restricted file's layout this way without
-    seeing its records::
+    each column's name, type, pandas dtype, and missing count, and the number of rows.
+    An agent under the sensitive-data rules can learn a restricted file's layout this way
+    without seeing its records::
 
         info = fw.data_info("inputs.private.raw.patients", columns=True)
-        info.columns   # name, type, missing
+        info.columns   # name, type, dtype, missing
         info.rows
 
     Args:
@@ -293,14 +294,16 @@ def _type_name(column: pd.Series) -> str:
 
 
 def column_summary(frame: pd.DataFrame) -> pd.DataFrame:
-    """Each column's name, type, and missing count. Never any values."""
+    """Each column's name, type (in R's words, as R's summary has it), pandas dtype, and
+    missing count. Never any values."""
     return pd.DataFrame(
         {
             "name": [str(name) for name in frame.columns],
             "type": [_type_name(frame.iloc[:, i]) for i in range(frame.shape[1])],
+            "dtype": [str(frame.iloc[:, i].dtype) for i in range(frame.shape[1])],
             "missing": [int(frame.iloc[:, i].isna().sum()) for i in range(frame.shape[1])],
         },
-        columns=["name", "type", "missing"],
+        columns=["name", "type", "dtype", "missing"],
     )
 
 

@@ -212,7 +212,7 @@ info.path
 info.locked
 ```
 
-With `columns=True`, `data_info()` also reads the file and describes its columns without showing any values: `info.columns` is a DataFrame with each column's `name`, `type`, and count of `missing` values, and `info.rows` is the number of rows. Types use R's words, so the summary reads the same in both languages: `logical`, `integer`, `double`, `character`, `factor`, `date`, `datetime`, `time`, `duration`, or `other`. The read does not check or record the file's hash.
+With `columns=True`, `data_info()` also reads the file and describes its columns without showing any values: `info.columns` is a DataFrame with each column's `name`, `type`, `dtype`, and count of `missing` values, and `info.rows` is the number of rows. `type` uses R's words, so the summary reads the same in both languages: `logical`, `integer`, `double`, `character`, `factor`, `date`, `datetime`, `time`, `duration`, or `other`. `dtype` is the pandas dtype the file reads as, such as `int64`, `float64`, `object`, or `category`. The read does not check or record the file's hash.
 
 ```python
 info = fw.data_info("inputs.private.raw.patients", columns=True)

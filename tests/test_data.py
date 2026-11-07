@@ -657,14 +657,18 @@ def test_data_info_columns_summarize_without_values(data_project: Path) -> None:
     )
     with pytest.warns(fw.FrameworkWarning, match=r"direct identifiers \(mrn\)"):
         fw.data_save(frame.drop(columns="dob"), "inputs.raw.patients")
+    from framework.data import read_file
+
     info = fw.data_info("inputs.raw.patients", columns=True)
     assert info.rows == 3
     assert info.columns is not None
     assert info.columns.to_dict("list") == {
         "name": ["mrn", "age", "bmi", "smoker", "site", "seen"],
         "type": ["character", "integer", "double", "logical", "factor", "datetime"],
+        "dtype": [str(dtype) for dtype in read_file(info).dtypes],
         "missing": [1, 0, 2, 0, 0, 1],
     }
+    assert info.columns["dtype"].tolist()[1:5] == ["int64", "float64", "bool", "category"]
     shown = repr(info) + info.columns.to_string()
     for value in ("A-1001", "east", "22.5", "2020-01-02"):
         assert value not in shown
@@ -676,6 +680,7 @@ def test_data_info_columns_summarize_without_values(data_project: Path) -> None:
     assert column_summary(frame[["dob"]]).to_dict("list") == {
         "name": ["dob"],
         "type": ["date"],
+        "dtype": [str(frame["dob"].dtype)],
         "missing": [1],
     }
 

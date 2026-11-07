@@ -155,7 +155,9 @@ With `columns = TRUE`, the file is read and summarized:
 logical, integer, double (numeric), character, factor (also ordered), `Date` -> date,
 `POSIXct`/`POSIXlt` -> datetime, `hms` -> time, `difftime` -> duration, anything else ->
 other. Python maps pandas dtypes to the same words, and inspects object columns' Python
-types.
+types. Python's summary also has a `dtype` column after `type`, the pandas dtype as text
+(`int64`, `float64`, `object`, `category`, `datetime64[ns]`); R has no equivalent and
+leaves it out.
 
 Never shown: values, factor levels, ranges, or examples. The read does not check the
 hash and records nothing in framework.db; a missing file is an error. The R return value
