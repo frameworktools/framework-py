@@ -78,6 +78,19 @@ def _installed_version(name: str) -> str | None:
         return None
 
 
+def _refresh_agents_md(root: Path) -> None:
+    """Rewrite the package list in AGENTS.md (its regenerated section) from pyproject.toml."""
+    from framework._agents_md import refresh_packages
+
+    try:
+        names = [_package_name(requirement) for requirement in _dependencies(root)]
+        changed = refresh_packages(root, names)
+    except (OSError, ValueError, FrameworkError):
+        return
+    if changed is not None:
+        inform(f"✓ Updated the package list in {changed.name}")
+
+
 def _check(status: int, what: str) -> None:
     if status != 0:
         raise FrameworkError(f"{what} failed (exit status {status})")
@@ -119,6 +132,10 @@ def _add_to_pyproject(path: Path, requirement: str) -> bool:
 def package_add(requirement: str, *, install: bool = True, dev: bool = False) -> None:
     """Add a package to the project's dependencies, and install it.
 
+    The Installed Packages section of the project's AGENTS.md (the one marked
+    ``<!-- @framework:regenerate -->``) is rewritten from ``pyproject.toml`` afterward, so
+    agents see the new package. The rest of the file is kept.
+
     Args:
         requirement: A package name, optionally with a version, such as
             ``"pandas"`` or ``"statsmodels>=0.14"``.
@@ -139,11 +156,13 @@ def package_add(requirement: str, *, install: bool = True, dev: bool = False) ->
             args.append("--no-sync")
         _check(_run(args, root), f"uv add {requirement}")
         inform(f"✓ Added {requirement}")
+        _refresh_agents_md(root)
         return
     if dev:
         raise FrameworkError("Dev dependencies need uv. Install it from https://docs.astral.sh/uv/")
     if _add_to_pyproject(path, requirement):
         inform(f"✓ Added {requirement} to pyproject.toml")
+        _refresh_agents_md(root)
     else:
         inform(f"{_package_name(requirement)} is already in pyproject.toml")
     if install:
@@ -232,6 +251,7 @@ def package_set_add(set: str, *, install: bool = True) -> dict[str, list[str]]:
                 args = [sys.executable, "-m", "pip", "install", *requirements]
                 _check(_run(args, root), "pip install")
         inform(f"✓ Added {len(added)} package(s) from {definition['name']}: {', '.join(added)}")
+        _refresh_agents_md(root)
     else:
         inform(f"The project already lists every package in {definition['name']}.")
     if present:

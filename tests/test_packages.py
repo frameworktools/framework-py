@@ -246,3 +246,55 @@ def test_package_sets_list() -> None:
     assert list(sets.columns) == ["id", "name", "description", "packages"]
     assert {"python-data-analysis", "fastapi-python"} <= set(sets["id"])
     assert "bayes-r" not in set(sets["id"])
+
+
+AGENTS = """\
+# Test
+
+## Framework Environment <!-- @framework:regenerate -->
+
+Kept.
+
+## Installed Packages <!-- @framework:regenerate -->
+
+**Dependencies** (in pyproject.toml): framework-py
+
+Add packages with `fw.package_add("name")`.
+
+## Project Notes
+
+My notes.
+"""
+
+
+def test_package_add_refreshes_the_agents_md_package_list(
+    project: Path, calls: list[list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (project / "AGENTS.md").write_text(AGENTS, encoding="utf-8")
+    monkeypatch.setattr(packages, "_uv", lambda: None)
+    fw.package_add("statsmodels>=0.14")
+    assert (project / "AGENTS.md").read_text(encoding="utf-8") == AGENTS.replace(
+        "): framework-py\n", "): framework-py, pandas, statsmodels\n"
+    )
+
+
+def test_package_add_with_uv_refreshes_agents_md_from_pyproject(
+    project: Path, calls: list[list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (project / "CLAUDE.md").write_text(AGENTS, encoding="utf-8")
+
+    def uv_add(args: list[str], root: Path) -> int:
+        packages._add_to_pyproject(root / "pyproject.toml", args[2])
+        return 0
+
+    monkeypatch.setattr(packages, "_run", uv_add)
+    fw.package_add("scipy")
+    assert "): framework-py, pandas, scipy\n" in (project / "CLAUDE.md").read_text(encoding="utf-8")
+
+
+def test_package_add_leaves_a_file_without_the_marked_section(
+    project: Path, calls: list[list[str]]
+) -> None:
+    (project / "AGENTS.md").write_text("# Mine\n\n## Installed Packages\n\nmine\n", "utf-8")
+    fw.package_add("scipy")
+    assert (project / "AGENTS.md").read_text(encoding="utf-8").endswith("mine\n")

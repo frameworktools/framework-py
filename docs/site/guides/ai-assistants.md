@@ -38,12 +38,12 @@ Claude Code is selected by default. A list under `defaults.ai.assistants` in you
 
 - **Skills.** A table of the installed skills, what each covers, and the path to its `SKILL.md` in the first assistant's skills folder.
 - **Framework Environment.** What [scaffold()](ref:scaffold) does, and the rules that follow from it, such as adding packages with [package_add()](ref:package_add) instead of `pip install`.
-- **Installed Packages.** The project's dependencies.
+- **Installed Packages.** The project's dependencies. [package_add()](ref:package_add) and [package_set_add()](ref:package_set_add) rewrite this section when they add a package.
 - **Data Management.** The rule to read and save data with [data_read()](ref:data_read) and [data_save()](ref:data_save), and a table of the project's data folders.
 - **Workflow, course, presentation, or privacy notes**, depending on the project. A privacy-sensitive project also gets a line right after the title that names the private folders and tells assistants not to read or print files in them.
 - **Project Notes.** Space for your own instructions.
 
-Add your own instructions under **Project Notes**: the study design, naming habits, data caveats, and anything else an assistant should know. You can edit any section. Framework does not rewrite `AGENTS.md` after creation. The R package writes the same sections, with R's functions.
+Add your own instructions under **Project Notes**: the study design, naming habits, data caveats, and anything else an assistant should know. You can edit any section. Apart from the package list, Framework does not rewrite `AGENTS.md` after creation. The R package writes the same sections, with R's functions.
 
 The stub files point back to it. `CLAUDE.md` is written only when Claude Code is selected, and it contains one line, which tells Claude Code to read `AGENTS.md`.
 

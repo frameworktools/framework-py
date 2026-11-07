@@ -333,7 +333,7 @@ note = "Same string format as R"
 [functions.package_add]
 python = "package_add"
 status = "ported"
-note = "Adds to `pyproject.toml` and installs with uv when present, otherwise pip"
+note = "Adds to `pyproject.toml` and installs with uv when present, otherwise pip. Rewrites the marked Installed Packages section of AGENTS.md (proposed for R in docs/parity-proposals.md)"
 
 [functions.package_set_add]
 python = "package_set_add"

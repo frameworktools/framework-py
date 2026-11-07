@@ -7,9 +7,12 @@ user's to edit.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
 
 REGENERATE = "<!-- @framework:regenerate -->"
+PACKAGES_HEADING = "Installed Packages"
 
 SKILL_DESCRIPTIONS = {
     "framework-workflow": "scaffold() initialization, critical rules, creating notebooks/scripts",
@@ -119,11 +122,52 @@ def _environment(spec: dict[str, Any]) -> str:
 def _packages(spec: dict[str, Any]) -> str:
     from framework.create import pyproject_dependencies
 
-    names = [name for name, _ in pyproject_dependencies(spec)]
-    lines = [f"## Installed Packages {REGENERATE}", ""]
+    return packages_section([name for name, _ in pyproject_dependencies(spec)])
+
+
+def packages_section(names: list[str]) -> str:
+    """The Installed Packages section, listing the project's dependencies by name."""
+    lines = [f"## {PACKAGES_HEADING} {REGENERATE}", ""]
     lines += [f"**Dependencies** (in pyproject.toml): {', '.join(names)}", ""]
     lines.append('Add packages with `fw.package_add("name")`.')
     return "\n".join(lines)
+
+
+def context_file(root: Path) -> Path | None:
+    """The project's AI context file: ``ai.canonical_file`` in the settings, else AGENTS.md,
+    else CLAUDE.md for older projects, as R's ``ai_regenerate_context()`` picks it."""
+    from framework.settings import settings_read
+
+    try:
+        ai = settings_read(root / "settings.yml").get("ai")
+        name = ai.get("canonical_file") if isinstance(ai, dict) else None
+    except Exception:
+        name = None
+    for candidate in (name, "AGENTS.md", "CLAUDE.md"):
+        if isinstance(candidate, str) and candidate and (root / candidate).is_file():
+            return root / candidate
+    return None
+
+
+def refresh_packages(root: Path, names: list[str]) -> Path | None:
+    """Rewrite the context file's Installed Packages section with ``names``.
+
+    Only a file with the marked heading changes; the rest of it is kept. Returns the file
+    when it changed.
+    """
+    path = context_file(root)
+    if path is None:
+        return None
+    text = path.read_text(encoding="utf-8")
+    heading = re.escape(f"## {PACKAGES_HEADING} {REGENERATE}")
+    found = re.search(heading + r".*?(?=\n+## |\n*\Z)", text, re.DOTALL)
+    if found is None:
+        return None
+    updated = text[: found.start()] + packages_section(names) + text[found.end() :]
+    if updated == text:
+        return None
+    path.write_text(updated, encoding="utf-8")
+    return path
 
 
 def _data(spec: dict[str, Any]) -> str:

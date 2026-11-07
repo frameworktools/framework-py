@@ -200,3 +200,18 @@ reported. Python: `SettingsWarning`; R: `warning()`, with a session-level memo
 (for example in `.framework_env`) so it shows once.
 
 R today: such keys are silently invisible to `settings()` and `config()`.
+
+## package_add() and package_set_add(): refresh AGENTS.md's package list [B12]
+
+Shared behavior: after a package is added, the canonical AI context file
+(`ai.canonical_file` in the settings, else `AGENTS.md`, else `CLAUDE.md`) has its
+`## Installed Packages <!-- @framework:regenerate -->` section rewritten from the
+project's package list; R from its package settings, as `.generate_packages_section()`
+does, Python from `pyproject.toml`'s `[project] dependencies`. Only that section changes,
+from its heading up to the next `## ` heading or the end of the file. A file without the
+marked heading is left alone, so removing the marker opts out. A file that cannot be read
+or written is skipped quietly; the package is still added. A message names the file when
+it changed (`Updated the package list in AGENTS.md`).
+
+R today: `ai_regenerate_context(sections = "packages")` does this by hand, and is
+deprecated in 2.0; `package_add()` does not call it.

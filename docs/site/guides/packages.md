@@ -47,7 +47,9 @@ The `install=False` argument updates `pyproject.toml` and `uv.lock` without inst
 fw.package_add("pytest", dev=True)
 ```
 
-The terminal command is equivalent.
+`package_add()` and [package_set_add()](ref:package_set_add) also rewrite the **Installed Packages** section of the project's `AGENTS.md` from `pyproject.toml`, so AI assistants see the new package. Only that section changes, and only when it still has its `<!-- @framework:regenerate -->` marker; delete the marker to keep your own text there.
+
+The terminal command adds the package too, but leaves `AGENTS.md` as it is.
 
 ```sh
 uv add statsmodels
