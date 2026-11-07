@@ -168,6 +168,17 @@ def test_read_only_override(db_project: Path) -> None:
 
 
 @pytest.mark.parametrize("name", ["local", "duck"])
+def test_read_only_on_a_missing_file_says_how_to_create_it(db_project: Path, name: str) -> None:
+    if name == "duck":
+        pytest.importorskip("duckdb")
+    with pytest.raises(fw.FrameworkError, match=r"does not exist.*Create it first"):
+        fw.db_connect(name, read_only=True)
+    with pytest.raises(fw.FrameworkError, match=r"does not exist.*db_execute_file"):
+        fw.db_query("SELECT 1", name, read_only=True)
+    assert not list((db_project / "data").iterdir())
+
+
+@pytest.mark.parametrize("name", ["local", "duck"])
 def test_settings_read_only_wins_over_the_call(db_project: Path, name: str) -> None:
     if name == "duck":
         pytest.importorskip("duckdb")

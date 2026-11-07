@@ -369,6 +369,11 @@ a database user without write access instead.`) and `FALSE` changes nothing. A b
 step that writes to a database others read with `read_only: true` uses a second
 connection entry for the same file without `read_only: true`.
 
+Read-only on a missing sqlite or duckdb file (from the settings or the call) is an error
+that says how to create it: `Read-only database does not exist: <path>. Create it first
+with a writable connection (one without read_only): connect to it once, or run its schema
+with db_execute_file().`
+
 #### db_execute_file(conn, path, transaction = TRUE)
 
 - `conn`: an open connection, or a connection name (opened and closed around the call).

@@ -98,7 +98,11 @@ def test_read_only_sqlite(db_project: Path) -> None:
             pass
         with pytest.raises(Exception, match="readonly"):
             conn.cursor().execute("INSERT INTO t VALUES (2)")
-    with pytest.raises(fw.FrameworkError, match="Read-only database does not exist"):
+    with pytest.raises(
+        fw.FrameworkError,
+        match=r"Read-only database does not exist: .*none\.db\. Create it first with a "
+        r"writable connection .*db_execute_file\(\)",
+    ):
         fw.db_connect("missing")
     assert not (db_project / "data/none.db").exists()
 

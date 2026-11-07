@@ -170,15 +170,25 @@ def _writable(path: str) -> str:
     return path
 
 
+def _read_only_file(path: str) -> str:
+    """``path``, after checking that a database to open read-only exists: read-only
+    can't create it."""
+    if not Path(path).is_file():
+        raise FrameworkError(
+            f"Read-only database does not exist: {path}. Create it first with a writable "
+            "connection (one without read_only): connect to it once, or run its schema with "
+            "db_execute_file()."
+        )
+    return path
+
+
 def _connect_sqlite(config: Mapping[str, Any]) -> Any:
     path = _file_path(config, "SQLite")
     if not config.get("read_only"):
         return sqlite3.connect(_writable(path))
     # mode=ro opens the file without write access, so every write fails and a file
     # without write permission opens
-    if not Path(path).is_file():
-        raise FrameworkError(f"Read-only database does not exist: {path}")
-    return sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)
+    return sqlite3.connect(f"{Path(_read_only_file(path)).resolve().as_uri()}?mode=ro", uri=True)
 
 
 def _connect_postgres(config: Mapping[str, Any]) -> Any:
@@ -224,7 +234,9 @@ def _connect_duckdb(config: Mapping[str, Any]) -> Any:
     path = _file_path(config, "DuckDB")
     # A read-only database needs no write permission
     return duckdb.connect(
-        path if read_only else _writable(path), read_only=read_only, config=options
+        _read_only_file(path) if read_only else _writable(path),
+        read_only=read_only,
+        config=options,
     )
 
 
