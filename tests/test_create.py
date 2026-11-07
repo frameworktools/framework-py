@@ -266,6 +266,31 @@ def test_new_with_an_empty_assistant_list_keeps_claude(tmp_path: Path) -> None:
     assert spec["ai"]["assistants"] == {"claude": True}
 
 
+def test_global_hooks_only_turn_checks_on(tmp_path: Path) -> None:
+    # As in R 2.0.1: data_security: false in the global settings, from the shipped
+    # defaults, must not turn off the hooks a sensitive project starts with
+    config = fw.config_dir()
+    config.mkdir(parents=True)
+    (config / "settings.yml").write_text(
+        "defaults:\n"
+        "  git:\n"
+        "    initialize: false\n"
+        "    hooks: {data_security: false, check_notebook_outputs: true}\n",
+        encoding="utf-8",
+    )
+    root = fw.new("Private", tmp_path / "private", "project_sensitive", interactive=False)
+    spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
+    assert spec["git"]["hooks"] == {
+        "data_security": True,
+        "check_sensitive_dirs": True,
+        "check_notebook_outputs": True,
+    }
+    root = fw.new("Open", tmp_path / "open", "project", interactive=False)
+    spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
+    assert spec["git"]["hooks"].get("data_security") is not True
+    assert spec["git"]["hooks"]["check_notebook_outputs"] is True
+
+
 def test_new_applies_the_user_settings_catalog(tmp_path: Path) -> None:
     config = fw.config_dir()
     config.mkdir(parents=True)

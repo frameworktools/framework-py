@@ -602,11 +602,16 @@ def _defaults_layer(settings: Mapping[str, Any], type: str) -> dict[str, Any]:
             layer["ai"]["assistants"] = assistants
     git = defaults.get("git")
     if isinstance(git, dict):
-        layer["git"] = {
-            k: v
-            for k, v in (("use_git", git.get("initialize")), ("hooks", git.get("hooks")))
-            if v is not None
-        }
+        layer["git"] = {} if git.get("initialize") is None else {"use_git": git["initialize"]}
+        # As in R, the user's hooks only turn checks on. Global settings hold
+        # data_security: false from the shipped defaults for every type, which would
+        # otherwise turn off the checks a privacy-sensitive project starts with; the
+        # package defaults already have every other check off.
+        hooks = git.get("hooks")
+        if isinstance(hooks, dict):
+            enabled = {name: True for name, value in hooks.items() if value is True}
+            if enabled:
+                layer["git"]["hooks"] = enabled
     types = settings.get("project_types")
     type_config = types.get(type) if isinstance(types, dict) else None
     if isinstance(type_config, dict) and isinstance(type_config.get("directories"), dict):
