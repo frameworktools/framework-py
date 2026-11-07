@@ -216,6 +216,6 @@ config["connections"]
 
 ## Writing settings
 
-The settings files are plain YAML, and editing them by hand is the usual way to change them. Framework's own functions update the parts they manage: `data_add()` and `data_save()` write catalog entries, and the `git_hooks_*()` functions write the `hooks` section.
+The settings files are plain YAML, and editing them by hand is the usual way to change them. Framework's own functions update the parts they manage: `data_add()` and `data_save()` write catalog entries, the `git_hooks_*()` functions write the `hooks` section, and `project_add_directory()` writes `extra_directories`. They edit the file in place, so its comments and the rest of its layout are kept, sequences stay sequences, and booleans are written `true` and `false` (a `yes` or `no` elsewhere in the file is rewritten as `true` or `false`, which means the same).
 
-[settings_write()](ref:settings_write) replaces the whole settings file with a dictionary, wrapped in a `default:` section when the dictionary has none. Comments in a rewritten file are not kept.
+[settings_write()](ref:settings_write) with `section=` replaces one section in the same way. Without `section`, it replaces the whole settings file with a dictionary, wrapped in a `default:` section when the dictionary has none, and the file's comments go with it.

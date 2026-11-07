@@ -123,6 +123,20 @@ def modify_list(base: Any, update: Any) -> Any:
     return result
 
 
+def _modify_in_place(base: dict[str, Any], update: Mapping[str, Any]) -> dict[str, Any]:
+    """``modify_list()`` that changes ``base`` itself, so a file read for editing keeps
+    the comments on the entries it does not replace."""
+    for key, value in update.items():
+        current = base.get(key)
+        if key in base and isinstance(current, dict) and isinstance(value, dict):
+            _modify_in_place(current, value)
+        elif key in base and _is_r_list(current) and _is_r_list(value):
+            base[key] = modify_list(current, value)
+        else:
+            _r_assign(base, key, value)
+    return base
+
+
 def merge_env(base: Any, override: Any) -> Any:
     """Merge an environment section over ``default``, as R's ``.fw_merge_env()`` does.
 
@@ -498,7 +512,8 @@ def settings_write(
     (``{"git": {...}}``) or leave it out. Without ``section``, the
     whole file is replaced, wrapped in a ``default:`` environment.
 
-    Comments in a rewritten file are not kept.
+    Writing a section keeps the file's comments and the rest of its layout, except in
+    the section replaced. Writing the whole file replaces it, comments included.
 
     Args:
         values: The settings to write. Without ``section``, a mapping without a ``default``
@@ -533,24 +548,37 @@ def settings_write(
         )
     current = _yaml.read(path) or {}
     if _has_environment_sections(current):
-        environment = active_environment()
-        env_config = current.setdefault(environment, {})
-        if env_config is None:
-            env_config = current[environment] = {}
+        environment: str | None = active_environment()
+        env_config = current.get(environment)
     else:
         # A flat file has no environments: its sections are at the top level.
+        environment = None
         env_config = current
+    reference = env_config.get(section) if isinstance(env_config, dict) else None
 
-    reference = env_config.get(section)
     if isinstance(reference, str) and reference.startswith("settings/"):
         split_path = path.parent / reference
         if not split_path.is_file():
             raise SettingsError(f"Split file '{reference}' does not exist")
-        split = _yaml.read(split_path) or {}
-        if split and section not in split:
-            # An older split file without the section key: wrap it, as R does.
-            split = {section: split}
-        _yaml.write(split_path, modify_list(split, _split_values(section, values)))
-    else:
-        env_config[section] = dict(values)
-        _yaml.write(path, current)
+
+        def merge_split(split: Any) -> Any:
+            split = split if isinstance(split, dict) else {}
+            if split and section not in split:
+                # An older split file without the section key: wrap it, as R does.
+                split = {section: split}
+            return _modify_in_place(split, _split_values(section, values))
+
+        _yaml.update(split_path, merge_split)
+        return
+
+    def replace_section(raw: Any) -> Any:
+        raw = raw if isinstance(raw, dict) else {}
+        target = raw
+        if environment is not None:
+            if not isinstance(raw.get(environment), dict):
+                raw[environment] = {}
+            target = raw[environment]
+        target[section] = dict(values)
+        return raw
+
+    _yaml.update(path, replace_section)

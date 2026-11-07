@@ -280,3 +280,95 @@ def test_shell_values_win_over_the_project_env(project: Path) -> None:
     assert fw.settings("url") == "from-file"
     os.environ["FW_TEST_VALUE"] = "from-shell"
     assert fw.settings("url") == "from-shell"
+
+
+# Writers keep comments --------------------------------------------------------------
+
+
+COMMENTED = """\
+# Project settings
+default:
+  project_name: Kept  # the name
+  # Folders
+  directories:
+    inputs_raw: inputs/raw
+  tags:
+  - alpha  # first
+  - beta
+  flags: {on_word: yes, short: n}
+  git:
+    hooks:
+      data_security: false  # off for now
+  data:
+    # The catalog
+    inputs:
+      raw:
+        old: {path: inputs/raw/old.csv, type: csv}
+"""
+
+
+def _assert_kept(text: str) -> None:
+    for comment in (
+        "# Project settings",
+        "# the name",
+        "# Folders",
+        "# first",
+        "# off for now",
+        "# The catalog",
+    ):
+        assert comment in text
+    assert "  tags:\n  - alpha  # first\n  - beta\n" in text
+
+
+def test_settings_writers_keep_comments_sequences_and_booleans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Shared with R: writing settings must not be lossy
+    settings = tmp_path / "settings.yml"
+    settings.write_text(COMMENTED, encoding="utf-8")
+    (tmp_path / "inputs/raw").mkdir(parents=True)
+    (tmp_path / "inputs/raw/new.csv").write_text("x\n1\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    before = _yaml.read(settings)["default"]
+
+    fw.settings_write({"inputs_raw": "inputs/raw", "outputs": "outputs"}, section="directories")
+    fw.git_hooks_enable("check_notebook_outputs", verbose=False)
+    fw.data_add("inputs/raw/new.csv")
+    fw.project_add_directory(tmp_path, "interviews", "Interviews", "inputs/interviews")
+
+    text = settings.read_text(encoding="utf-8")
+    _assert_kept(text)
+    assert "check_notebook_outputs: true" in text
+    after = _yaml.read(settings)["default"]
+    assert after["tags"] == ["alpha", "beta"]
+    assert after["flags"] == before["flags"] == {"on_word": True, "short": False}
+    assert after["git"]["hooks"] == {"data_security": False, "check_notebook_outputs": True}
+    assert after["directories"] == {"inputs_raw": "inputs/raw", "outputs": "outputs"}
+    assert set(after["data"]["inputs"]["raw"]) == {"old", "new"}
+    assert after["extra_directories"][0]["key"] == "interviews"
+
+
+def test_split_settings_writers_keep_comments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "settings").mkdir()
+    (tmp_path / "settings.yml").write_text(
+        "default:\n  project_name: Split\n  git: settings/git.yml\n  data: settings/data.yml\n",
+        encoding="utf-8",
+    )
+    git = tmp_path / "settings/git.yml"
+    git.write_text("# Git\ngit:\n  hooks:\n    data_security: false  # later\n", "utf-8")
+    data = tmp_path / "settings/data.yml"
+    data.write_text("# Catalog\ndata:\n  inputs:\n    raw: {}  # empty\n", "utf-8")
+    (tmp_path / "inputs/raw").mkdir(parents=True)
+    (tmp_path / "inputs/raw/x.csv").write_text("x\n1\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    fw.git_hooks_enable("data_security", verbose=False)
+    fw.settings_write({"user_name": "Ada"}, section="git")
+    fw.data_add("inputs/raw/x.csv", name="inputs.raw.x")
+
+    assert git.read_text("utf-8").startswith("# Git\n") and "# later" in git.read_text("utf-8")
+    assert _yaml.read(git) == {"git": {"hooks": {"data_security": True}, "user_name": "Ada"}}
+    assert data.read_text("utf-8").startswith("# Catalog\n")
+    assert _yaml.read(data)["data"]["inputs"]["raw"]["x"]["path"] == "inputs/raw/x.csv"

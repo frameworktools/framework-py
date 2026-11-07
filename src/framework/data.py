@@ -486,30 +486,23 @@ def _derive_name(file_path: Path, config: dict[str, Any], root: Path) -> str:
 
 
 def _catalog_set(name: str, entry: dict[str, Any]) -> None:
-    """Write one catalog entry into settings.yml or the split file that holds ``data``."""
+    """Write one catalog entry into settings.yml or the split file that holds ``data``.
+
+    The file is edited in place, so its comments and other entries keep their form.
+    """
     settings_file = find_settings_file()
     if settings_file is None:
         raise SettingsError("Configuration file 'settings.yml' (or legacy config.yml) not found")
     raw = _yaml.read(settings_file) or {}
-    environment = "default" if isinstance(raw.get("default"), dict) else None
-    config = raw[environment] if environment else raw
-    source = config.get("data")
+    config = raw["default"] if isinstance(raw.get("default"), dict) else raw
+    source = config.get("data") if isinstance(config, dict) else None
 
-    if isinstance(source, str):
-        split_path = in_root(source, settings_file.parent)
-        content = _yaml.read(split_path) if split_path.is_file() else None
-        current = content.get("data", content) if isinstance(content, dict) else None
-    else:
-        split_path = None
-        current = source
-    if not isinstance(current, dict):
-        current = {}
-
-    # An entry already written with dotted keys is updated where it is.
-    existing = catalog_locate(name, current)
-    if existing is not None:
-        existing[0][existing[1]] = entry
-    else:
+    def set_entry(current: dict[str, Any]) -> None:
+        # An entry already written with dotted keys is updated where it is.
+        existing = catalog_locate(name, current)
+        if existing is not None:
+            existing[0][existing[1]] = entry
+            return
         node = current
         parts = name.split(".")
         for part in parts[:-1]:
@@ -518,11 +511,33 @@ def _catalog_set(name: str, entry: dict[str, Any]) -> None:
             node = node[part]
         node[parts[-1]] = entry
 
-    if split_path is not None:
-        _yaml.write(split_path, {"data": current})
-    else:
-        config["data"] = current
-        _yaml.write(settings_file, raw)
+    if isinstance(source, str):
+
+        def in_split(content: Any) -> Any:
+            content = content if isinstance(content, dict) else {}
+            if isinstance(content.get("data"), dict):
+                set_entry(content["data"])
+                return content
+            if "data" in content or not content:
+                content["data"] = {}
+                set_entry(content["data"])
+                return content
+            # A split file without the data key holds the catalog itself
+            set_entry(content)
+            return {"data": content}
+
+        _yaml.update(in_root(source, settings_file.parent), in_split)
+        return
+
+    def in_settings(raw: Any) -> Any:
+        raw = raw if isinstance(raw, dict) else {}
+        config = raw["default"] if isinstance(raw.get("default"), dict) else raw
+        if not isinstance(config.get("data"), dict):
+            config["data"] = {}
+        set_entry(config["data"])
+        return raw
+
+    _yaml.update(settings_file, in_settings)
 
 
 def data_add(

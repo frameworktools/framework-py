@@ -1046,12 +1046,20 @@ def project_add_directory(project_path: str | Path, key: str, label: str, path: 
     folder = root / path
     folder.mkdir(parents=True, exist_ok=True)
 
-    raw = _yaml.read(settings_file) or {}
-    config = raw["default"] if isinstance(raw.get("default"), dict) else raw
-    extra = [e for e in (config.get("extra_directories") or []) if e.get("key") != key]
-    extra.append({"key": key, "label": label, "path": path})
-    config["extra_directories"] = extra
-    _yaml.write(settings_file, raw)
+    def add(raw: Any) -> Any:
+        raw = raw if isinstance(raw, dict) else {}
+        config = raw["default"] if isinstance(raw.get("default"), dict) else raw
+        extra = config.get("extra_directories")
+        if not isinstance(extra, list):
+            extra = config["extra_directories"] = []
+        # Edited in place, so the file keeps its comments
+        for index in reversed(range(len(extra))):
+            if isinstance(extra[index], dict) and extra[index].get("key") == key:
+                del extra[index]
+        extra.append({"key": key, "label": label, "path": path})
+        return raw
+
+    _yaml.update(settings_file, add)
     return folder
 
 

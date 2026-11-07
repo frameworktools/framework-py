@@ -27,6 +27,7 @@ import subprocess
 import sys
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -80,27 +81,39 @@ def _hook_settings(path: Path) -> dict[str, bool]:
 
 
 def _set_hook_setting(path: Path, name: str, value: bool) -> None:
-    """Set ``git: hooks: <name>`` in the settings file, or in its split git file."""
+    """Set ``git: hooks: <name>`` in the settings file, or in its split git file.
+
+    The file is edited in place, so its comments are kept.
+    """
     raw = _yaml.read(path) or {}
-    env = raw.setdefault("default", {}) if _has_environment_sections(raw) else raw
-    if env is None:
-        env = raw["default"] = {}
-    reference = env.get("git")
+    env = raw.get("default") if _has_environment_sections(raw) else raw
+    reference = env.get("git") if isinstance(env, dict) else None
     if isinstance(reference, str) and reference.startswith("settings/"):
-        split_path = path.parent / reference
-        split = (_yaml.read(split_path) if split_path.is_file() else None) or {}
-        git = split.setdefault("git", {}) if "git" in split or not split else split
-        git.setdefault("hooks", {})[name] = value
-        _yaml.write(split_path, split)
+
+        def set_in_split(split: Any) -> Any:
+            split = split if isinstance(split, dict) else {}
+            git = _mapping(split, "git") if "git" in split or not split else split
+            _mapping(git, "hooks")[name] = value
+            return split
+
+        _yaml.update(path.parent / reference, set_in_split)
         return
-    git = env.get("git") if isinstance(env.get("git"), dict) else None
-    if git is None:
-        git = env["git"] = {}
-    hooks = git.get("hooks") if isinstance(git.get("hooks"), dict) else None
-    if hooks is None:
-        hooks = git["hooks"] = {}
-    hooks[name] = value
-    _yaml.write(path, raw)
+
+    def set_in_settings(raw: Any) -> Any:
+        raw = raw if isinstance(raw, dict) else {}
+        env = _mapping(raw, "default") if _has_environment_sections(raw) else raw
+        _mapping(_mapping(env, "git"), "hooks")[name] = value
+        return raw
+
+    _yaml.update(path, set_in_settings)
+
+
+def _mapping(parent: dict[str, Any], key: str) -> dict[str, Any]:
+    """``parent[key]``, made an empty mapping when it is missing or not a mapping."""
+    if not isinstance(parent.get(key), dict):
+        parent[key] = {}
+    child: dict[str, Any] = parent[key]
+    return child
 
 
 def _hook_name(name: str) -> str:
