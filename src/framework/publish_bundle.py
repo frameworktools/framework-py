@@ -19,6 +19,41 @@ from urllib.parse import quote
 from framework.errors import FrameworkError, FrameworkWarning
 
 
+def doc_title(path: str | Path) -> str | None:
+    """The ``title`` in a Quarto document's YAML front matter, or None.
+
+    A ``.qmd`` or ``.Rmd`` file's front matter opens the file. A Jupyter notebook's sits
+    in its first cell, a raw cell, as Quarto reads it. Publishing uses the title in place
+    of the file name, as R does.
+    """
+    import yaml
+
+    source = Path(path)
+    suffix = source.suffix.lower()
+    if not source.is_file() or suffix not in (".qmd", ".rmd", ".ipynb"):
+        return None
+    try:
+        text = source.read_text(encoding="utf-8")
+        if suffix == ".ipynb":
+            cells = json.loads(text).get("cells") or []
+            first = cells[0] if cells else {}
+            if first.get("cell_type") != "raw":
+                return None
+            body = first.get("source", "")
+            text = "".join(body) if isinstance(body, list) else str(body)
+    except (OSError, UnicodeError, ValueError, AttributeError):
+        return None
+    match = re.match(r"\A\s*---[ \t]*\r?\n(.*?)\r?\n(?:---|\.\.\.)[ \t]*(\r?\n|\Z)", text, re.S)
+    if match is None:
+        return None
+    try:
+        front = yaml.safe_load(match.group(1))
+    except yaml.YAMLError:
+        return None
+    title = front.get("title") if isinstance(front, dict) else None
+    return title.strip() if isinstance(title, str) and title.strip() else None
+
+
 def artifact_slug(value: str) -> str:
     """Lowercase a name and replace each non-alphanumeric run with a hyphen."""
     result = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
@@ -224,7 +259,7 @@ def build_bundle(
     manifest: dict[str, Any] = {
         "schema": "framework.bundle/v1",
         "slug": artifact_slug(slug or name),
-        "title": title or name,
+        "title": title or (doc_title(source) if isinstance(source, (str, Path)) else None) or name,
         "description": description,
         "kind": kind,
         "entrypoint": "index.html",
@@ -409,7 +444,18 @@ def publish_external(
                 bundle, selected, visibility or selected.options.get("visibility"), connection
             )
         track_external(manifest, receipt, bundle, visibility or selected.options.get("visibility"))
+        if selected.driver != "github":  # The GitHub adapter reports its own URL
+            _report(receipt)
         return str(receipt["url"] or receipt["location"])
+
+
+def _report(receipt: dict[str, Any]) -> None:
+    """Say where a bundle went, as the other publishing paths do."""
+    from framework._log import inform
+
+    inform(f"Published version {receipt['version']}: {receipt['location']}")
+    if receipt.get("url"):
+        inform(f"  URL: {receipt['url']}")
 
 
 def _github_receipt(bundle: Path) -> dict[str, Any]:

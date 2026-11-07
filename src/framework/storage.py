@@ -38,6 +38,7 @@ from framework._log import inform
 from framework._paths import rendered_page
 from framework._private import confirm_private_upload, include_private_arg
 from framework.errors import FrameworkError
+from framework.publish_bundle import doc_title
 from framework.settings import settings_read
 
 _CONTENT_TYPES = {
@@ -498,7 +499,7 @@ def _publish_legacy(
             self_contained=self_contained,
             slug=slug,
             include_private=True,
-            title=title,
+            title=title or doc_title(path),
             description=description,
             kind=kind,
             password=password,
@@ -726,6 +727,8 @@ def publish_notebook(
     allow_private: bool | None = None,
     collection: str | int | None = None,
     share_unlisted: bool = False,
+    title: str | None = None,
+    description: str | None = None,
 ) -> str:
     """Render a Quarto notebook with the ``quarto`` command and upload the result.
 
@@ -762,6 +765,9 @@ def publish_notebook(
         collection: Existing project collection ID or slug on Framework Cloud.
         share_unlisted: Explicitly allow collection readers to access an unlisted artifact.
         allow_private: Deprecated name for ``include_private``.
+        title: The published title, on Framework Cloud and named destinations. Default: the
+            ``title`` in the document's YAML front matter, else its file name.
+        description: A short description, on Framework Cloud and named destinations.
 
     Returns:
         The public URL.
@@ -791,6 +797,8 @@ def publish_notebook(
             allow_private=allow_private,
             collection=collection,
             share_unlisted=share_unlisted,
+            title=title,
+            description=description,
         )
         assert isinstance(published, str)
         return published
@@ -805,6 +813,8 @@ def publish_notebook(
     if to == "github":
         if format != "html":
             raise FrameworkError(f'GitHub Pages publishes HTML only (got format="{format}").')
+        if title is not None or description is not None:
+            raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
         return _publish_github(to, source, dest, connection, slug, self_contained)
     quarto = shutil.which("quarto")
     if quarto is None:
@@ -824,9 +834,13 @@ def publish_notebook(
             include_private=True,
             collection=collection,
             share_unlisted=share_unlisted,
+            title=title or doc_title(source),
+            description=description,
         )
     if collection is not None:
         raise FrameworkError("Collections require publishing to Framework Cloud.")
+    if title is not None or description is not None:
+        raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
     _slug_ignored(slug)
     bucket = resolve_bucket(connection)
     self_contained = self_contained or not bucket.static_hosting

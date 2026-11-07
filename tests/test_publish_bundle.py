@@ -466,3 +466,55 @@ def test_relative_folder_path_starts_at_the_project_root(
     fw.publish(pd.DataFrame({"x": [1, 2]}), slug="from-notebook")
     assert (project / "published" / "from-notebook" / "artifact.json").is_file()
     assert not (notebooks / "published").exists()
+
+
+def test_doc_title_reads_front_matter(tmp_path: Path) -> None:
+    from framework.publish_bundle import doc_title
+
+    qmd = tmp_path / "a.qmd"
+    qmd.write_text('---\ntitle: "Blood pressure"\nformat: html\n---\n\nText\n', encoding="utf-8")
+    assert doc_title(qmd) == "Blood pressure"
+    notebook = tmp_path / "b.ipynb"
+    notebook.write_text(
+        json.dumps(
+            {"cells": [{"cell_type": "raw", "source": ["---\n", "title: From raw\n", "---"]}]}
+        ),
+        encoding="utf-8",
+    )
+    assert doc_title(notebook) == "From raw"
+    (tmp_path / "c.qmd").write_text("# No front matter\n", encoding="utf-8")
+    assert doc_title(tmp_path / "c.qmd") is None
+    assert doc_title(tmp_path / "missing.qmd") is None
+
+
+def test_publish_notebook_to_a_folder_takes_the_yaml_title(
+    project: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import subprocess
+
+    from framework import _pages
+
+    (project / "settings.yml").write_text(
+        "default:\n  project_name: Test\n  publish:\n    default: local\n    destinations:\n"
+        "      local: {driver: folder, path: published, visibility: public}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("framework.cloud.project_token", lambda: None)
+
+    def render(command: list[str], **kwargs: Any) -> Any:
+        out = Path(command[command.index("--output-dir") + 1])
+        (out / "report.html").write_text("<p>rendered</p>", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(_pages.shutil, "which", lambda name: "/usr/bin/quarto")
+    monkeypatch.setattr(_pages.subprocess, "run", render)
+    notebook = project / "report.qmd"
+    notebook.write_text("---\ntitle: Weekly report\n---\n", encoding="utf-8")
+    caplog.set_level("INFO", logger="framework")
+    location = fw.publish_notebook(notebook)
+    manifest = json.loads((project / "published/report/artifact.json").read_text())
+    assert manifest["title"] == "Weekly report"
+    assert "Published version 1:" in caplog.text and location in caplog.text
+    fw.publish_notebook(notebook, title="Override", description="Short")
+    manifest = json.loads((project / "published/report/artifact.json").read_text())
+    assert (manifest["title"], manifest["description"]) == ("Override", "Short")

@@ -108,6 +108,8 @@ fw.publish_notebook("notebooks/exploration.qmd", dest="reports/2026-q4")
 fw.publish_notebook("notebooks/exploration.qmd", connection="minio")
 ```
 
+On Framework Cloud and named destinations, the published title is the `title` in the document's YAML front matter (the first raw cell of a Jupyter notebook), else the file name. Pass `title` and `description` to set them. [publish()](ref:publish) uses the same default for a `.qmd` or `.ipynb` file.
+
 Without static hosting, the notebook is uploaded as one self-contained file, `<dest>.html`. With `static_hosting: true`, it is uploaded as `<dest>/index.html`, and the returned URL ends in `/`.
 
 ```text
@@ -338,7 +340,8 @@ fw.publish(model, to="pages", slug="adjusted-model")
 ```
 
 A folder `path` may start with `~`. A relative path starts at the project root, even
-when a notebook runs from `notebooks/`.
+when a notebook runs from `notebooks/`. Publishing to a folder or a named S3 destination
+prints the version and where it went.
 
 Folder, GitHub, and named S3 destinations receive portable bundles. Each bundle
 contains `artifact.json`, an offline `index.html`, the original export, and typed
