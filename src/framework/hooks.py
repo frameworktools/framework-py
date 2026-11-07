@@ -124,15 +124,43 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def outer_repository(root: Path) -> Path | None:
+    """The top of the git repository holding ``root``, when that is a folder above it.
+
+    A project inside another project's repository has no hooks of its own: git runs the
+    outer repository's hooks, from the outer repository's top folder.
+    """
+    if shutil.which("git") is None:
+        return None
+    result = _git(root, "rev-parse", "--show-toplevel")
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    top = Path(result.stdout.strip()).resolve()
+    return None if top == root.resolve() else top
+
+
 def _hook_path(root: Path) -> Path | None:
-    """Where git looks for the pre-commit hook, or None outside a repository."""
+    """Where git looks for the project's pre-commit hook.
+
+    None outside a repository, or when the project sits inside a repository whose top is
+    a folder above it.
+    """
     if shutil.which("git") is None:
         return None
     result = _git(root, "rev-parse", "--git-path", "hooks/pre-commit")
-    if result.returncode != 0:
+    if result.returncode != 0 or outer_repository(root) is not None:
         return None
     path = Path(result.stdout.strip())
     return path if path.is_absolute() else root / path
+
+
+def _nested_error(root: Path, top: Path) -> FrameworkError:
+    return FrameworkError(
+        f"The project at {root} is inside the git repository at {top}, so its hooks would "
+        "be that repository's hooks and run from its top folder. Framework installs hooks "
+        "only for a project at the top of its own repository. Run git init in the project "
+        "to give it one."
+    )
 
 
 def _is_framework_hook(path: Path) -> bool:
@@ -165,10 +193,15 @@ def git_hooks_install(
         enabled, or when another hook is kept.
 
     Raises:
-        FrameworkError: When the settings file is not found.
+        FrameworkError: When the settings file is not found, or the project is inside a git
+            repository whose top is a folder above it. The hook would land in that
+            repository and run from its top folder, so install nothing there.
     """
     path = _settings_path(settings_file)
     root = path.parent
+    top = outer_repository(root)
+    if top is not None:
+        raise _nested_error(root, top)
     hook = _hook_path(root)
     if hook is None:
         _say(verbose, "✗ Not a git repository")
@@ -205,6 +238,10 @@ def git_hooks_uninstall(settings_file: str | Path | None = None, *, verbose: boo
         Whether a hook was removed.
     """
     root = _settings_path(settings_file).parent if settings_file else _root_or_cwd()
+    top = outer_repository(root)
+    if top is not None:
+        _say(verbose, f"No pre-commit hook of this project: it is inside the repository at {top}")
+        return False
     hook = _hook_path(root)
     if hook is None or not hook.exists():
         _say(verbose, "No pre-commit hook found")

@@ -271,3 +271,22 @@ def test_sensitive_folders_ignored_by_content_rules_are_covered(
         ".env\nscratch/*\nprivate/\noutputs/cache/**\nnotes/\n", encoding="utf-8"
     )
     assert hook_run("pre-commit") == 0
+
+
+def test_nested_project_refuses_the_outer_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    os.environ.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    outer = tmp_path / "outer"
+    project = outer / "python" / "inner"
+    project.mkdir(parents=True)
+    git(outer, "init", "-q")
+    (project / "settings.yml").write_text(
+        "default:\n  git:\n    hooks:\n      data_security: true\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(project)
+    with pytest.raises(fw.FrameworkError, match="inside the git repository at"):
+        fw.git_hooks_install()
+    assert not (outer / ".git/hooks/pre-commit").exists()
+    assert not fw.git_hooks_list().attrs["installed"]
+    assert not fw.git_hooks_uninstall()

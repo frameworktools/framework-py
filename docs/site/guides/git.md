@@ -84,6 +84,8 @@ fw.git_hooks_disable("data_security")
 
 A pre-commit hook that Framework did not write is kept. `git_hooks_install(force=True)` replaces it. A hook written by R or by an earlier version of Framework is replaced without `force`.
 
+The hook belongs to a project at the top of its own repository. A project inside another repository, such as a folder of example projects, would get the outer repository's hook, which runs from the outer top folder. `git_hooks_install()` refuses that with an error: run `git init` in the project first. [status()](ref:status) still reports the outer repository there, with commit and change counts for the project's folder only.
+
 [bootstrap()](ref:bootstrap) installs the hook in a cloned project when a check is enabled, because git does not carry hooks with a clone.
 
 ## The security audit

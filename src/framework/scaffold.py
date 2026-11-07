@@ -267,9 +267,17 @@ def status() -> None:
     elif _git("-C", str(root), "rev-parse", "HEAD") is None:
         lines.append("  No commits yet")
     else:
+        from framework.hooks import outer_repository
+
+        # A project inside another repository reports only its own folder's history
+        # and changes, and says whose repository it is.
+        top = outer_repository(root)
+        scope = ["--", "."] if top is not None else []
+        if top is not None:
+            lines.append(f"  Inside the repository at {top} (counts are for this project)")
         lines.append(f"  Branch: {_git('-C', str(root), 'branch', '--show-current')}")
-        lines.append(f"  Commits: {_git('-C', str(root), 'rev-list', '--count', 'HEAD')}")
-        changes = (_git("-C", str(root), "status", "--porcelain") or "").splitlines()
+        lines.append(f"  Commits: {_git('-C', str(root), 'rev-list', '--count', 'HEAD', *scope)}")
+        changes = (_git("-C", str(root), "status", "--porcelain", "--", ".") or "").splitlines()
         lines.append(
             f"  Uncommitted changes: {len(changes)}" if changes else "  Working tree clean"
         )

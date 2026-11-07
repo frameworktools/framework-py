@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import random
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -93,6 +95,33 @@ def test_status(r_project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert "Type: project" in output
     assert "AGENTS.md, CLAUDE.md" in output
     assert "ok inputs_raw -> inputs/raw" in output
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+def test_status_of_a_project_inside_another_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    os.environ.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    outer = tmp_path / "outer"
+    project = outer / "inner"
+    project.mkdir(parents=True)
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(outer), *args], check=True, capture_output=True)
+
+    git("init", "-q")
+    (outer / "other.txt").write_text("x\n", encoding="utf-8")
+    git("add", "other.txt")
+    git("-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "-m", "one")
+    (outer / "unrelated.txt").write_text("x\n", encoding="utf-8")
+    (project / "settings.yml").write_text("default:\n  project_name: Inner\n", encoding="utf-8")
+    monkeypatch.chdir(project)
+    fw.status()
+    output = capsys.readouterr().out
+    assert f"Inside the repository at {outer.resolve()}" in output
+    assert "Commits: 0" in output
+    # settings.yml is the project's one change; unrelated.txt is outside it
+    assert "Uncommitted changes: 1" in output
 
 
 def test_project_info(r_project: Path) -> None:
