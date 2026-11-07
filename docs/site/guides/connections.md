@@ -122,13 +122,20 @@ The driver's object is available as `conn.raw` for features outside the DB-API.
 
 ### Read-only for one call
 
-`read_only=` on [db_connect()](ref:db_connect) and [db_query()](ref:db_query) overrides a SQLite or DuckDB connection's `read_only` setting for that call. A database that notebooks share read-only (`read_only: true`) can be rebuilt by a job that opens it writable, with no second connection entry and no copy of its path:
+`read_only=True` on [db_connect()](ref:db_connect) and [db_query()](ref:db_query) opens a SQLite or DuckDB connection read-only for that call, whatever its setting. A call can add read-only but never remove it: `read_only=False` on a connection with `read_only: true` in its settings raises an error, so the settings decide what may write. A job that rebuilds a database that notebooks share read-only gets its own connection entry for the same file:
+
+```yaml
+connections:
+  databases:
+    vizient: {driver: duckdb, database: data/vizient.duckdb, read_only: true}
+    vizient_build: {driver: duckdb, database: data/vizient.duckdb}
+```
 
 ```python
-with fw.db_connect("vizient", read_only=False) as conn:
+with fw.db_connect("vizient_build") as conn:
     fw.db_execute_file(conn, "sql/build.sql")
 
-fw.db_query("SELECT count(*) AS n FROM encounters", "vizient", read_only=True)
+fw.db_query("SELECT count(*) AS n FROM encounters", "vizient")
 ```
 
 Server databases control writes with the database user's permissions, so `read_only=True` on a PostgreSQL, MySQL, or SQL Server connection is an error, and `read_only=False` changes nothing. A DuckDB file opened read-only can be open in several processes at once; one opened writable locks it until the connection closes.

@@ -109,7 +109,7 @@ def test_execute_file_errors(db_project: Path) -> None:
     (db_project / "sql/x.sql").write_text("DELETE FROM t;", encoding="utf-8")
     with (
         fw.db_connect("local", read_only=True) as conn,
-        pytest.raises(fw.FrameworkError, match=r"read-only.*read_only=False"),
+        pytest.raises(fw.FrameworkError, match=r"'local' is read-only.*needs a writable"),
     ):
         fw.db_execute_file(conn, "sql/x.sql")
 
@@ -157,15 +157,48 @@ def test_copy_from_loads_nothing_on_failure(
 def test_read_only_override(db_project: Path) -> None:
     pytest.importorskip("duckdb")
     fw.db_execute("CREATE TABLE t (a INTEGER)", "duck")
-    # "shared" is read_only: true in the settings; a build step opens it writable
-    with pytest.raises(fw.FrameworkError, match="read-only"):
-        fw.db_execute("INSERT INTO t VALUES (1)", "shared")
-    with fw.db_connect("shared", read_only=False) as conn:
-        assert not conn.read_only
-        conn.cursor().execute("INSERT INTO t VALUES (1)")
+    fw.db_execute("INSERT INTO t VALUES (1)", "duck")
     assert fw.db_query("SELECT a FROM t", "shared")["a"].tolist() == [1]
+    assert fw.db_query("SELECT a FROM t", "shared", read_only=True)["a"].tolist() == [1]
     assert fw.db_query("SELECT a FROM t", "duck", read_only=True)["a"].tolist() == [1]
     with fw.db_connect("duck", read_only=True) as conn:
         assert conn.read_only
     with pytest.raises(fw.FrameworkError, match="read_only=True applies to sqlite and duckdb"):
         fw.db_connect("warehouse", read_only=True)
+
+
+@pytest.mark.parametrize("name", ["local", "duck"])
+def test_settings_read_only_wins_over_the_call(db_project: Path, name: str) -> None:
+    if name == "duck":
+        pytest.importorskip("duckdb")
+    fw.db_execute("CREATE TABLE t (a INTEGER)", name)
+    driver = "sqlite" if name == "local" else "duckdb"
+    suffix = "db" if name == "local" else "duckdb"
+    (db_project / "settings.yml").write_text(
+        "default:\n  connections:\n    databases:\n"
+        f"      ro: {{driver: {driver}, database: data/local.{suffix}, read_only: true}}\n",
+        encoding="utf-8",
+    )
+    (db_project / "sql/x.sql").write_text("INSERT INTO t VALUES (2);", encoding="utf-8")
+    (db_project / "data/t.csv").write_text("a\n3\n", encoding="utf-8")
+    refused = r"'ro' is read-only in its settings; read_only=False can't override that"
+    with pytest.raises(fw.FrameworkError, match=refused):
+        fw.db_connect("ro", read_only=False)
+    with pytest.raises(fw.FrameworkError, match=refused):
+        fw.db_query("SELECT a FROM t", "ro", read_only=False)
+    with pytest.raises(fw.FrameworkError, match="'ro' is read-only"):
+        fw.db_execute("INSERT INTO t VALUES (1)", "ro")
+    with (
+        fw.db_connect("ro") as conn,
+        pytest.raises(fw.FrameworkError, match="'ro' is read-only"),
+        fw.db_transaction(conn),
+    ):
+        pass
+    with pytest.raises(fw.FrameworkError, match="'ro' is read-only"):
+        fw.db_execute_file("ro", "sql/x.sql")
+    with pytest.raises(fw.FrameworkError, match="'ro' is read-only"):
+        fw.db_copy_from("ro", "t", "data/t.csv")
+    # Adding read-only is always allowed
+    with fw.db_connect("ro", read_only=True) as conn:
+        assert conn.read_only
+    assert fw.db_query("SELECT count(*) AS n FROM t", "ro")["n"].tolist() == [0]

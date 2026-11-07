@@ -341,12 +341,14 @@ def db_connect(name: str, read_only: bool | None = None) -> Connection:
 
     Args:
         name: The connection's name under ``connections`` in the settings.
-        read_only: Open a sqlite or duckdb file read-only (True) or writable (False) for this
-            call, whatever the connection's ``read_only`` setting says. A job that builds a
-            database other code reads with ``read_only: true`` opens it with
-            ``read_only=False``. Default: the setting. Server databases (postgres, mysql,
-            sqlserver) control writes with the database user's permissions, so True is an
-            error for them and False changes nothing.
+        read_only: Open a sqlite or duckdb file read-only for this call (True). Default:
+            the connection's ``read_only`` setting. A call can make a connection read-only
+            but not writable: False on a connection with ``read_only: true`` in its settings
+            is an error, so the settings decide what may write. A job that builds a
+            database other code reads read-only uses its own connection entry without
+            ``read_only: true``. Server databases (postgres, mysql, sqlserver) control writes
+            with the database user's permissions, so True is an error for them and False
+            changes nothing.
 
     Returns:
         A ``Connection`` that wraps the driver's connection object. Use it in a ``with`` block
@@ -354,8 +356,9 @@ def db_connect(name: str, read_only: bool | None = None) -> Connection:
 
     Raises:
         FrameworkError: The connection is not configured, its driver package
-            is not installed, connecting failed, or ``read_only=True`` names a server
-            database.
+            is not installed, connecting failed, ``read_only=True`` names a server
+            database, or ``read_only=False`` names a connection that is read-only in its
+            settings.
     """
     entry = _database_config(name)
     driver_name = str(entry["driver"]).lower()
@@ -369,6 +372,11 @@ def db_connect(name: str, read_only: bool | None = None) -> Connection:
                     f"read_only=True applies to sqlite and duckdb files, and '{name}' is "
                     f"{driver}. Connect as a database user without write access instead."
                 )
+        elif entry.get("read_only") and not read_only:
+            raise FrameworkError(
+                f"Connection '{name}' is read-only in its settings; read_only=False can't "
+                "override that."
+            )
         else:
             entry = {**entry, "read_only": read_only}
     try:
@@ -406,8 +414,9 @@ def db_query(
         connection_name: The connection's name in the settings. The connection is opened for
             this query and closed afterward.
         params: Values for the query's placeholders, as a sequence or a mapping.
-        read_only: Open the connection read-only (True) or writable (False) for this query,
-            as ``db_connect()`` does. Default: the connection's setting. A read-only DuckDB
+        read_only: Open the connection read-only for this query (True), as
+            ``db_connect()`` does. Default: the connection's setting, which False can't
+            override when it is ``read_only: true``. A read-only DuckDB
             file can be open in several processes at once, so ``read_only=True`` lets a
             notebook query a database another job holds open read-only too.
 
@@ -415,7 +424,8 @@ def db_query(
         The result rows, with the query's column names.
 
     Raises:
-        FrameworkError: When the connection cannot be opened or the query fails.
+        FrameworkError: When the connection cannot be opened, ``read_only=False`` names a
+            connection that is read-only in its settings, or the query fails.
     """
     with db_connect(connection_name, read_only=read_only) as connection:
         cursor = connection.cursor()
@@ -541,8 +551,7 @@ def _opened(connection: Connection | str) -> Iterator[Connection]:
 def _writable_connection(connection: Connection, what: str) -> None:
     if connection.read_only:
         raise FrameworkError(
-            f"Connection '{connection.name}' is read-only. {what} needs a writable "
-            f"connection: db_connect('{connection.name}', read_only=False)."
+            f"Connection '{connection.name}' is read-only. {what} needs a writable connection."
         )
 
 

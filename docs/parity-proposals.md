@@ -352,15 +352,17 @@ db_copy_from(conn, table, csv, delim = "comma", na = c("", "NA"))
 
 #### read_only
 
-`NULL` uses the connection's `read_only` setting. `TRUE`/`FALSE` override it for this
-call on sqlite and duckdb connections (R: `RSQLite::SQLITE_RO` flags and
-`duckdb(dbdir, read_only = )`). For server drivers (postgres, mysql/mariadb, sqlserver)
-`read_only = TRUE` is an error (`read_only=True applies to sqlite and duckdb files, and
-'<name>' is <driver>. Connect as a database user without write access instead.`) and
-`FALSE` changes nothing. A connection opened with `read_only = FALSE` is writable for
-`db_execute_file()`, `db_copy_from()`, and `db_transaction()`. `db_execute()` keeps its
-signature: it opens by name, so a build step that writes to a `read_only: true` database
-uses `db_connect(name, read_only = FALSE)` and the helpers that take a connection.
+`NULL` uses the connection's `read_only` setting. `TRUE` opens a sqlite or duckdb
+connection read-only for this call (R: `RSQLite::SQLITE_RO` flags and
+`duckdb(dbdir, read_only = )`). Settings win: a call may add read-only, never remove it.
+`FALSE` on a connection with `read_only: true` in its settings is an error from
+`db_connect()` and `db_query()` (`Connection '<name>' is read-only in its settings;
+read_only=False can't override that.`); on a writable one it changes nothing. For server
+drivers (postgres, mysql/mariadb, sqlserver) `read_only = TRUE` is an error
+(`read_only=True applies to sqlite and duckdb files, and '<name>' is <driver>. Connect as
+a database user without write access instead.`) and `FALSE` changes nothing. A build
+step that writes to a database others read with `read_only: true` uses a second
+connection entry for the same file without `read_only: true`.
 
 #### db_execute_file(conn, path, transaction = TRUE)
 
@@ -381,7 +383,7 @@ uses `db_connect(name, read_only = FALSE)` and the helpers that take a connectio
   failed: <driver message> The file was rolled back.` `transaction = FALSE`: commit after
   each statement; the same message without the last sentence.
 - Refuses a read-only connection (`Connection '<name>' is read-only. db_execute_file()
-  needs a writable connection: db_connect('<name>', read_only=False).`).
+  needs a writable connection.`).
 - Returns the number of statements (batches for SQL Server) run.
 
 #### db_copy_from(conn, table, csv, delim = "comma", na = c("", "NA"))
