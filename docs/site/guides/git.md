@@ -98,7 +98,7 @@ The hook belongs to a project at the top of its own repository. A project inside
 | `private_data_exposure` | Git tracks a file in a private data folder |
 | `git_history` | A past commit added, changed, or deleted a data file in a private data folder |
 | `secrets_exposure` | Git tracks a `.env` file or a variant such as `.env.local`. Files ending in `.example`, `.template`, or `.sample` are allowed. |
-| `orphaned_files` | Warns, without failing, about data files outside the configured folders |
+| `orphaned_files` | Warns, without failing, about data files outside the configured folders that git does not ignore |
 
 ```python
 result = fw.git_security_audit()

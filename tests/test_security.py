@@ -144,6 +144,16 @@ def test_orphaned_files_warn(repo: Path) -> None:
     assert result.passed
 
 
+def test_orphaned_files_skip_what_git_ignores(repo: Path) -> None:
+    (repo / ".gitignore").write_text(".env\n/inputs/\nlocal.sqlite\npublished/\n", encoding="utf-8")
+    (repo / "local.sqlite").write_bytes(b"")
+    (repo / "published/table").mkdir(parents=True)
+    (repo / "published/table/data.csv").write_text("x\n1\n", encoding="utf-8")
+    (repo / "loose.csv").write_text("x\n1\n", encoding="utf-8")
+    result = fw.git_security_audit(verbose=False)
+    assert list(result.findings["orphaned_files"]["path"]) == ["loose.csv"]
+
+
 def test_auto_fix_adds_folders(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (repo / ".gitignore").write_text(".env\n", encoding="utf-8")
     fw.git_security_audit(auto_fix=True)

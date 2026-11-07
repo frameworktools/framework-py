@@ -5,7 +5,8 @@ The checks match R's ``git_security_audit()``:
 - gitignore_coverage: private folders and the data files in them are ignored.
 - private_data_exposure: git tracks no file in a private folder.
 - git_history: no commit added a private data file.
-- orphaned_files: data files sit inside the configured folders.
+- orphaned_files: data files sit inside the configured folders. Files git
+  ignores are not counted.
 - secrets_exposure: git tracks no ``.env`` file.
 
 Where git is available, ``git check-ignore`` decides what is ignored. Without
@@ -384,18 +385,24 @@ def _check_history(
 
 
 def _check_orphans(
-    root: Path, folders: dict[str, str], extensions: tuple[str, ...]
+    root: Path, folders: dict[str, str], extensions: tuple[str, ...], rules: _IgnoreRules
 ) -> tuple[pd.DataFrame, list[str]]:
+    """Data files outside the configured folders. Files git ignores are left out: they
+    cannot be committed, so they are not a risk wherever they sit."""
     rows: list[dict[str, Any]] = []
     configured = list(folders.values())
-    for path in _walk_files(root):
-        relative = path.relative_to(root).as_posix()
-        if relative in _EXCLUDED_FILES:
+    candidates = [
+        relative
+        for relative in (path.relative_to(root).as_posix() for path in _walk_files(root))
+        if relative not in _EXCLUDED_FILES
+        and _is_data_file(relative, extensions)
+        and not any(_inside(relative, folder) for folder in configured)
+    ]
+    ignored = rules.ignored(candidates)
+    for relative in candidates:
+        if relative in ignored:
             continue
-        if not _is_data_file(relative, extensions):
-            continue
-        if any(_inside(relative, folder) for folder in configured):
-            continue
+        path = root / relative
         info = path.stat()
         rows.append(
             {
@@ -607,7 +614,7 @@ def git_security_audit(
     else:
         findings["git_history"] = _frame([], ["commit", "file", "action", "date"])
     record("secrets_exposure", _check_secrets(tracked))
-    record("orphaned_files", _check_orphans(root, folders, exts))
+    record("orphaned_files", _check_orphans(root, folders, exts, rules))
 
     coverage = findings["gitignore_coverage"]
     statuses = {
