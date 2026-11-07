@@ -300,6 +300,23 @@ def test_sync_needs_a_token(project: Path, server: FakeCloud) -> None:
         fw.cloud_sync()
 
 
+def test_status_and_settings_give_the_same_login_advice(
+    project: Path, server: FakeCloud, caplog: pytest.LogCaptureFixture
+) -> None:
+    from framework.cloud import login_hint
+
+    caplog.set_level("INFO", logger="framework")
+    assert fw.cloud_status() is False
+    with pytest.raises(fw.CloudError) as raised:
+        fw.cloud_settings()
+    hint = login_hint("https://framework.pub")
+    assert hint.startswith("Run fw.cloud_login() to approve this computer in your browser")
+    assert hint in caplog.text and hint in str(raised.value)
+    other = login_hint("https://cloud.example.edu")
+    assert 'fw.cloud_login(url="https://cloud.example.edu")' in other
+    assert 'fw.cloud_login("fw_...", url="https://cloud.example.edu")' in other
+
+
 # The ledger -----------------------------------------------------------------------------------
 
 

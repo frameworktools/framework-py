@@ -279,17 +279,24 @@ def cloud_token(url: str) -> str | None:
     return token
 
 
+def login_hint(url: str) -> str:
+    """How to connect to ``url``: browser login first, a pasted token for scripts.
+
+    ``cloud_status()`` and every call that needs a token give the same advice.
+    """
+    where = "" if is_default(url) else f'url="{url}"'
+    browser = f"fw.cloud_login({where})"
+    token = f'fw.cloud_login("fw_...", {where})' if where else 'fw.cloud_login("fw_...")'
+    return (
+        f"Run {browser} to approve this computer in your browser, or create a token at "
+        f"{url}/tokens and run {token}."
+    )
+
+
 def _require_token(url: str) -> str:
     token = cloud_token(url)
     if token is None:
-        login = (
-            'fw.cloud_login("fw_...")'
-            if is_default(url)
-            else f'fw.cloud_login("fw_...", url="{url}")'
-        )
-        raise CloudError(
-            f"No cloud token found for {host(url)}. Create one at {url}/tokens and run:\n  {login}"
-        )
+        raise CloudError(f"No cloud token found for {host(url)}. {login_hint(url)}")
     return token
 
 
@@ -663,10 +670,7 @@ def cloud_status(url: str | None = None) -> bool:
             inform(f"This project publishes to {project.url} (from {project.source})")
     token = cloud_token(server.url)
     if token is None:
-        login = (
-            "cloud_login()" if is_default(server.url) else f'cloud_login(token, url="{server.url}")'
-        )
-        inform(f"Not connected. Run {login} to connect.")
+        inform(f"Not connected. {login_hint(server.url)}")
         return False
     try:
         me = api("/api/v1/me", token, server.url)
