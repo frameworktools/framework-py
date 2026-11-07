@@ -63,18 +63,20 @@ def _project() -> tuple[Path, dict[str, Any]]:
 
 
 def notebook_title(name: str) -> str:
-    """The default title for a new notebook, as R makes it.
+    """The default title for a new notebook, in sentence case, as R makes it.
 
-    A name with spaces is already a title and is kept as typed ("My cool analysis"). A
-    file-style name has its ``-`` and ``_`` turned into spaces and each word capitalized:
-    "bp-summary" becomes "Bp Summary" and "01_load_data" becomes "01 Load Data".
+    A name with spaces or capitals is already a title and is kept as typed ("My cool
+    analysis", "BP-summary"). A file-style name has its ``-`` and ``_`` turned into spaces
+    and its first character capitalized, with the rest left as typed: "setup-and-settings"
+    becomes "Setup and settings" and "01_load_data" becomes "01 load data".
     """
-    if re.search(r"\s", name.strip()):
-        return name.strip()
-    words = [word for word in re.split(r"[-_\s]+", name) if word]
-    if not words:
+    stripped = name.strip()
+    if re.search(r"\s|[A-Z]", stripped):
+        return stripped
+    title = " ".join(word for word in re.split(r"[-_]+", stripped) if word)
+    if not title:
         return name
-    return " ".join(word[0].upper() + word[1:] for word in words)
+    return title[0].upper() + title[1:]
 
 
 def slugify(text: str) -> str:

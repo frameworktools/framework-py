@@ -149,17 +149,19 @@ def test_stubs_list_shows_your_templates(project: Path) -> None:
 def test_titles_and_messages(notebooks_project: Path, caplog: pytest.LogCaptureFixture) -> None:
     from framework.notebooks import notebook_title
 
-    assert notebook_title("bp-summary") == "Bp Summary"
-    assert notebook_title("01_load_data") == "01 Load Data"
+    assert notebook_title("bp-summary") == "Bp summary"
+    assert notebook_title("setup-and-settings") == "Setup and settings"
+    assert notebook_title("01_load_data") == "01 load data"
     assert notebook_title("My cool analysis") == "My cool analysis"
+    assert notebook_title("BP-summary") == "BP-summary"
     assert notebook_title("analysis") == "Analysis"
 
     caplog.set_level("INFO", logger="framework")
     path = fw.make_notebook("bp-summary")
-    assert 'title: "Bp Summary"' in path.read_text(encoding="utf-8")
+    assert 'title: "Bp summary"' in path.read_text(encoding="utf-8")
     assert caplog.messages[-1] == f"Created Quarto notebook: {path}"
     talk = fw.make_presentation("study-talk")
-    assert 'title: "Study Talk"' in talk.read_text(encoding="utf-8")
+    assert 'title: "Study talk"' in talk.read_text(encoding="utf-8")
     assert caplog.messages[-1] == f"Created reveal.js presentation: {talk}"
     quick = fw.make_notebook("quick", stub="minimal")
     assert caplog.messages[-1] == f"Created Quarto notebook: {quick} (stub: minimal)"
