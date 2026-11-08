@@ -783,6 +783,12 @@ def _step_gitignore(plan: _Plan) -> None:
     if missing.skipped:
         shown = ", ".join(f"{rule} (git tracks {file})" for rule, file in missing.skipped.items())
         plan.note(f".gitignore: left out {shown} so no tracked file is hidden.")
+    if missing.negations:
+        plan.note(
+            f".gitignore: left out {rules_summary(missing.negations)}. Added after your own "
+            "rules, they would win over them and could make files in folders you ignore "
+            "(README files in data folders) committable."
+        )
     if not missing.add:
         return
     from framework._gitignore import merged_text

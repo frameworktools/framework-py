@@ -512,3 +512,41 @@ def test_restricted_paths() -> None:
         "inputs/raw/",
         "outputs/private/",
     ]
+
+
+def test_appends_no_negations_so_data_folders_stay_ignored(old: Path) -> None:
+    import subprocess
+
+    (old / ".gitignore").write_text(
+        ".env\ninputs/**\n!inputs/*/\n!inputs/*/.gitkeep\n", encoding="utf-8"
+    )
+    (old / "inputs/raw").mkdir(parents=True)
+    (old / "inputs/raw/README.md").write_text("# Vizient extract\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(old), "init", "-q"], check=True)
+    plan = fw.upgrade(old, dry_run=False)
+    rules = (old / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert not any(rule.startswith("!") for rule in rules[4:])
+    assert "/inputs/private/" in rules
+    assert any(".gitignore: left out !/inputs/**/README.md" in n for n in plan.notes)
+    ignored = subprocess.run(
+        ["git", "-C", str(old), "check-ignore", "inputs/raw/README.md"], capture_output=True
+    )
+    assert ignored.returncode == 0
+
+
+def test_folders_git_already_ignores_get_no_rule(old: Path) -> None:
+    import subprocess
+
+    # fore: inputs/** with !inputs/*/ ignores what is inside inputs/raw, though R's
+    # matcher reads the negation as re-including it
+    (old / ".gitignore").write_text(".env\ninputs/**\n!inputs/*/\n", encoding="utf-8")
+    text = (old / "settings.yml").read_text(encoding="utf-8")
+    (old / "settings.yml").write_text(
+        text.replace("inputs_private_raw: inputs/private/raw", "inputs_private_raw: inputs/raw"),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(old), "init", "-q"], check=True)
+    fw.upgrade(old, dry_run=False)
+    rules = (old / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "/inputs/private/" in rules
+    assert "/inputs/raw/" not in rules

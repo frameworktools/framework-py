@@ -536,6 +536,11 @@ def _adopt_gitignore(root: Path, spec: Mapping[str, Any], plan: AdoptPlan) -> st
     append_rules(root, missing.add, "# Added by framework.adopt()")
     if missing.add:
         inform(f"  Added to .gitignore ({len(missing.add)} rules): {rules_summary(missing.add)}")
+    if missing.negations:
+        inform(
+            f"  Left out of .gitignore: {rules_summary(missing.negations)}. Added after the "
+            "folder's own rules, they could make files in ignored folders committable."
+        )
     if missing.skipped:
         shown = ", ".join(f"{rule} ({file})" for rule, file in missing.skipped.items())
         inform(f"  Left out of .gitignore because git tracks files they match: {shown}")

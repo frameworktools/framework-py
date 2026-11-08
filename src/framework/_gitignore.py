@@ -9,8 +9,13 @@ The rules, shared with R (``R/gitignore_merge.R``) and fw:
   tool, never removed, reordered, or rewritten.
 - A rule that would ignore a file git already tracks is left out and
   reported, so the merge never hides files the project keeps in git (a
-  tracked ``.Rprofile``, rendered ``*_files/`` on GitHub Pages). Negations
-  (``!...``) are never left out.
+  tracked ``.Rprofile``, rendered ``*_files/`` on GitHub Pages).
+- Negations (``!...``) are left out and reported when the ``.gitignore``
+  already has rules: appended after the project's own rules they would win
+  over them, and could make files in folders the project ignores committable
+  (fore's ``inputs/**`` with ``!inputs/*/``, where the template's
+  ``!/inputs/**/README.md`` re-included ``inputs/raw/README.md``). Into a new
+  or empty ``.gitignore`` the template goes whole, negations included.
 """
 
 from __future__ import annotations
@@ -64,11 +69,13 @@ def tracked_matching(root: Path, rule: str) -> list[str]:
 
 @dataclass
 class MissingRules:
-    """The rules to append, in order, and those left out because git tracks files they
-    match (rule -> one such file)."""
+    """The rules to append, in order; those left out because git tracks files they match
+    (rule -> one such file); and the negations left out because the ``.gitignore``
+    already has rules."""
 
     add: list[str] = field(default_factory=list)
     skipped: dict[str, str] = field(default_factory=dict)
+    negations: list[str] = field(default_factory=list)
 
 
 def missing_rules(root: Path, wanted: list[str] | str, text: str | None = None) -> MissingRules:
@@ -76,6 +83,8 @@ def missing_rules(root: Path, wanted: list[str] | str, text: str | None = None) 
     have = set(gitignore_rules(_read(root) if text is None else text))
     wanted_text = wanted if isinstance(wanted, str) else "\n".join(wanted)
     add = [rule for rule in gitignore_rules(wanted_text) if rule not in have]
+    negations = [rule for rule in add if rule.startswith("!")] if have else []
+    add = [rule for rule in add if rule not in negations]
     skipped: dict[str, str] = {}
     if add and in_work_tree(root):
         for rule in add:
@@ -85,7 +94,7 @@ def missing_rules(root: Path, wanted: list[str] | str, text: str | None = None) 
             if tracked:
                 skipped[rule] = tracked[0]
         add = [rule for rule in add if rule not in skipped]
-    return MissingRules(add, skipped)
+    return MissingRules(add, skipped, negations)
 
 
 def merged_text(current: str, add: list[str], header: str) -> str:
@@ -108,18 +117,38 @@ def append_rules(root: Path, add: list[str], header: str) -> list[str]:
 
 def unignored_folders(root: Path, folders: list[str], text: str | None = None) -> list[str]:
     """The folders (paths from the root) that ``.gitignore`` doesn't ignore yet, and that
-    the templates' ``**/private/**`` and ``**/*_private/**`` rules don't cover."""
+    the templates' ``**/private/**`` and ``**/*_private/**`` rules don't cover. In a git
+    work tree git decides, so every rule counts as git reads it (fore's ``inputs/**``
+    with ``!inputs/*/`` ignores what is inside ``inputs/raw``); elsewhere, or when
+    ``text`` isn't the ``.gitignore`` on disk, R's matcher reads ``text``."""
     from framework.security import _matches_gitignore
 
     cleaned = [f.removeprefix("./").rstrip("/") for f in folders if f]
     cleaned = list(dict.fromkeys(f for f in cleaned if f))
-    lines = (_read(root) if text is None else text).splitlines()
-    return [
+    candidates = [
         folder
         for folder in cleaned
         if not any(is_private_folder_name(part) for part in folder.split("/"))
-        and not _matches_gitignore(f"{folder}/.framework-probe", lines)
     ]
+    if not candidates:
+        return []
+    on_disk = _read(root)
+    if (text is None or text == on_disk) and in_work_tree(root):
+        probes = [f"{folder}/.framework-probe" for folder in candidates]
+        result = subprocess.run(
+            ["git", "-C", str(root), "check-ignore", "--stdin", "-z"],
+            input="\0".join(probes),
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if result.returncode in (0, 1):
+            ignored = set(result.stdout.split("\0"))
+            return [f for f, probe in zip(candidates, probes, strict=True) if probe not in ignored]
+    lines = (on_disk if text is None else text).splitlines()
+    return [f for f in candidates if not _matches_gitignore(f"{f}/.framework-probe", lines)]
 
 
 def rules_summary(rules: list[str], n: int = 6) -> str:
