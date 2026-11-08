@@ -847,10 +847,7 @@ def _regenerate_sections(text: str, spec: dict[str, Any]) -> tuple[str, list[str
 
 
 def _step_ai(plan: _Plan, spec: dict[str, Any] | None) -> None:
-    """AGENTS.md canonical, CLAUDE.md a pointer, marked sections regenerated, and the
-    Claude Code guards for sensitive projects."""
-    from framework._private import settings_sensitive
-
+    """AGENTS.md canonical, CLAUDE.md a pointer, and marked sections regenerated."""
     settings = _settings_raw(plan)
     ai = _mapping(settings.get("ai"))
     if ai.get("enabled") is not True:
@@ -899,18 +896,67 @@ def _step_ai(plan: _Plan, spec: dict[str, Any] | None) -> None:
         ]:
             plan.write("ai", target, regenerated, f"regenerate marked sections ({', '.join(done)})")
 
-    assistants = ai.get("assistants") or []
-    if settings_sensitive(settings) and "claude" in assistants:
-        _agent_guards(plan, settings)
 
+def _step_guards(plan: _Plan) -> None:
+    """A sensitive project gets the Claude Code guards whatever its AI settings: anyone
+    may open it in Claude Code. The plan says when ``.claude/`` is gitignored, since the
+    guards then stay on this computer."""
+    from framework._gitignore import _git
+    from framework._private import settings_sensitive
 
-def _agent_guards(plan: _Plan, settings: dict[str, Any]) -> None:
-    """Claude Code deny rules for the private folders of a sensitive project."""
-    from framework.ai import restricted_paths
-
-    restricted = [p.rstrip("/") for p in restricted_paths({"directories": _directories(settings)})]
-    if not restricted:
+    settings = _settings_raw(plan)
+    if not settings_sensitive(settings):
         return
+    added = _agent_guards(plan, settings)
+    ai = _mapping(settings.get("ai"))
+    enabled = ai.get("enabled") is True
+    if added and (not enabled or "claude" not in (ai.get("assistants") or [])):
+        plan.note(
+            f"AI assistants are {'set without claude' if enabled else 'off'} in the settings, "
+            "but .claude/settings.json gets the guards anyway: anyone can open a sensitive "
+            "project in Claude Code. Other assistants have no such file; the AGENTS.md rule "
+            "and the framework-sensitive-data skill are their guard."
+        )
+    skills_planned = any(a["path"].startswith(".claude/skills/") for a in plan.actions)
+    shared = [".claude/settings.json"]
+    if skills_planned or (plan.root / ".claude/skills").is_dir():
+        shared.append(".claude/skills/SKILL.md")
+    result = _git(plan.root, "check-ignore", *shared)
+    found = (
+        set(result.stdout.splitlines()) if result is not None and result.returncode == 0 else set()
+    )
+    ignored = [p.removesuffix("SKILL.md") for p in shared if p in found]
+    if ignored and (added or (plan.root / ".claude/settings.json").is_file()):
+        plan.note(
+            f"Git ignores files in .claude/ ({', '.join(ignored)}), so they stay on this "
+            "computer: collaborators and fresh checkouts get none. To share them, ignore "
+            ".claude/* instead of .claude/ and add !.claude/settings.json and "
+            "!.claude/skills/ to .gitignore."
+        )
+
+
+def _agent_guards(plan: _Plan, settings: dict[str, Any]) -> bool:
+    """Claude Code deny rules for the private folders of a sensitive project: folders
+    with a ``private`` (or ``*_private``) segment, folders whose key marks them private,
+    and private render folders. Returns whether the guard file changes."""
+    from framework.ai import restricted_paths
+    from framework.security import _outside
+
+    spec = {
+        "directories": _directories(settings),
+        "extra_directories": settings.get("extra_directories"),
+        "render_dirs": settings.get("render_dirs"),
+    }
+    restricted = [
+        p.rstrip("/") for p in restricted_paths(spec) if not _outside(plan.root, p.rstrip("/"))
+    ]
+    if not restricted:
+        plan.note(
+            "No Claude Code guard was added: the settings name no private folders. Map the "
+            "folders that hold restricted data to private keys (inputs_private_raw, ...) and "
+            "run upgrade() again."
+        )
+        return False
     deny = [rule for path in restricted for rule in (f"Read(/{path}/**)", f"Edit(/{path}/**)")]
     deny.append("Read(/.env)")
     sandbox_deny = [f"./{path}" for path in restricted] + ["./.env"]
@@ -924,7 +970,7 @@ def _agent_guards(plan: _Plan, settings: dict[str, Any]) -> None:
             ".claude/settings.json isn't valid JSON, so the guards for private folders "
             "weren't added."
         )
-        return
+        return False
     new = json.loads(json.dumps(current))
     permissions = new.setdefault("permissions", {})
     permissions["deny"] = list(dict.fromkeys([*permissions.get("deny", []), *deny]))
@@ -934,13 +980,14 @@ def _agent_guards(plan: _Plan, settings: dict[str, Any]) -> None:
     filesystem = sandbox.setdefault("filesystem", {})
     filesystem["denyRead"] = list(dict.fromkeys([*filesystem.get("denyRead", []), *sandbox_deny]))
     if new == current:
-        return
+        return False
     plan.write(
         "ai",
         ".claude/settings.json",
         json.dumps(new, indent=2) + "\n",
         f"keep Claude Code out of {', '.join(restricted)}",
     )
+    return True
 
 
 def _assistant_dirs(settings: dict[str, Any]) -> tuple[list[str], list[str]]:
@@ -1373,8 +1420,13 @@ def upgrade(
     - **AI files**: AGENTS.md becomes the canonical context file, with CLAUDE.md
       a one-line ``@AGENTS.md`` pointer, when CLAUDE.md held the full guide;
       the marked sections are regenerated. A hand-written AGENTS.md is left
-      alone and reported. Sensitive projects get the Claude Code guards that
-      keep agents out of private folders.
+      alone and reported. Sensitive projects get the Claude Code guards
+      (``.claude/settings.json``) that keep agents out of private folders,
+      whatever the AI settings say: folders with a ``private`` (or
+      ``*_private``) segment, folders whose key marks them private
+      (``inputs_private_raw: inputs/raw``), and private render folders. The
+      plan says when git ignores ``.claude/``, so the guards would stay on one
+      computer.
     - **Skills**: Framework skills that match a version framework-py has
       shipped are updated, in the assistants' skills folders and in
       ``.agents/skills``; missing ones for the type are added, and edited ones
@@ -1447,6 +1499,7 @@ def upgrade(
         built = error
     _step_ai(plan, None if isinstance(built, Exception) else built)
     _step_skills(plan)
+    _step_guards(plan)
     _step_quarto(plan)
     # Built again: the skills and .gitignore it records come from the steps above
     try:

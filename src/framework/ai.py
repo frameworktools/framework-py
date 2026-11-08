@@ -36,17 +36,56 @@ def assistant_targets(spec: dict[str, Any]) -> tuple[list[str], list[str]]:
 
 
 def restricted_paths(spec: dict[str, Any]) -> list[str]:
-    """Folders agents must not read: each configured path up to its ``private`` segment."""
-    paths = list((spec.get("directories") or {}).values())
-    paths += [entry.get("path") for entry in (spec.get("extra_directories") or {}).values()]
-    restricted = set()
+    """Folders agents must not read in a sensitive project, each ending in ``/``.
+
+    Every configured folder (``directories``, ``extra_directories``, ``render_dirs``)
+    with a segment named ``private`` or ending in ``_private``, collapsed to that
+    segment, and every ``directories`` entry whose key marks it private
+    (``inputs_private_raw: inputs/raw``), as configured. ``.``, unsafe paths (outside
+    the project), and folders inside another restricted folder are left out. ``.env``
+    (secrets) is added by the callers. R: ``.spec_restricted_paths()``.
+    """
+    from framework._private import is_private_folder_name
+    from framework.spec.check import is_safe_path
+
+    def clean(values: Any) -> list[str]:
+        out = []
+        for value in values:
+            if isinstance(value, str) and value:
+                path = value.removeprefix("./").rstrip("/")
+                if path and is_safe_path(path):
+                    out.append(path)
+        return out
+
+    def mapping(value: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    directories = mapping(spec.get("directories"))
+    extra = spec.get("extra_directories")
+    entries = (
+        extra.values() if isinstance(extra, dict) else extra if isinstance(extra, list) else []
+    )
+    paths = clean(
+        [
+            *directories.values(),
+            *(e.get("path") for e in entries if isinstance(e, dict)),
+            *mapping(spec.get("render_dirs")).values(),
+        ]
+    )
+    restricted: list[str] = []
     for path in paths:
-        if not isinstance(path, str):
-            continue
         parts = path.split("/")
-        if "private" in parts:
-            restricted.add("/".join(parts[: parts.index("private") + 1]) + "/")
-    return sorted(restricted)
+        hits = [i for i, part in enumerate(parts) if is_private_folder_name(part)]
+        if hits:
+            restricted.append("/".join(parts[: hits[0] + 1]))
+    restricted += clean(
+        value
+        for key, value in directories.items()
+        if "private" in str(key).lower() and "public" not in str(key).lower()
+    )
+    restricted = [p for p in dict.fromkeys(restricted) if p != "."]
+    kept = [p for p in restricted if not any(p.startswith(f"{o}/") for o in restricted if o != p)]
+    return [f"{p}/" for p in sorted(kept)]
 
 
 def restricted_notice(spec: dict[str, Any]) -> str | None:

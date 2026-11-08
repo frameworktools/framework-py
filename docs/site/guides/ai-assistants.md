@@ -130,7 +130,7 @@ When Claude Code is selected, Framework also writes `.claude/settings.json` with
 
 The deny rules block Claude Code's own file tools. The sandbox's `denyRead` list also blocks commands it runs, such as `python`, from reading those paths. `failIfUnavailable` stops Claude Code from running commands when the sandbox cannot start, so the rules fail closed.
 
-The private folders are computed from the project's `directories` and `extra_directories`: each path that contains a `private` segment, up to and including that segment. The rules match the ones the R package writes. Existing entries in `.claude/settings.json` are kept.
+The private folders are computed from the project's `directories`, `extra_directories`, and `render_dirs`: each path with a segment named `private` or ending in `_private`, up to and including that segment, and each `directories` entry whose key marks it private (`inputs_private_raw: inputs/raw`), as configured. A folder inside another one on the list is left out. The rules match the ones the R package writes. Existing entries in `.claude/settings.json` are kept. [upgrade()](ref:upgrade) writes these rules in every sensitive project, whatever the AI settings say, since anyone can open the project in Claude Code, and says when git ignores `.claude/`, which would keep the rules on one computer.
 
 The `framework-sensitive-data` skill gives assistants the same rules in prose, together with guidance for working from data dictionaries and simulated data.
 

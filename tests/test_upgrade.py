@@ -90,12 +90,12 @@ def test_plans_without_changing_anything(old: Path, capsys: pytest.CaptureFixtur
         ("ai", "CLAUDE.md"),
         ("ai", "settings.yml"),
         ("ai", "AGENTS.md"),
-        ("ai", ".claude/settings.json"),
         ("skills", ".claude/skills/framework-workflow"),
         ("skills", ".claude/skills/framework-data"),
         ("skills", ".claude/skills/framework-packages"),
         ("skills", ".claude/skills/framework-outputs"),
         ("skills", ".claude/skills/framework-sensitive-data"),
+        ("ai", ".claude/settings.json"),
         ("quarto", "_quarto.yml"),
         ("spec", ".framework/spec.json"),
     ]
@@ -460,3 +460,55 @@ def test_move_settings_moves_keys_outside_default_into_settings(
     assert list(settings["sites"]) == ["north", "south"]
     assert fw.upgrade(old, move_settings=True).actions.empty
     assert main(["upgrade", "--path", str(old), "--move-settings", "--type", "project"]) == 0
+
+
+def test_the_guard_covers_private_keys_and_render_folders_whatever_the_ai_settings(
+    old: Path,
+) -> None:
+    import subprocess
+
+    text = (old / "settings.yml").read_text(encoding="utf-8")
+    text = text.replace("inputs_private_raw: inputs/private/raw", "inputs_private_raw: inputs/raw")
+    text = text.replace(
+        "  ai:\n    enabled: true\n",
+        "  render_dirs:\n    notebooks: outputs/private/nb\n  ai:\n    enabled: false\n",
+    )
+    (old / "settings.yml").write_text(text, encoding="utf-8")
+    with (old / ".gitignore").open("a", encoding="utf-8") as handle:
+        handle.write(".claude/\n")
+    subprocess.run(["git", "-C", str(old), "init", "-q"], check=True)
+
+    plan = fw.upgrade(old)
+    guard = plan.actions.set_index("path").loc[".claude/settings.json", "change"]
+    assert guard == "keep Claude Code out of inputs/raw, outputs/private"
+    assert any(
+        "AI assistants are off in the settings, but .claude/settings.json gets the guards" in n
+        for n in plan.notes
+    )
+    assert any("Git ignores files in .claude/ (.claude/settings.json" in n for n in plan.notes)
+    fw.upgrade(old, dry_run=False)
+    deny = json.loads((old / ".claude/settings.json").read_text(encoding="utf-8"))["permissions"]
+    assert {"Read(/inputs/raw/**)", "Read(/outputs/private/**)", "Read(/.env)"} <= set(deny["deny"])
+
+
+def test_restricted_paths() -> None:
+    from framework.ai import restricted_paths
+
+    spec = {
+        "directories": {
+            "inputs_private_raw": "inputs/raw",
+            "inputs_public_raw": "inputs/public/raw",
+            "outputs_private_tables": "outputs/private/tables",
+            "cache": "data_private/cache",
+            "outside_private": "../elsewhere",
+            "root_private": ".",
+        },
+        "extra_directories": {"x": {"path": "exports/private/a"}},
+        "render_dirs": {"notebooks": "outputs/private/notebooks"},
+    }
+    assert restricted_paths(spec) == [
+        "data_private/",
+        "exports/private/",
+        "inputs/raw/",
+        "outputs/private/",
+    ]
