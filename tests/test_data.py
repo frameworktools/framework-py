@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -101,7 +102,7 @@ def test_save_adds_a_missing_extension(data_project: Path) -> None:
         ("plain", {}, "has no directory"),
         ("plain.csv", {}, "'plain' has no directory"),
         ("inputs.raw.x.csv", {"type": "parquet"}, r"ends in \.csv, but type is 'parquet'"),
-        ("outputs/new/x.csv", {}, "does not exist. Use force=True"),
+        ("outputs/new/x.csv", {}, "does not exist and isn't a settings folder"),
         ("inputs/raw/x.txt", {}, "Cannot auto-detect"),
     ],
 )
@@ -152,6 +153,17 @@ def test_relative_paths_start_at_the_project_root(
 def test_save_with_force_creates_the_folder(data_project: Path) -> None:
     fw.data_save(FRAME, "outputs/new/x.csv", force=True)
     assert (data_project / "outputs/new/x.csv").is_file()
+
+
+def test_save_creates_a_missing_settings_folder(data_project: Path) -> None:
+    # A fresh checkout has no ignored folders: inputs/intermediate is a settings folder
+    shutil.rmtree(data_project / "inputs/intermediate")
+    fw.data_save(FRAME, "inputs.intermediate.clean")
+    assert (data_project / "inputs/intermediate/clean.parquet").is_file()
+    fw.data_save(FRAME, "inputs/raw/deeper/x.csv")
+    assert (data_project / "inputs/raw/deeper/x.csv").is_file()
+    with pytest.raises(fw.FrameworkError, match="isn't a settings folder"):
+        fw.data_save(FRAME, "inputs/elsewhere/x.csv")
 
 
 def test_locked_file_that_changed_is_an_error(data_project: Path) -> None:

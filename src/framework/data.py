@@ -497,6 +497,25 @@ def _save_target(path: str, type: str | None) -> tuple[Path, str, str | None]:
     return target, type, path
 
 
+def _in_settings_folder(folder: Path) -> bool:
+    """Whether a folder is one the settings name, or inside one."""
+    from framework.security import _project_folders
+
+    try:
+        root = project_root()
+        config = settings_read()
+    except FrameworkError:
+        return False
+    full = folder.resolve() if folder.is_absolute() else (root / folder).resolve()
+    for relative in _project_folders(config, root):
+        if relative in ("", "."):
+            continue
+        base = (root / relative).resolve()
+        if full == base or base in full.parents:
+            return True
+    return False
+
+
 def data_save(
     data: pd.DataFrame,
     path: str,
@@ -524,7 +543,11 @@ def data_save(
         locked: Whether later reads must find the file unchanged. Default: True, as in R.
             Saving again over locked data with different contents replaces it, as R does,
             with a ``DataChangedWarning``. The same contents save silently.
-        force: Create the folder if it does not exist.
+        force: Create any missing folder. Without it, a missing folder is created
+            only when it is a folder named in the settings (``directories``,
+            ``extra_directories``, ``render_dirs``) or inside one, such as
+            ``inputs/private/intermediate`` in a fresh checkout; any other missing
+            folder is an error.
 
     Returns:
         ``data``, so the call can end a pipeline.
@@ -541,10 +564,15 @@ def data_save(
         raise UnsupportedFormatError(f"data_save() writes csv or parquet, not {file_type}")
 
     folder = target.parent
+    # A missing folder is created when it is a settings folder or inside one (git
+    # doesn't keep empty or ignored folders, so a fresh checkout of a sensitive project
+    # has no inputs/private/...), or with force=True. Anywhere else a missing folder is
+    # more likely a typo.
     if not folder.is_dir():
-        if not force:
+        if not force and not _in_settings_folder(folder):
             raise FrameworkError(
-                f"Directory '{folder}' does not exist. Use force=True to create it."
+                f"Directory '{folder}' does not exist and isn't a settings folder. Use "
+                "force=True to create it."
             )
         folder.mkdir(parents=True, exist_ok=True)
         inform(f"Created directory: {folder}")

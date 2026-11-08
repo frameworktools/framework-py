@@ -259,3 +259,22 @@ def test_scaffold_names_a_missing_settings_file(tmp_path: Path) -> None:
     # Audit 2026-11-05: an explicit missing file was reported as a lookup from the cwd
     with pytest.raises(fw.ProjectNotFoundError, match=r"Settings file not found: .*nope\.yml"):
         fw.scaffold(tmp_path / "nope.yml")
+
+
+def test_scaffold_creates_missing_private_folders(project: Path) -> None:
+    (project / "settings.yml").write_text(
+        "default:\n"
+        "  directories:\n"
+        "    inputs_private_raw: inputs/private/raw\n"
+        "    outputs_public_tables: outputs/public/tables\n"
+        "    outputs_private_tables: outputs/private/tables\n"
+        "    elsewhere_private: ../outside/private\n"
+        "    notebooks: notebooks\n",
+        encoding="utf-8",
+    )
+    fw.scaffold()
+    assert (project / "inputs/private/raw").is_dir()
+    assert (project / "outputs/private/tables").is_dir()
+    assert not (project / "outputs/public/tables").exists()
+    assert not (project / "notebooks").exists()
+    assert not (project.parent / "outside").exists()

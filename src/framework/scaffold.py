@@ -193,6 +193,8 @@ def scaffold(settings_file: str | Path | None = None) -> Path:
     - finds the project root and loads its ``.env`` and settings,
     - creates framework.db if needed and records the scaffold time (a bare project gets
       no framework.db until something needs it, as when it was created),
+    - creates the settings' private folders that are missing (a fresh checkout has
+      none, since git ignores them),
     - sets the random seed when ``seed_on_scaffold`` is on (or ``FW_SEED`` is set),
     - puts the project's ``functions`` folder on the import path, and
     - runs ``scaffold.py`` from the project root, if there is one.
@@ -226,6 +228,9 @@ def scaffold(settings_file: str | Path | None = None) -> Path:
     if config.get("project_type") != "bare" or db.db_path(root).exists():
         db.ensure_db(root)
         _mark_scaffolded(root)
+    # Private folders are ignored by git, so a fresh checkout lacks them; create them so
+    # code that saves into them works
+    _create_private_folders(root, config)
     _set_seed(config)
     _add_function_folders(config, root)
 
@@ -233,6 +238,31 @@ def scaffold(settings_file: str | Path | None = None) -> Path:
     if script.is_file():
         runpy.run_path(str(script), run_name="__scaffold__")
     return root
+
+
+def _create_private_folders(root: Path, config: dict[str, Any]) -> list[str]:
+    """Create the settings' private folders that don't exist: directories whose key
+    contains "private" and not "public" (``inputs_private_raw``), inside the project.
+    Returns the folders created."""
+    from framework.security import _configured_directories, _outside, _relative_folder
+
+    made: list[str] = []
+    folders = [
+        path
+        for key, path in _configured_directories(config).items()
+        if "private" in key.lower() and "public" not in key.lower() and not _outside(root, path)
+    ]
+    for folder in dict.fromkeys(folders):
+        path = in_root(folder, root)
+        if not path.is_dir():
+            try:
+                path.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                continue
+            made.append(_relative_folder(root, folder))
+    if made:
+        inform(f"Created private folders: {', '.join(made)}")
+    return made
 
 
 def _git(*args: str) -> str | None:
