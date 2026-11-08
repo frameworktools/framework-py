@@ -383,10 +383,16 @@ def _presentation(spec: Mapping[str, Any]) -> str:
 
 
 def _record(root: Path, spec: Mapping[str, Any]) -> None:
+    """Record how the project was made. Keys spec.v1 doesn't allow are left out, and a
+    spec that doesn't match it otherwise is never written."""
     record = dict(spec)
     source = dict(record.get("source") or {"origin": "python"})
     source["framework_version"] = _version()
     record["source"] = source
+    # Only what spec.v1 allows, so Framework Cloud accepts the spec as written
+    from framework._spec_schema import ready
+
+    record = ready(record)
     _write(root, ".framework/spec.json", json.dumps(record, indent=2, ensure_ascii=False) + "\n")
 
 

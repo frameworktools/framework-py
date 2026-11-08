@@ -1506,6 +1506,22 @@ def cloud_register(
         raise FrameworkError(f".framework/spec.json is not valid JSON: {error}") from error
     if not isinstance(spec, dict):
         raise FrameworkError(".framework/spec.json is not a JSON object.")
+    # Framework Cloud refuses a spec that doesn't match spec.v1; say so here, with the
+    # fix, before anything is sent
+    from framework._spec_schema import problems
+
+    found = problems(spec)
+    if found:
+        fix = (
+            f'framework.upgrade("{path}", dry_run=False) (python -m framework upgrade --apply)'
+            if spec.get("language") in (None, "python")
+            else f"the {spec.get('language')} package's upgrade() (or fw project upgrade)"
+        )
+        raise FrameworkError(
+            ".framework/spec.json doesn't match spec.v1, so Framework Cloud would refuse it: "
+            + "; ".join(found[:5])
+            + f". Run {fix} to rewrite it, then cloud_register() again."
+        )
     if _env_tracked(root):
         raise FrameworkError(
             f"git tracks {root / '.env'}, so the project token would be committed. Run "

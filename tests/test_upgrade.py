@@ -10,6 +10,7 @@ import pytest
 import framework as fw
 from framework import _yaml
 from framework.__main__ import main
+from framework._spec_schema import problems as schema_problems
 
 CLAUDE = """# Old Study
 
@@ -157,7 +158,8 @@ def test_applies_the_plan_once(old: Path) -> None:
     assert spec["type"] == "project_sensitive"
     assert spec["security"]["sensitive"] is True
     assert spec["connections"]["databases"]["omop"]["password"] == 'env("OMOP_PASSWORD")'
-    assert spec["source"]["upgraded_from"] == "framework before 2.0 (no spec.json)"
+    assert spec["source"] == {"origin": "python", "framework_version": fw.__version__}
+    assert schema_problems(spec) == []
     assert spec["git"]["gitignore_content"] == gitignore.rstrip("\n")
     assert "framework-sensitive-data" in spec["skills"]
     assert fw.spec_check(spec) == []
@@ -186,7 +188,7 @@ def test_a_1x_config_yml_becomes_settings_yml(tmp_path: Path) -> None:
     # The files say Python, so the settings say it too
     assert config["language"] == "python"
     spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
-    assert spec["source"]["upgraded_from"] == "framework 1.x (config.yml)"
+    assert "upgraded_from" not in spec["source"]
     assert fw.upgrade(root).actions.empty
 
 
@@ -217,3 +219,51 @@ def test_the_command_line(old: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_adopt_points_an_existing_project_to_upgrade(old: Path) -> None:
     with pytest.raises(fw.FrameworkError, match=r"framework\.upgrade\(\)"):
         fw.adopt(old, yes=True)
+
+
+def test_specs_hold_only_what_spec_v1_allows(old: Path) -> None:
+    (old / "settings/scaffold.yml").write_text(
+        "scaffold:\n  positron: yes\n  seed_on_scaffold: true\n  seed: 123\n  extra: 1\n",
+        encoding="utf-8",
+    )
+    text = (old / "settings.yml").read_text(encoding="utf-8")
+    (old / "settings.yml").write_text(
+        text.replace("  ai:\n", "  scaffold: settings/scaffold.yml\n  ai:\n"), encoding="utf-8"
+    )
+    fw.upgrade(old, dry_run=False)
+    spec_path = old / ".framework/spec.json"
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    # positron: yes names the IDE; numbers become the schema's strings; the rest stays out
+    assert spec["scaffold"]["ide"] == "positron"
+    assert spec["scaffold"]["seed"] == "123"
+    assert "positron" not in spec["scaffold"] and "extra" not in spec["scaffold"]
+    assert schema_problems(spec) == []
+
+    # A spec an earlier upgrade() wrote is repaired
+    spec["scaffold"]["positron"] = True
+    spec["source"]["upgraded_from"] = "framework before 2.0 (no spec.json)"
+    spec_path.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
+    result = fw.upgrade(old, dry_run=False)
+    change = result.actions.set_index("path").loc[".framework/spec.json", "change"]
+    assert change.startswith("drop scaffold.positron, source.upgraded_from (not part of spec.v1")
+    assert schema_problems(json.loads(spec_path.read_text(encoding="utf-8"))) == []
+    assert fw.upgrade(old).actions.empty
+
+
+def test_prune_and_ready() -> None:
+    from framework._spec_schema import prune, ready
+    from framework.spec.merge import SpecError
+
+    spec = json.loads(
+        (Path(__file__).parent / "shared/conformance/create/python/project-scripts.json").read_text(
+            encoding="utf-8"
+        )
+    )["spec"]
+    spec["author"]["nickname"] = "E"
+    spec["security"]["reviewed"] = ["a.csv"]
+    pruned, dropped = prune(spec)
+    assert dropped == ["author.nickname", "security.reviewed"]
+    assert schema_problems(pruned) == []
+    pruned["type"] = "Not A Label"
+    with pytest.raises(SpecError, match="type: 'Not A Label' does not match"):
+        ready(pruned)

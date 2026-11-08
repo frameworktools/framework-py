@@ -678,24 +678,11 @@ def _spec_connections(connections: Any) -> dict[str, Any]:
     return out
 
 
-def _detected_version(plan: _Plan) -> str:
-    existing = plan.read(".framework/spec.json")
-    if existing is not None:
-        try:
-            version = (json.loads(existing).get("source") or {}).get("framework_version")
-        except (ValueError, AttributeError):
-            version = None
-        if version:
-            return f"framework-py {version}"
-    if (plan.root / "config.yml").is_file() and not (plan.root / "settings.yml").is_file():
-        return "framework 1.x (config.yml)"
-    return "framework before 2.0 (no spec.json)"
-
-
 def _spec_from_settings(plan: _Plan, settings: dict[str, Any]) -> dict[str, Any]:
     """A spec built from the settings as written, without secrets."""
     from framework import __version__
     from framework._private import settings_sensitive
+    from framework._spec_schema import problems as schema_problems
     from framework.ai import _shipped
     from framework.spec.check import ASSISTANTS, is_safe_path, spec_check
     from framework.spec.merge import SpecError
@@ -737,10 +724,7 @@ def _spec_from_settings(plan: _Plan, settings: dict[str, Any]) -> dict[str, Any]
     spec["connections"] = _spec_connections(settings.get("connections"))
     scaffold = settings.get("scaffold")
     if isinstance(scaffold, dict):
-        merged = {
-            **spec.get("scaffold", {}),
-            **{k: v for k, v in scaffold.items() if k != "workflow"},
-        }
+        merged = {**spec.get("scaffold", {}), **_spec_scaffold(scaffold)}
         if merged.get("notebook_format"):
             merged.pop("workflow", None)
         spec["scaffold"] = merged
@@ -764,15 +748,36 @@ def _spec_from_settings(plan: _Plan, settings: dict[str, Any]) -> dict[str, Any]
     spec["env"] = {}
     spec["files"] = {}
     spec["git"]["gitignore_content"] = (plan.read(".gitignore") or "").rstrip("\n")
-    spec["source"] = {
-        "origin": "python",
-        "upgraded_from": _detected_version(plan),
-        "framework_version": __version__,
-    }
-    problems = spec_check(spec)
+    # No upgrade provenance: spec.v1 has no place for it
+    spec["source"] = {"origin": "python", "framework_version": __version__}
+    problems = list(dict.fromkeys([*spec_check(spec), *schema_problems(spec)]))
     if problems:
         raise SpecError("; ".join(problems))
     return spec
+
+
+def _spec_scaffold(scaffold: dict[str, Any]) -> dict[str, Any]:
+    """The settings' scaffold options that spec.v1 holds, with values of the schema's
+    types. Older ``settings/scaffold.yml`` files carry options the spec has no place for
+    (``positron: yes``); ``positron: yes`` becomes ``ide: positron`` when no IDE is set,
+    and the rest stay in the settings only."""
+    import jsonschema
+
+    from framework._spec_schema import schema
+
+    props = schema()["properties"]["scaffold"]["properties"]
+    scaffold = dict(scaffold)
+    if scaffold.get("positron") is True and scaffold.get("ide") is None:
+        scaffold["ide"] = "positron"
+    out: dict[str, Any] = {}
+    for key, value in scaffold.items():
+        if key not in props or key == "workflow":
+            continue
+        if props[key].get("type") == "string" and isinstance(value, (bool, int, float)):
+            value = str(value).lower() if isinstance(value, bool) else str(value)
+        if jsonschema.Draft7Validator(props[key]).is_valid(value):
+            out[key] = value
+    return out
 
 
 def _same(a: Any, b: Any) -> bool:
@@ -783,7 +788,11 @@ def _same(a: Any, b: Any) -> bool:
 
 
 def _step_spec(plan: _Plan, built: dict[str, Any] | Exception) -> None:
-    """``.framework/spec.json`` from the upgraded settings."""
+    """``.framework/spec.json`` from the upgraded settings, holding only what spec.v1
+    allows."""
+    from framework._spec_schema import prune, ready
+    from framework.spec.merge import SpecError
+
     relative = ".framework/spec.json"
     if isinstance(built, Exception):
         plan.note(f".framework/spec.json was not written: {built}")
@@ -803,10 +812,25 @@ def _step_spec(plan: _Plan, built: dict[str, Any] | Exception) -> None:
             return
         # Refresh what the settings decide; keep the rest (files, skills, env)
         stale = [key for key in _DERIVED if not _same(old.get(key), built.get(key))]
-        if not stale:
-            return
         spec = {**old, **{key: built.get(key) for key in stale}}
-        change = f"refresh {', '.join(stale)} from the settings"
+        # Keys an earlier upgrade() wrote that spec.v1 has no place for, which Framework
+        # Cloud refuses (scaffold.positron, source.upgraded_from)
+        spec, dropped = prune(spec)
+        if not stale and not dropped:
+            return
+        parts = []
+        if stale:
+            parts.append(f"refresh {', '.join(stale)} from the settings")
+        if dropped:
+            parts.append(
+                f"drop {', '.join(dropped)} (not part of spec.v1, so Framework Cloud refuses them)"
+            )
+        change = "; ".join(parts)
+    try:
+        spec = ready(spec, quiet=True)
+    except SpecError as error:
+        plan.note(f".framework/spec.json was not written: {error}")
+        return
     plan.write("spec", relative, json.dumps(spec, indent=2, ensure_ascii=False) + "\n", change)
 
 
@@ -907,7 +931,10 @@ def upgrade(path: str | Path = ".", dry_run: bool = True, backup: bool = True) -
     - **Spec**: ``.framework/spec.json`` is written from the settings when it is
       missing, and refreshed when its folders, type, security, tools, or
       connections no longer match, so ``cloud_register()`` and
-      ``fw project push-spec`` work.
+      ``fw project push-spec`` work. It holds only what spec.v1 allows (see
+      ``spec.v1.json``), so keys an earlier ``upgrade()`` wrote that Framework
+      Cloud refuses (``scaffold.positron``, ``source.upgraded_from``) are
+      dropped.
 
     Args:
         path: The project folder.

@@ -153,6 +153,16 @@ def test_checks_before_sending(
     body = fw.cloud_register(adopted, dry_run=True)
     assert (body["slug"], body["adopted"]) == ("old-study", True)
     assert "<.framework/spec.json>" in capsys.readouterr().err
+    # A spec Cloud would refuse stops here, with the fix
+    spec_path = adopted / ".framework/spec.json"
+    good = spec_path.read_text(encoding="utf-8")
+    spec = json.loads(good)
+    spec["scaffold"]["positron"] = True
+    spec["source"]["upgraded_from"] = "framework 1.x"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    with pytest.raises(fw.FrameworkError, match=r"doesn't match spec\.v1.*positron.*upgrade"):
+        fw.cloud_register(adopted, dry_run=True)
+    spec_path.write_text(good, encoding="utf-8")
     (adopted / ".framework/spec.json").unlink()
     with pytest.raises(fw.FrameworkError, match=r"no \.framework/spec\.json"):
         fw.cloud_register(adopted)

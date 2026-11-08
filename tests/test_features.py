@@ -241,7 +241,11 @@ def test_python_projects_get_what_their_workflow_needs(tmp_path: Path) -> None:
         "type": "project",
         "language": "python",
         "tools": {"quarto": True},
-        "packages": {"default_packages": {"nbclient": {"source": "pypi", "version": ">=0.10"}}},
+        "packages": {
+            "default_packages": {
+                "nbclient": {"source": "pypi", "version": ">=0.10", "auto_attach": False}
+            }
+        },
     }
     spec = fw.spec_resolve([layer], name="Pinned").spec
     pinned = fw.project_create(spec, tmp_path / "pinned")
