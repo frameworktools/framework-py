@@ -27,6 +27,7 @@ _CONNECTION_KEYS = ("databases", "storage_buckets", "default_database", "default
 _DERIVED = (
     "name",
     "type",
+    "author",
     "tools",
     "directories",
     "extra_directories",
@@ -740,6 +741,10 @@ def _step_skills(plan: _Plan) -> None:
             p.is_dir() and p.name != "framework-sensitive-data" for p in path.iterdir()
         )
 
+    # Skills copied to .agents/skills (read by Codex and others) are kept current too,
+    # whatever the assistants
+    if (plan.root / ".agents/skills").is_dir():
+        dirs = list(dict.fromkeys([*dirs, ".agents/skills"]))
     existing = [d for d in dirs if uses_skills(d)]
     if not existing:
         if type != "project_sensitive":
@@ -862,6 +867,7 @@ def _spec_from_settings(plan: _Plan, settings: dict[str, Any]) -> dict[str, Any]
     from framework import __version__
     from framework._private import settings_sensitive
     from framework._spec_schema import problems as schema_problems
+    from framework._spec_schema import prune as schema_prune
     from framework.ai import _shipped
     from framework.spec.check import ASSISTANTS, is_safe_path, spec_check
     from framework.spec.merge import SpecError
@@ -929,6 +935,9 @@ def _spec_from_settings(plan: _Plan, settings: dict[str, Any]) -> dict[str, Any]
     spec["git"]["gitignore_content"] = (plan.read(".gitignore") or "").rstrip("\n")
     # No upgrade provenance: spec.v1 has no place for it
     spec["source"] = {"origin": "python", "framework_version": __version__}
+    # Settings may hold more than the spec has room for; the spec keeps what spec.v1
+    # allows
+    spec = schema_prune(spec)[0]
     problems = list(dict.fromkeys([*spec_check(spec), *schema_problems(spec)]))
     if problems:
         raise SpecError("; ".join(problems))
@@ -992,6 +1001,12 @@ def _step_spec(plan: _Plan, built: dict[str, Any] | Exception) -> None:
         # Refresh what the settings decide; keep the rest (files, skills, env)
         stale = [key for key in _DERIVED if not _same(old.get(key), built.get(key))]
         spec = {**old, **{key: built.get(key) for key in stale}}
+        # The copy of .gitignore follows the file; git's other settings stay
+        old_git = old.get("git") if isinstance(old.get("git"), dict) else None
+        content = built["git"].get("gitignore_content")
+        if old_git is None or old_git.get("gitignore_content") != content:
+            spec["git"] = {**(old_git or built["git"]), "gitignore_content": content}
+            stale.append("git.gitignore_content")
         # Keys an earlier upgrade() wrote that spec.v1 has no place for, which Framework
         # Cloud refuses (scaffold.positron, source.upgraded_from)
         spec, dropped = prune(spec)
@@ -1110,14 +1125,15 @@ def upgrade(
       alone and reported. Sensitive projects get the Claude Code guards that
       keep agents out of private folders.
     - **Skills**: Framework skills that match a version framework-py has
-      shipped are updated, missing ones for the type are added, and edited ones
+      shipped are updated, in the assistants' skills folders and in
+      ``.agents/skills``; missing ones for the type are added, and edited ones
       are kept and listed. A project with no skills folder gets none, except
       that a sensitive project gets ``framework-sensitive-data``.
     - **Quarto**: missing Quarto files are created, and an existing
       ``_quarto.yml`` at most gains missing keys (see ``quarto_regenerate()``).
     - **Spec**: ``.framework/spec.json`` is written from the settings when it is
-      missing, and refreshed when its folders, type, security, tools, or
-      connections no longer match, so ``cloud_register()`` and
+      missing, and refreshed when its folders, type, author, security, tools,
+      connections, or copy of ``.gitignore`` no longer match, so ``cloud_register()`` and
       ``fw project push-spec`` work. It holds only what spec.v1 allows (see
       ``spec.v1.json``), so keys an earlier ``upgrade()`` wrote that Framework
       Cloud refuses (``scaffold.positron``, ``source.upgraded_from``) are

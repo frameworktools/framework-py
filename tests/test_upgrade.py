@@ -340,3 +340,53 @@ def test_a_project_made_sensitive_by_hand_hears_where_outputs_go(plain: Path) ->
     # A sensitive project made another type stays sensitive
     plan = fw.upgrade(plain, type="course")
     assert any("stays sensitive" in n for n in plan.notes)
+
+
+def test_refreshes_the_spec_author_and_gitignore_copy_and_agents_skills(
+    old: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+
+    from framework import skill_sync
+
+    fw.upgrade(old, dry_run=False)
+    spec_path = old / ".framework/spec.json"
+    gitignore = (old / ".gitignore").read_text(encoding="utf-8")
+    assert json.loads(spec_path.read_text(encoding="utf-8"))["git"]["gitignore_content"] == (
+        gitignore.rstrip("\n")
+    )
+
+    # A copy in .agents/skills from an older release, with no lock entry: the lock's
+    # entry for .claude/skills/... says nothing about it
+    released = "---\nname: framework-data\n---\nAn older release.\n"
+    digest = hashlib.sha256(released.encode()).hexdigest()
+    monkeypatch.setattr(skill_sync, "_shipped_history", lambda: {"framework-data": [digest]})
+    agents = old / ".agents/skills/framework-data"
+    agents.mkdir(parents=True)
+    (agents / "SKILL.md").write_text(released, encoding="utf-8")
+
+    # The author is filled in and a .gitignore rule added by hand
+    (old / "settings/author.yml").write_text(
+        "author:\n  name: Ada Lovelace\n  email: ada@example.org\n  affiliation: JHU\n"
+        "  github: ada\n",
+        encoding="utf-8",
+    )
+    text = (old / "settings.yml").read_text(encoding="utf-8")
+    (old / "settings.yml").write_text(
+        text.replace("  ai:\n", "  author: settings/author.yml\n  ai:\n", 1), encoding="utf-8"
+    )
+    with (old / ".gitignore").open("a", encoding="utf-8") as handle:
+        handle.write("/exports/\n")
+    plan = fw.upgrade(old)
+    change = plan.actions.set_index("path").loc[".framework/spec.json", "change"]
+    assert "author" in change and "git.gitignore_content" in change
+    assert ".agents/skills/framework-data" in set(plan.actions["path"])
+
+    fw.upgrade(old, dry_run=False)
+    assert "older release" not in (agents / "SKILL.md").read_text(encoding="utf-8")
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    assert spec["author"]["name"] == "Ada Lovelace"
+    assert "github" not in spec["author"]
+    assert "/exports/" in spec["git"]["gitignore_content"]
+    assert schema_problems(spec) == []
+    assert fw.upgrade(old).actions.empty
