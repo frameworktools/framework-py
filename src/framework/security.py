@@ -3,7 +3,9 @@
 The checks match R's ``git_security_audit()``:
 
 - gitignore_coverage: private folders and the data files in them are ignored.
-- private_data_exposure: git tracks no file in a private folder.
+- private_data_exposure: git tracks no file in a private folder. Placeholders
+  that keep a folder in git (an empty ``.gitkeep`` or ``.keep``, or a
+  ``.gitignore`` of at most 4 KB) don't count.
 - git_history: no commit added, changed, renamed, or copied a data file in a
   private folder, in an inputs folder, or with identifier-like columns in its
   header (read from the committed blob). ``reason`` says which.
@@ -33,8 +35,25 @@ The checks match R's ``git_security_audit()``:
 Folders configured outside the project are skipped, since git can't commit
 them from here, and listed in the report and in ``metadata``.
 
-Where git is available, ``git check-ignore`` decides what is ignored. Without
-git, a port of R's ``.gitignore`` matcher does.
+Where git is available, ``git check-ignore --no-index`` decides what is ignored,
+so every ``.gitignore`` rule, negations and nested files included, counts as git
+reads it. Without git, a port of R's ``.gitignore`` matcher does.
+
+Files someone has reviewed and may commit (public lookup tables, OMOP vocabulary
+files, synthetic data) can be listed in the settings under ``security:
+reviewed:``, as paths from the project root, folders, or globs (``*`` within a
+folder name, ``**`` across folders, ``?`` one character)::
+
+    security:
+      sensitive: true
+      reviewed:
+        - inputs/public/
+        - "**/*_synthetic_*.csv"
+
+The git_history, private_data_exposure, and identifier_columns checks don't
+count them; they are listed in ``findings["reviewed"]`` (``file``, ``check``,
+``pattern``) and on one REVIEWED line of the printed report. ``reviewed`` is a
+settings key only; specs never carry it.
 """
 
 from __future__ import annotations
@@ -380,6 +399,75 @@ def _check_gitignore(
     return _frame(rows, ["file", "directory", "severity", "reason"]), advice
 
 
+def placeholder_file(root: Path, path: str) -> bool:
+    """Whether a tracked path is a placeholder that keeps a folder in git, not data: an
+    empty ``.gitkeep`` or ``.keep`` (whitespace only), or a ``.gitignore`` of at most
+    4 KB (it holds ignore rules, such as ``*`` and ``!.gitignore``). Sizes come from the
+    working tree, or from the index for a file deleted there. R:
+    ``.fw_placeholder_file()``."""
+    base = Path(path).name.lower()
+    if base not in (".gitkeep", ".keep", ".gitignore"):
+        return False
+    full = root / path
+    if full.is_file():
+        size = full.stat().st_size
+    else:
+        out = _git(root, "cat-file", "-s", f":{path}")
+        try:
+            size = int(out.stdout.strip())
+        except ValueError:
+            return False
+    if base == ".gitignore":
+        return size <= 4096
+    if size == 0:
+        return True
+    if size > 64 or not full.is_file():
+        return False
+    return not full.read_text(encoding="utf-8", errors="replace").strip()
+
+
+def reviewed_patterns(config: dict[str, Any]) -> list[str]:
+    """The settings' reviewed paths (``security: reviewed:``): files or folders, as paths
+    from the project root or globs, that someone checked and that may be committed
+    (public lookup tables, vocabulary files, synthetic data)."""
+    security = config.get("security")
+    reviewed = security.get("reviewed") if isinstance(security, dict) else None
+    if isinstance(reviewed, str):
+        reviewed = [reviewed]
+    patterns = [
+        str(p).strip().removeprefix("/").removeprefix("./")
+        for p in (reviewed if isinstance(reviewed, list) else [])
+        if p is not None
+    ]
+    return list(dict.fromkeys(p for p in patterns if p))
+
+
+def _reviewed_regex(pattern: str) -> str:
+    rx = re.sub(r"([.+^$(){}|\[\]\\])", r"\\\1", pattern)
+    rx = rx.replace("**/", "\x01").replace("**", "\x02")
+    rx = rx.replace("*", "[^/]*").replace("?", "[^/]")
+    rx = rx.replace("\x01", "(.*/)?").replace("\x02", ".*")
+    if rx.endswith("/"):
+        rx = rx[:-1] + "/.*"
+    return f"^{rx}(/.*)?$"
+
+
+def reviewed_match(path: str, patterns: list[str]) -> str | None:
+    """The first reviewed pattern that covers a path, or None. A pattern without
+    wildcards is a file or a folder (everything inside it counts). In a glob, ``*``
+    matches within one folder name, ``**`` across folders, and ``?`` one character.
+    R: ``.fw_reviewed_match()``."""
+    path = path.replace("\\", "/").removeprefix("./")
+    for pattern in patterns:
+        if not re.search(r"[*?]", pattern):
+            folder = pattern.rstrip("/")
+            if path == folder or path.startswith(f"{folder}/"):
+                return pattern
+        elif re.match(_reviewed_regex(pattern), path):
+            return pattern
+    return None
+
+
 def _check_exposure(
     root: Path, private: dict[str, str], tracked: list[str], extensions: tuple[str, ...]
 ) -> tuple[pd.DataFrame, list[str]]:
@@ -391,7 +479,8 @@ def _check_exposure(
         if not (root / folder).is_dir():
             continue
         for name in tracked:
-            if _inside(name, folder) and name not in reported:
+            # Placeholders that keep a folder in git aren't data
+            if _inside(name, folder) and name not in reported and not placeholder_file(root, name):
                 reported.add(name)
                 rows.append({"file": name, "directory": key, "git_status": "tracked"})
     # Also data files in any folder named private, confidential, or sensitive,
@@ -879,6 +968,13 @@ _SECTIONS = {
     "identifier_columns": "Tracked Data With Identifier-Like Columns",
 }
 
+# The checks whose findings security: reviewed: can set aside, and their names there
+_REVIEWABLE = {
+    "git_history": "git_history",
+    "private_data_exposure": "private_data_exposure",
+    "identifier_columns": "identifier_columns",
+}
+
 # Warnings the pre-commit hook prints even when the audit passes
 HOOK_WARNINGS = ("published_outputs", "connection_secrets", "identifier_columns")
 
@@ -959,6 +1055,15 @@ def _report(result: AuditResult) -> str:
     for row in result.summary.itertuples():
         label = str(row.check).replace("_", " ")
         lines.append(f"{_ICONS[str(row.status)]}: {label} ({row.count} issues)")
+    reviewed = result.findings.get("reviewed")
+    if reviewed is not None and not reviewed.empty:
+        from framework._gitignore import rules_summary
+
+        files = list(dict.fromkeys(str(f) for f in reviewed["file"]))
+        lines.append(
+            f"✓ REVIEWED: {len(files)} file(s) marked safe in settings (security: reviewed:), "
+            f"not counted: {rules_summary(files, n=5)}"
+        )
     lines += _finding_lines(result, tuple(_SECTIONS))
 
     skipped = result.metadata.get("skipped_directories") or {}
@@ -1019,6 +1124,7 @@ def git_security_audit(
 
     Returns:
         An ``AuditResult``. ``result.passed`` is False when a check failed.
+        ``findings["reviewed"]`` lists files ``security: reviewed:`` set aside.
         The result is also recorded in ``framework.db`` when it exists.
     """
     if isinstance(history_depth, bool) or (isinstance(history_depth, int) and history_depth < 1):
@@ -1050,10 +1156,25 @@ def git_security_audit(
 
     findings: dict[str, pd.DataFrame] = {}
     recommendations: list[str] = []
+    reviewed = reviewed_patterns(config)
+    set_aside: list[dict[str, str]] = []
 
     def record(check: str, outcome: tuple[pd.DataFrame, list[str]]) -> None:
-        findings[check] = outcome[0]
-        recommendations.extend(outcome[1])
+        frame, advice = outcome
+        # Files the settings mark as reviewed (security: reviewed:) are listed under
+        # findings["reviewed"] instead of failing a check
+        if check in _REVIEWABLE and reviewed and not frame.empty:
+            matched = [reviewed_match(str(f), reviewed) for f in frame["file"]]
+            for file, pattern in zip(frame["file"], matched, strict=True):
+                if pattern is not None:
+                    row = {"file": str(file), "check": _REVIEWABLE[check], "pattern": pattern}
+                    if row not in set_aside:
+                        set_aside.append(row)
+            frame = frame[[m is None for m in matched]].reset_index(drop=True)
+            if frame.empty:
+                advice = []
+        findings[check] = frame
+        recommendations.extend(advice)
 
     record("gitignore_coverage", _check_gitignore(root, private, rules, exts))
     record("private_data_exposure", _check_exposure(root, private, tracked, exts))
@@ -1069,6 +1190,7 @@ def git_security_audit(
     record("published_outputs", _check_published(root, config, rules, tracked))
     record("connection_secrets", _check_connection_secrets(root, path, set(tracked)))
     record("identifier_columns", _check_identifiers(root, tracked))
+    findings["reviewed"] = _frame(set_aside, ["file", "check", "pattern"])
 
     coverage = findings["gitignore_coverage"]
     statuses = {

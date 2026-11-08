@@ -97,7 +97,7 @@ The hook belongs to a project at the top of its own repository. A project inside
 | Check | Fails when |
 |-------|------------|
 | `gitignore_coverage` | A private data folder, or a data file in one, is not ignored |
-| `private_data_exposure` | Git tracks a file in a private data folder |
+| `private_data_exposure` | Git tracks a file in a private data folder. Placeholders that keep the folder in git (an empty `.gitkeep` or `.keep`, or a `.gitignore` of at most 4 KB) don't count. |
 | `git_history` | A past commit added, changed, or deleted a data file in a private data folder |
 | `secrets_exposure` | Git tracks a `.env` file or a variant such as `.env.local`. Files ending in `.example`, `.template`, or `.sample` are allowed. |
 | `orphaned_files` | Warns, without failing, about data files outside the configured folders that git does not ignore |
@@ -106,6 +106,20 @@ The hook belongs to a project at the top of its own repository. A project inside
 | `connection_secrets` | A password, secret, token, or key under `connections` in the settings (the settings file or a split file under `settings/`) is written out instead of read with `env("VARIABLE")`, and git tracks the file. An untracked file only warns. `env("VAR")` and `env("VAR", "")` pass; `env("VAR", "value")` counts as written out, since the default is in the file, and Framework Cloud refuses it in a spec. Credential keys are those matching password, passwd, pwd, secret, token, access_key, api_key, private_key, or credential. The report names the file and key, never the value. |
 
 A new project adds each folder destination the `published_outputs` check covers to its `.gitignore`, such as `/published/`.
+
+In a git repository, git decides what is ignored (`git check-ignore --no-index`), so every `.gitignore` rule counts as git reads it, negations and nested `.gitignore` files included.
+
+Files you have reviewed and may commit, such as public lookup tables, vocabulary files, or synthetic data, can be listed under `security: reviewed:` in the settings, as paths from the project root, folders, or globs (`*` within a folder name, `**` across folders, `?` one character):
+
+```yaml
+security:
+  sensitive: true
+  reviewed:
+    - inputs/public/
+    - "**/*_synthetic_*.csv"
+```
+
+The `git_history`, `private_data_exposure`, and `identifier_columns` checks don't count them. They are listed in `findings["reviewed"]` (`file`, `check`, `pattern`) and on one `REVIEWED` line of the report. The list stays in the settings; `.framework/spec.json` doesn't carry it.
 
 ```python
 result = fw.git_security_audit()

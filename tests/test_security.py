@@ -526,3 +526,115 @@ def test_upgrade_keeps_an_env_calls_variable_in_the_spec() -> None:
     )
     assert connections["databases"]["db"]["password"] == 'env("DB_PASSWORD")'
     assert connections["databases"]["db"]["token"] == "env('DB_TOKEN', '')"
+
+
+def test_gitignore_coverage_asks_git_so_negated_folders_still_ignore_files(repo: Path) -> None:
+    # fore: inputs/** with !inputs/*/ keeps folders visible and their files ignored
+    (repo / ".gitignore").write_text(
+        ".env\ninputs/**\n!inputs/*/\n!inputs/*/.gitkeep\n", encoding="utf-8"
+    )
+    (repo / "settings.yml").write_text(
+        "default:\n  project_type: project_sensitive\n  directories:\n"
+        "    inputs_private_raw: inputs/raw\n",
+        encoding="utf-8",
+    )
+    (repo / "inputs/raw").mkdir(parents=True)
+    (repo / "inputs/raw/dictionary.csv").write_text("a,b\n", encoding="utf-8")
+    (repo / "inputs/raw/.gitkeep").write_text("", encoding="utf-8")
+    git(repo, "add", "-f", "inputs/raw/.gitkeep")
+    result = fw.git_security_audit(check_git_history=False, verbose=False)
+    assert result.findings["gitignore_coverage"].empty
+    assert result.findings["private_data_exposure"].empty
+
+    # A rule that really leaves a data file out of .gitignore still fails
+    (repo / ".gitignore").write_text(
+        ".env\ninputs/**\n!inputs/*/\n!inputs/raw/*.csv\n", encoding="utf-8"
+    )
+    result = fw.git_security_audit(check_git_history=False, verbose=False)
+    assert list(result.findings["gitignore_coverage"]["file"]) == ["inputs/raw/dictionary.csv"]
+
+
+def test_placeholders_in_private_folders_are_not_exposed_data(repo: Path) -> None:
+    from framework.security import placeholder_file
+
+    (repo / "settings.yml").write_text(
+        "default:\n  project_type: project_sensitive\n  directories:\n"
+        "    inputs_private_raw: data-files\n"
+        "    outputs_private_figures: outputs/private/figures\n",
+        encoding="utf-8",
+    )
+    (repo / "data-files").mkdir()
+    (repo / "outputs/private/figures").mkdir(parents=True)
+    (repo / "data-files/.gitignore").write_text("*\n*/\n!.gitignore\n", encoding="utf-8")
+    (repo / "outputs/private/figures/.gitkeep").write_text("", encoding="utf-8")
+    (repo / "outputs/private/figures/notes.txt").write_text("not empty\n", encoding="utf-8")
+    git(repo, "add", "-f", "data-files/.gitignore", "outputs/private/figures")
+    result = fw.git_security_audit(check_git_history=False, verbose=False)
+    assert list(result.findings["private_data_exposure"]["file"]) == [
+        "outputs/private/figures/notes.txt"
+    ]
+    assert placeholder_file(repo, "data-files/.gitignore")
+    assert placeholder_file(repo, "outputs/private/figures/.gitkeep")
+    assert not placeholder_file(repo, "outputs/private/figures/notes.txt")
+    (repo / "outputs/private/figures/.gitkeep").write_text("keep me\n", encoding="utf-8")
+    assert not placeholder_file(repo, "outputs/private/figures/.gitkeep")
+    # Deleted in the working tree: the size comes from the index
+    (repo / "data-files/.gitignore").unlink()
+    assert placeholder_file(repo, "data-files/.gitignore")
+
+
+def test_files_marked_reviewed_are_reported_as_reviewed(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (repo / ".gitignore").write_text(".env\n", encoding="utf-8")
+    (repo / "settings.yml").write_text(
+        "default:\n  project_type: project_sensitive\n  directories:\n"
+        "    inputs_public_raw: inputs/public/raw\n"
+        "    inputs_private_raw: inputs/private/raw\n"
+        "  security:\n    sensitive: true\n    reviewed:\n"
+        '      - inputs/public/\n      - "**/*_synthetic_*.csv"\n',
+        encoding="utf-8",
+    )
+    (repo / "inputs/public/raw").mkdir(parents=True)
+    (repo / "synthetic").mkdir()
+    (repo / "inputs/public/raw/lookup.csv").write_text("site,patient_count\n", encoding="utf-8")
+    (repo / "synthetic/peanuts_synthetic_patients.csv").write_text("id,dob\n", encoding="utf-8")
+    (repo / "inputs/private/raw/real.csv").write_text("id,dob\n", encoding="utf-8")
+    git(repo, "add", "-f", ".")
+    git(repo, "commit", "-qm", "data")
+
+    result = fw.git_security_audit()
+    history = result.findings["git_history"]
+    assert "synthetic/peanuts_synthetic_patients.csv" not in set(history["file"])
+    assert "inputs/private/raw/real.csv" in set(history["file"])
+    exposure = set(result.findings["private_data_exposure"]["file"])
+    assert "inputs/private/raw/real.csv" in exposure
+    reviewed = result.findings["reviewed"]
+    assert set(reviewed["file"]) == {
+        "inputs/public/raw/lookup.csv",
+        "synthetic/peanuts_synthetic_patients.csv",
+    }
+    assert {"git_history", "identifier_columns"} <= set(reviewed["check"])
+    synthetic = reviewed[reviewed["file"] == "synthetic/peanuts_synthetic_patients.csv"]
+    assert synthetic["pattern"].iloc[0] == "**/*_synthetic_*.csv"
+    assert "REVIEWED: 2 file(s) marked safe in settings" in capsys.readouterr().out
+    identifiers = set(result.findings["identifier_columns"]["file"])
+    assert "synthetic/peanuts_synthetic_patients.csv" not in identifiers
+
+
+def test_reviewed_patterns_match_files_folders_and_globs() -> None:
+    from framework.security import reviewed_match, reviewed_patterns
+
+    patterns = ["inputs/public", "vocab/*.csv", "**/omop_*.csv"]
+    paths = [
+        "inputs/public/raw/a.csv",
+        "vocab/CONCEPT.csv",
+        "x/y/omop_vocab.csv",
+        "notes.csv",
+        "inputs/publication.csv",
+    ]
+    assert [reviewed_match(p, patterns) for p in paths] == [*patterns, None, None]
+    assert reviewed_match("notes.csv", ["./notes.csv"]) is None
+    found = reviewed_patterns({"security": {"reviewed": ["./notes.csv", "/a/"]}})
+    assert found == ["notes.csv", "a/"]
+    assert reviewed_match("a/b.csv", found) == "a/"
