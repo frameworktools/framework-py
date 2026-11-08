@@ -9,6 +9,7 @@ every file rewritten is backed up to ``.framework/backups/<timestamp>/`` first.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from collections.abc import Callable
@@ -64,6 +65,7 @@ class _Plan:
     skills: list[Callable[[], Any]] = field(default_factory=list)
     type: str | None = None
     before: dict[str, Any] = field(default_factory=dict)
+    secret_names: dict[tuple[str, str], tuple[str, str]] = field(default_factory=dict)
 
     def read(self, relative: str) -> str | None:
         """A file's text as planned, else as on disk, else None."""
@@ -479,14 +481,171 @@ def _migrate_connections(raw: Any) -> dict[str, Any]:
 
 
 def _secret_note(plan: _Plan, raw: Any, relative: str) -> None:
-    from framework.security import _secret_keys
+    """A note per written-out credential: the variable the spec refers to it by, and how
+    to make the settings match. Values are never shown."""
+    from framework.security import _secret_keys, env_call
 
-    keys = _secret_keys(raw, "", False)
-    if keys:
-        plan.note(
-            f"{relative} has a password or token written in ({', '.join(keys)}). Move the "
-            'value to .env and write env("NAME") instead; upgrade() leaves it as it is.'
+    for path in _secret_keys(raw, "", False):
+        parts = path.split(".")
+        parent: Any = raw
+        for part in parts[:-1]:
+            parent = parent.get(part) if isinstance(parent, dict) else None
+        value = parent.get(parts[-1]) if isinstance(parent, dict) else None
+        in_section = len(parts) >= 4 and parts[1] in ("databases", "storage_buckets")
+        conn = parts[2] if in_section else parts[max(0, len(parts) - 2)]
+        driver = parent.get("driver") if isinstance(parent, dict) else None
+        name, source = _secret_env_name(plan, conn, parts[-1], value, driver)
+        where = (
+            "no .env, .env example, or code names one, so it is made from the connection's name"
+            if source == "derived"
+            else f"the name {source} uses"
         )
+        what = (
+            "gives env() a default that looks like a credential"
+            if env_call(value) is not None
+            else "has a password or token written in"
+        )
+        do = (
+            f"{name} is set in .env, so write"
+            if source == ".env"
+            else f"Set {name} in .env, then write"
+        )
+        plan.note(
+            f'{relative}: {path} {what}. .framework/spec.json refers to it as env("{name}") '
+            f'({where}). {do} {parts[-1]}: env("{name}") in {relative} so the settings '
+            "match; upgrade() leaves the settings as they are."
+        )
+
+
+def _secret_env_name(
+    plan: _Plan, conn: str, key: str, value: Any = None, driver: Any = None
+) -> tuple[str, str]:
+    """The environment variable a written-out credential belongs in, and where the name
+    came from: the name the project already uses for it, else one made from the
+    connection (source ``"derived"``). Cached per connection and key, so the plan and the
+    spec agree. R: ``.upgrade_secret_env_name()``."""
+    from framework.security import env_call
+
+    memo = (conn, key)
+    if memo in plan.secret_names:
+        return plan.secret_names[memo]
+    call = env_call(value)
+    derived = re.sub(r"[^A-Za-z0-9]+", "_", f"{conn}_{key}").upper()
+    if call is not None and call[0]:
+        found = (call[0], "the setting")
+    else:
+        found = _find_env_name(plan.root, conn, key, value, driver) or (derived, "derived")
+    plan.secret_names[memo] = found
+    return found
+
+
+_ENV_ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
+_CODE_FILE = re.compile(r"\.(R|r|qmd|Rmd|py|sh|ya?ml)$")
+_CODE_SKIP = re.compile(
+    r"(^|/)(\.[^/]*|renv|node_modules|packrat|_site|_freeze|[^/]*_files|settings)/"
+)
+
+
+def _small(path: Path) -> bool:
+    try:
+        return path.is_file() and path.stat().st_size < 512 * 1024
+    except OSError:
+        return False
+
+
+def _find_env_name(
+    root: Path, conn: str, key: str, value: Any = None, driver: Any = None
+) -> tuple[str, str] | None:
+    """The variable name the project uses for a credential: from ``.env``, then the
+    example ``.env`` files, then the code (R, Quarto, R Markdown, Python, shell, and
+    YAML files). A name counts when it fits the key (PASS or PWD for a password, TOKEN
+    for a token, ...). The best holds the written-out value (compared, never shown),
+    then names the connection and its driver. None when no name fits."""
+    from framework.security import env_call
+
+    kind = key.lower()
+    if re.search("pass|pwd", kind):
+        fits = "PASS|PWD"
+    elif "token" in kind:
+        fits = "TOKEN"
+    elif "secret" in kind:
+        fits = "SECRET"
+    elif "private" in kind:
+        fits = "PRIVATE|KEY"
+    elif "access" in kind:
+        fits = "ACCESS|KEY"
+    elif "api" in kind:
+        fits = "API|KEY"
+    elif "cred" in kind:
+        fits = "CRED"
+    else:
+        fits = re.escape(re.sub(r"[^A-Za-z0-9]", "", key).upper())
+    literal = value if isinstance(value, str) and env_call(value) is None else None
+
+    def read_env(name: str) -> dict[str, str]:
+        path = root / name
+        if not path.is_file():
+            return {}
+        values: dict[str, str] = {}
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = _ENV_ASSIGNMENT.match(line)
+            if match:
+                values[match.group(1)] = re.sub(r"^(['\"])(.*)\1$", r"\2", match.group(2).strip())
+        return values
+
+    candidates: dict[str, list[Any]] = {}
+
+    def add(name: str, source: str, points: int) -> None:
+        if not re.search(fits, name):
+            return
+        entry = candidates.setdefault(name, [source, 0])
+        entry[1] += points
+
+    for name, held in read_env(".env").items():
+        add(name, ".env", 2 + (4 if literal is not None and held == literal else 0))
+    for example in (".env.example", ".env.template", ".env.sample"):
+        for name, held in read_env(example).items():
+            add(name, example, 1 + (2 if literal is not None and held == literal else 0))
+    code: list[str] = []
+    for folder, subfolders, files in os.walk(root):
+        # Skipped folders aren't walked at all (.venv, renv, node_modules, ...)
+        here = Path(folder).relative_to(root).as_posix()
+        prefix = "" if here == "." else f"{here}/"
+        subfolders[:] = sorted(d for d in subfolders if not _CODE_SKIP.search(f"{prefix}{d}/"))
+        code += [
+            f"{prefix}{name}"
+            for name in sorted(files)
+            if _CODE_FILE.search(name) and _small(Path(folder) / name)
+        ]
+        if len(code) >= 2000:
+            break
+    code = code[:2000]
+    for file in code:
+        try:
+            text = (root / file).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for name in dict.fromkeys(re.findall(r"[A-Z][A-Z0-9_]{2,}", text)):
+            add(name, file, 1)
+    if not candidates:
+        return None
+    conn_tokens = {t.upper() for t in re.split(r"[^A-Za-z0-9]+", conn) if t}
+    driver_tokens = {str(driver).upper()} if driver else set()
+    if str(driver or "").lower() == "postgres":
+        driver_tokens |= {"PG", "PGPASSWORD"}
+
+    def score(item: tuple[str, list[Any]]) -> int:
+        parts = item[0].split("_")
+        points: int = item[1][1]
+        return (
+            points
+            + 2 * any(p in conn_tokens for p in parts)
+            + any(p in driver_tokens for p in parts)
+        )
+
+    # The highest score wins; ties go to the first found
+    best = max(candidates.items(), key=score)
+    return best[0], str(best[1][0])
 
 
 def _step_connections(plan: _Plan) -> None:
@@ -824,9 +983,13 @@ def _step_quarto(plan: _Plan) -> None:
         )
 
 
-def _spec_connections(connections: Any) -> dict[str, Any]:
+def _spec_connections(
+    connections: Any, namer: Callable[[str, str, Any, Any], str] | None = None
+) -> dict[str, Any]:
     """Connections for the spec: ``env()`` and ``!expr`` stay as written; a password or
-    token written in becomes ``env("<NAME>_<KEY>")``, since specs travel to Cloud."""
+    token written in becomes ``env("NAME")``, since specs travel to Cloud. NAME comes
+    from ``namer(connection, key, value, driver)`` when given (``upgrade()`` finds the
+    name the project uses), else ``<CONNECTION>_<KEY>``."""
     from framework.security import _literal_secret, credential_key, env_call
 
     connections = connections if isinstance(connections, dict) else {}
@@ -843,11 +1006,12 @@ def _spec_connections(connections: Any) -> dict[str, Any]:
                         # env("NAME", "default") keeps its variable and loses the default,
                         # which Framework Cloud refuses on a credential
                         call = env_call(value)
-                        variable = (
-                            call[0]
-                            if call is not None
-                            else re.sub(r"[^A-Za-z0-9]+", "_", f"{name}_{key}").upper()
-                        )
+                        if call is not None:
+                            variable = call[0]
+                        elif namer is not None:
+                            variable = namer(str(name), str(key), value, entry.get("driver"))
+                        else:
+                            variable = re.sub(r"[^A-Za-z0-9]+", "_", f"{name}_{key}").upper()
                         entry[key] = f'env("{variable}")'
             out[str(name)] = entry
         return out
@@ -906,7 +1070,10 @@ def _spec_from_settings(plan: _Plan, settings: dict[str, Any]) -> dict[str, Any]
     spec["render_dirs"] = {
         str(k): v for k, v in render.items() if isinstance(v, str) and v and is_safe_path(v)
     }
-    spec["connections"] = _spec_connections(settings.get("connections"))
+    spec["connections"] = _spec_connections(
+        settings.get("connections"),
+        namer=lambda conn, key, value, driver: _secret_env_name(plan, conn, key, value, driver)[0],
+    )
     scaffold = settings.get("scaffold")
     if isinstance(scaffold, dict):
         merged = {**spec.get("scaffold", {}), **_spec_scaffold(scaffold)}
@@ -1114,7 +1281,10 @@ def upgrade(
       connections listed flat, or the empty hybrid of both) are rewritten as
       ``connections:`` with ``default_database``, ``databases``, and
       ``storage_buckets``. A password written into the settings is reported (by
-      key, never by value) and left where it is.
+      key, never by value) and left where it is. The spec refers to it as
+      ``env("NAME")``, NAME being the variable the project already uses for it
+      (in ``.env``, an example ``.env``, or the code), else one made from the
+      connection's name; the plan names it and says to set it.
     - **.gitignore**: the rules of the current template for the project's type
       that it lacks, private folders, and folder publishing destinations are
       appended in one block. No line is removed, and a rule that would ignore

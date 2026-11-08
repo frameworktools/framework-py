@@ -109,7 +109,10 @@ def test_plans_without_changing_anything(old: Path, capsys: pytest.CaptureFixtur
     )
     err = capsys.readouterr().err
     assert "keys outside default: (ehr_source)" in err
-    assert "settings/connections.yml has a password or token written in" in err
+    assert (
+        "settings/connections.yml: connections.databases.omop.password has a password or "
+        'token written in. .framework/spec.json refers to it as env("OMOP_PASSWORD")'
+    ) in err
     assert "hunter2" not in err
     assert "Dry run: nothing was changed" in err
 
@@ -390,3 +393,42 @@ def test_refreshes_the_spec_author_and_gitignore_copy_and_agents_skills(
     assert "/exports/" in spec["git"]["gitignore_content"]
     assert schema_problems(spec) == []
     assert fw.upgrade(old).actions.empty
+
+
+def test_a_written_out_password_goes_into_the_spec_under_the_name_the_project_uses(
+    old: Path,
+) -> None:
+    def note(plan: fw.UpgradeResult) -> str:
+        return next(n for n in plan.notes if "omop.password" in n)
+
+    (old / ".env.example").write_text(
+        "# Local database\nOMOP_DB_PASSWORD=\nPGPASSWORD=changeme\n", encoding="utf-8"
+    )
+    (old / "scripts").mkdir()
+    (old / "scripts/load.py").write_text('pw = os.environ["OMOP_PG_PASSWORD"]\n', encoding="utf-8")
+    (old / ".env").write_text("OMOP_PG_PASSWORD=hunter2\nOTHER_TOKEN=x\n", encoding="utf-8")
+    plan = fw.upgrade(old)
+    text = note(plan)
+    assert 'refers to it as env("OMOP_PG_PASSWORD") (the name .env uses)' in text
+    assert "OMOP_PG_PASSWORD is set in .env" in text
+    assert not any("hunter2" in n or "changeme" in n for n in plan.notes)
+    fw.upgrade(old, dry_run=False)
+    spec = json.loads((old / ".framework/spec.json").read_text(encoding="utf-8"))
+    assert spec["connections"]["databases"]["omop"]["password"] == 'env("OMOP_PG_PASSWORD")'
+
+
+def test_a_password_name_from_an_example_file_or_made_up(old: Path) -> None:
+    from framework.upgrade import _find_env_name
+
+    (old / ".env.example").write_text("OMOP_DB_PASSWORD=\nPGPASSWORD=\n", encoding="utf-8")
+    text = next(n for n in fw.upgrade(old).notes if "omop.password" in n)
+    assert (
+        'env("OMOP_DB_PASSWORD") (the name .env.example uses). Set OMOP_DB_PASSWORD in .env'
+    ) in text
+    (old / ".env.example").unlink()
+    text = next(n for n in fw.upgrade(old).notes if "omop.password" in n)
+    assert 'env("OMOP_PASSWORD") (no .env, .env example, or code names one' in text
+    # The value decides between names, and code under settings/ or hidden folders is skipped
+    (old / ".env").write_text("A_PASSWORD=x\nB_PASSWORD=hunter2\n", encoding="utf-8")
+    assert _find_env_name(old, "omop", "password", "hunter2") == ("B_PASSWORD", ".env")
+    assert _find_env_name(old, "omop", "token", "hunter2") is None
