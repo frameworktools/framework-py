@@ -37,8 +37,20 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument("--path", required=True, help="the project folder to create")
     create.add_argument(
         "--type",
-        choices=["project", "project_sensitive", "course", "presentation", "bare"],
-        help="project type, with --name (default: project, or asked with --interactive)",
+        choices=[
+            "project",
+            "project_sensitive",
+            "course",
+            "presentation",
+            "bare",
+            "shiny",
+            "shiny_python",
+            "fastapi",
+        ],
+        help=(
+            "project type, with --name (default: project, or asked with --interactive); "
+            "shiny and fastapi need a Framework Cloud login"
+        ),
     )
     create.add_argument(
         "--workflow",

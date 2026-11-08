@@ -648,6 +648,38 @@ def catalog_layer(type: str) -> dict[str, Any]:
     return _defaults_layer(catalog, type) if isinstance(catalog, dict) else {}
 
 
+# App project types: Framework Cloud blueprints, so they need a login. In Python,
+# shiny is Shiny for Python.
+APP_TYPES = {
+    "shiny": "framework/shiny_python",
+    "shiny_python": "framework/shiny_python",
+    "fastapi": "framework/fastapi",
+}
+# R's app types, with the Python type to use instead.
+R_APP_TYPES = {"plumber": ("Plumber", "fastapi")}
+
+
+def _invalid_type() -> FrameworkError:
+    return FrameworkError(
+        f"Invalid project type. Must be one of: {', '.join(TYPES)}, "
+        f"or, with Framework Cloud, {', '.join(APP_TYPES)}"
+    )
+
+
+def _app_blueprint(type: str) -> str:
+    """The blueprint for an app type. It needs a Framework Cloud login, checked first."""
+    from framework.cloud import CloudError, cloud_server, cloud_token, host, login_hint
+
+    blueprint = APP_TYPES[type]
+    server = cloud_server().url
+    if cloud_token(server) is None:
+        raise CloudError(
+            f'type="{type}" builds the Framework Cloud blueprint {blueprint}. '
+            f"No cloud token found for {host(server)}. {login_hint(server)}"
+        )
+    return blueprint
+
+
 def new_project(
     name: str | None = None,
     location: str | Path | None = None,
@@ -673,7 +705,11 @@ def new_project(
     Args:
         name: Project name. Asked for when interactive.
         location: The project folder to create. Asked for when interactive.
-        type: project, project_sensitive, course, presentation, or bare. When
+        type: project, project_sensitive, course, presentation, or bare. App types
+            ``"shiny"`` (Shiny for Python; ``"shiny_python"`` is the same) and
+            ``"fastapi"`` are Framework Cloud blueprints: ``type="fastapi"`` is
+            ``blueprint="framework/fastapi"``, and needs
+            [`cloud_login()`](ref:cloud_login). ``"plumber"`` is R only. When
             you are logged in to Framework Cloud, every choice is resolved there:
             a type is its system blueprint (``framework/<type>``), and with no
             choices at all the project starts from your defaults. When not logged
@@ -734,6 +770,14 @@ def new_project(
     cloud_choices = blueprint is not None or structure is not None
     if cloud_choices and type is not None:
         raise FrameworkError("Pass type, or blueprint and structure, not both")
+    if type in R_APP_TYPES:
+        label, instead = R_APP_TYPES[type]
+        raise FrameworkError(
+            f'{label} is an R project type. For a Python API, use type="{instead}".'
+        )
+    if type in APP_TYPES:
+        # Exactly blueprint="framework/<app>"
+        blueprint, type, cloud_choices = _app_blueprint(type), None, True
     if not cloud_choices:
         needs_cloud = [
             name
@@ -789,7 +833,7 @@ def new_project(
         return local()
     # Logged in: the cloud resolves every choice. A Framework type is its system blueprint.
     if type is not None and type not in TYPES:
-        raise FrameworkError(f"Invalid project type. Must be one of: {', '.join(TYPES)}")
+        raise _invalid_type()
     body = _choices_body(
         name,
         f"framework/{type}" if type else None,
@@ -825,7 +869,7 @@ def _new_local(
         else:
             type = "project"
     if type not in TYPES:
-        raise FrameworkError(f"Invalid project type. Must be one of: {', '.join(TYPES)}")
+        raise _invalid_type()
 
     from framework.features import definition_layers, workflow_layers
 

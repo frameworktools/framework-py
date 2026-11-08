@@ -62,10 +62,20 @@ Sign in to Framework Cloud first. [cloud_login()](ref:cloud_login) opens the app
 import framework as fw
 
 fw.cloud_login()
+fw.new_project("My App", "~/projects/my-app", type="shiny")
+```
+
+In Python, `type="shiny"` is Shiny for Python. `type="shiny_python"` is the same. Both equal `blueprint="framework/shiny_python"`. Signed out, `new_project()` stops and says to run `cloud_login()`.
+
+```python
 fw.new_project("My App", "~/projects/my-app", blueprint="framework/shiny_python")
 ```
 
-Pass the type as a blueprint handle. The `type` argument accepts only Framework's built-in types, so `type="shiny_python"` raises an error. Signed out, `new_project()` stops and explains how to log in. The command line has no option for this type.
+On the command line, pass `--type shiny`.
+
+```sh
+python -m framework create --name "My App" --path ~/projects/my-app --type shiny
+```
 
 You can also start in Framework Cloud. Open the Shiny for Python blueprint on the Blueprints page and choose **New project**. Then create the project on your computer from its project token.
 

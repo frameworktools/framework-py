@@ -741,6 +741,69 @@ def test_a_type_resolves_as_its_system_blueprint(tmp_path: Path, server: FakeClo
     assert not (fw.config_dir() / "cache").exists()
 
 
+@pytest.mark.parametrize(
+    "type,blueprint",
+    [
+        ("shiny", "framework/shiny_python"),
+        ("shiny_python", "framework/shiny_python"),
+        ("fastapi", "framework/fastapi"),
+    ],
+)
+def test_an_app_type_is_its_python_blueprint(
+    tmp_path: Path, server: FakeCloud, type: str, blueprint: str
+) -> None:
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    sent: dict[str, Any] = {}
+
+    def resolve(request: httpx.Request) -> httpx.Response:
+        sent["resolve"] = json.loads(request.content)
+        return httpx.Response(200, json=choices_envelope())
+
+    server.route("POST", "/api/v1/resolve", resolve)
+    server.route("POST", "/api/v1/projects", lambda r: httpx.Response(201, json={"slug": "app"}))
+    fw.new_project("App", tmp_path / "app", type=type, interactive=False)
+    assert sent["resolve"] == {"name": "App", "language": "python", "blueprint": blueprint}
+
+
+def test_an_app_type_needs_a_login(tmp_path: Path, server: FakeCloud) -> None:
+    with pytest.raises(
+        fw.CloudError, match=r'type="fastapi" builds .*framework/fastapi.*cloud_login'
+    ):
+        fw.new_project("App", tmp_path / "app", type="fastapi", interactive=False)
+    # Before asking for anything, and with nothing sent
+    with pytest.raises(fw.CloudError, match="No cloud token"):
+        fw.new_project(type="shiny", interactive=False)
+    assert not server.requests
+    assert not (tmp_path / "app").exists()
+
+
+def test_plumber_is_r_only(tmp_path: Path) -> None:
+    with pytest.raises(fw.FrameworkError, match=r'Plumber is an R project type.*type="fastapi"'):
+        fw.new_project("Api", tmp_path / "api", type="plumber", interactive=False)
+
+
+def test_an_app_type_and_a_blueprint_conflict(tmp_path: Path) -> None:
+    with pytest.raises(fw.FrameworkError, match="not both"):
+        fw.new_project("App", tmp_path / "app", "fastapi", blueprint="framework/fastapi")
+
+
+def test_cli_creates_an_app_type(tmp_path: Path, server: FakeCloud) -> None:
+    from framework.__main__ import main
+
+    os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    sent: dict[str, Any] = {}
+
+    def resolve(request: httpx.Request) -> httpx.Response:
+        sent["resolve"] = json.loads(request.content)
+        return httpx.Response(200, json=choices_envelope())
+
+    server.route("POST", "/api/v1/resolve", resolve)
+    server.route("POST", "/api/v1/projects", lambda r: httpx.Response(201, json={"slug": "app"}))
+    path = str(tmp_path / "app")
+    assert main(["create", "--name", "App", "--path", path, "--type", "shiny"]) == 0
+    assert sent["resolve"]["blueprint"] == "framework/shiny_python"
+
+
 def test_explicit_choices_offline_ask_first(tmp_path: Path, server: FakeCloud) -> None:
     from framework._defaults_cache import write_cached_defaults
 

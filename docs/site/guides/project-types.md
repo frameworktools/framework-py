@@ -37,17 +37,20 @@ Without a type, an interactive session asks for one and suggests `project`. A sc
 
 ### Framework Cloud types
 
-Framework Cloud adds two app types as built-in blueprints. They need a Framework Cloud sign-in with [cloud_login()](ref:cloud_login), and `new_project()` takes them as a `blueprint` handle.
+Framework Cloud adds two app types as built-in blueprints. They need a Framework Cloud sign-in with [cloud_login()](ref:cloud_login). Each `type` value equals its `blueprint` value.
 
-| Type | `blueprint` value | Uses |
-|------|-------------------|------|
-| [Shiny for Python](guide:shiny-app) | `framework/shiny_python` | An interactive web app |
-| [FastAPI app](guide:fastapi-app) | `framework/fastapi` | A web API |
+| Type | `type` value | `blueprint` value | Uses |
+|------|--------------|-------------------|------|
+| [Shiny for Python](guide:shiny-app) | `shiny` or `shiny_python` | `framework/shiny_python` | An interactive web app |
+| [FastAPI app](guide:fastapi-app) | `fastapi` | `framework/fastapi` | A web API |
 
 ```python
 fw.cloud_login()
-fw.new_project("My API", "~/projects/my-api", blueprint="framework/fastapi")
+fw.new_project("My App", "~/projects/my-app", type="shiny")
+fw.new_project("My API", "~/projects/my-api", type="fastapi")
 ```
+
+In Python, `type="shiny"` is Shiny for Python, not R Shiny. Plumber is R only; use `type="fastapi"` instead. Signed out, these types stop and say to run `cloud_login()`.
 
 ## Shared files
 
