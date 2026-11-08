@@ -49,6 +49,7 @@ class AdoptPlan:
     type: str = "bare"
     reserved: list[str] = field(default_factory=list)
     sensitive: bool = False
+    marked_private: list[str] = field(default_factory=list)
 
     @property
     def directories(self) -> dict[str, str]:
@@ -321,7 +322,79 @@ def _table(plan: AdoptPlan) -> str:
     width = max(30, *(len(path) for path, _ in _rows(plan))) if _rows(plan) else 30
     for number, (path, shown) in enumerate(_rows(plan), start=1):
         lines.append(f"  {number:>2}. {path:<{width}} {shown}")
+    candidates = restricted_candidates(plan) if plan.sensitive else []
+    if candidates:
+        quoted = ", ".join(f'"{c}"' for c in candidates)
+        lines.append(
+            f"May hold restricted data (mark private?): {', '.join(candidates)}. Accept to be "
+            f"asked about each, or pass private=[{quoted}] (python -m framework adopt "
+            "--private <folder>, or fw adopt --private <folder>) to map them to private keys, "
+            "which Framework's checks and agent guards cover."
+        )
     return "\n".join(lines)
+
+
+_RESTRICTED_NAME = re.compile(
+    r"data|export|extract|report|result|output|raw|table|figure|submission|download|cohort"
+)
+
+
+def _private_path(path: str) -> bool:
+    from framework._private import is_private_folder_name
+
+    return any(is_private_folder_name(part) for part in path.split("/"))
+
+
+def restricted_candidates(plan: AdoptPlan) -> list[str]:
+    """The mapped folders that may hold restricted data but aren't private, in mapping
+    order: ``inputs_*``/``outputs_*`` keys and ``data``, ``cache``, and ``scratch``; then
+    folders of their own named like data, exports, extracts, reports, results, outputs,
+    raw, tables, figures, submissions, downloads, or cohorts. Folders private by key or by
+    a private-named segment don't count. R and fw: the same rule."""
+    from_keys = [
+        path
+        for key, path in plan.directories.items()
+        if (re.match(r"^(inputs|outputs)_", key) or key in ("data", "cache", "scratch"))
+        and not re.search("private|public", key)
+    ]
+    from_extras = [
+        entry["path"]
+        for entry in plan.extra_directories.values()
+        if _RESTRICTED_NAME.search(entry["path"].rsplit("/", 1)[-1].lower())
+    ]
+    return [p for p in dict.fromkeys([*from_keys, *from_extras]) if not _private_path(p)]
+
+
+def mark_private(plan: AdoptPlan, folder: str) -> None:
+    """Map a folder to a private key, keeping its path: ``inputs_raw`` becomes
+    ``inputs_private_raw``, ``outputs_reports`` becomes ``outputs_private_reports``, and
+    any other folder becomes ``outputs_private_<name>`` when it is named like outputs
+    (reports, results, exports, tables, figures) and ``inputs_private_<name>`` otherwise.
+    Its path is gitignored like the other private folders."""
+    folder = folder.removeprefix("./").rstrip("/")
+    role = plan.roles.get(folder)
+    if role is None:
+        mapped = [*plan.directories.values(), *(e["path"] for e in plan.extra_directories.values())]
+        raise FrameworkError(
+            f"'{folder}' isn't a folder adopt() maps here, so it can't be marked private. "
+            f"Folders: {', '.join(mapped)}"
+        )
+    if role != EXTRA and "private" in role and "public" not in role:
+        return
+    base = folder.rsplit("/", 1)[-1]
+    slug = _extra_key(base, set())
+    if role != EXTRA and re.match(r"^(inputs|outputs)_", role):
+        key = re.sub(r"^(inputs|outputs)_", r"\1_private_", role)
+    elif re.search("report|result|output|export|table|figure", base.lower()):
+        key = f"outputs_private_{slug}"
+    else:
+        key = f"inputs_private_{slug}"
+    taken = set(plan.directories) | set(plan.extra_directories)
+    if key in taken:
+        key = _extra_key(key, taken)
+    _set_role(plan, folder, key)
+    if folder not in plan.marked_private:
+        plan.marked_private.append(folder)
 
 
 def _review(plan: AdoptPlan, ask: Callable[[str], str], cancelled: str) -> AdoptPlan:
@@ -382,6 +455,7 @@ def adopt(
     cloud: bool | None = None,
     slug: str | None = None,
     force: bool = False,
+    private: list[str] | tuple[str, ...] | None = None,
 ) -> Path:
     """Make an existing folder a Framework project, in place.
 
@@ -433,6 +507,14 @@ def adopt(
             the folder's name.
         force: Adopt the folder as a Python project even when its files say
             another language.
+        private: Folders (paths from the project folder) to map to private keys,
+            keeping their paths: ``inputs_raw`` becomes ``inputs_private_raw``,
+            ``outputs_reports`` becomes ``outputs_private_reports``, and another
+            folder becomes ``outputs_private_<name>`` or ``inputs_private_<name>``.
+            Their paths are added to ``.gitignore``. In a sensitive adopt, folders
+            that may hold restricted data (data, exports, reports, results, ...) and
+            aren't private are listed in the plan; an interactive review asks about
+            each.
 
     Returns:
         The project folder.
@@ -480,6 +562,8 @@ def adopt(
         raise FrameworkError("adopt() needs a terminal to review the folders. Pass yes=True.")
 
     plan = adopt_plan(scan_folders(root), type=type)
+    for folder in private or ():
+        mark_private(plan, folder)
     if plan.type == "project_sensitive":
         sensitive = True
     plan.sensitive = sensitive is True
@@ -504,6 +588,11 @@ def adopt(
                 "Does this project hold sensitive data? Framework will treat its outputs as "
                 "private by default.",
             )
+        if plan.sensitive:
+            for folder in restricted_candidates(plan):
+                answer = input(f"'{folder}' may hold restricted data. Mark it private? [Y/n] ")
+                if answer.strip().lower() not in ("n", "no"):
+                    mark_private(plan, folder)
 
     spec = adopt_spec(root.name, plan, use_git=(root / ".git").exists(), quarto=detect_quarto(root))
     from framework.create import _record, _write_settings
@@ -532,7 +621,8 @@ def _adopt_gitignore(root: Path, spec: Mapping[str, Any], plan: AdoptPlan) -> st
     from framework._gitignore import append_rules, missing_rules, rules_summary, unignored_folders
 
     wanted = [str(spec["git"]["gitignore_content"])]
-    wanted += [f"/{folder}/" for folder in unignored_folders(root, plan.private)]
+    folders = list(dict.fromkeys([*plan.private, *plan.marked_private]))
+    wanted += [f"/{folder}/" for folder in unignored_folders(root, folders)]
     missing = missing_rules(root, wanted)
     append_rules(root, missing.add, "# Added by framework.adopt()")
     if missing.add:

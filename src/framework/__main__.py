@@ -5,7 +5,7 @@
         [--tool ID[=false]]... [--skill-set ID]... [--package-set ID]... [--interactive]
         [--offline]
     python -m framework adopt [--path DIR] [--yes] [--type TYPE] [--sensitive]
-        [--cloud [--slug SLUG]] [--force]
+        [--private FOLDER ...] [--cloud [--slug SLUG]] [--force]
     python -m framework upgrade [--path DIR] [--apply] [--no-backup] [--type TYPE]
         [--move-settings]
     python -m framework bootstrap [--path DIR] [--interactive] [--no-packages]
@@ -101,6 +101,12 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="adopt the folder as Python even when its files say another language",
     )
+    adopt.add_argument(
+        "--private",
+        action="append",
+        metavar="FOLDER",
+        help="map a folder to a private key, keeping its path (repeatable)",
+    )
 
     upgrade = commands.add_parser(
         "upgrade", help="bring a project made by an older Framework to the current layout"
@@ -168,6 +174,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 cloud=True if args.cloud else None,
                 slug=args.slug,
                 force=args.force,
+                private=args.private,
             )
         elif args.command == "upgrade":
             from framework.upgrade import upgrade

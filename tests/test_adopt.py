@@ -123,8 +123,9 @@ def test_review_changes_roles_and_turns_on_sensitive(
     existing: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    # 1 is R: make it extra. -7 leaves figures out. Then accept, yes to sensitive.
-    answers = iter(["1", "extra", "-7", "", "y"])
+    # 1 is R: make it extra. -7 leaves figures out. Then accept, yes to sensitive, no to
+    # marking data/processed private, and the default (yes) for data/raw.
+    answers = iter(["1", "extra", "-7", "", "y", "n", ""])
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
     fw.adopt(existing)
     config = _yaml.read(existing / "settings.yml")["default"]
@@ -132,6 +133,9 @@ def test_review_changes_roles_and_turns_on_sensitive(
     assert "outputs_figures" not in config["directories"]
     assert {"key": "r", "label": "R", "path": "R"} in config["extra_directories"]
     assert config["security"] == {"sensitive": True}
+    assert config["directories"]["inputs_final"] == "data/processed"
+    assert config["directories"]["inputs_private_raw"] == "data/raw"
+    assert "/data/raw/" in (existing / ".gitignore").read_text(encoding="utf-8").splitlines()
 
 
 def test_adopt_needs_a_terminal_or_yes(existing: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -433,3 +437,49 @@ def test_quarto_is_on_for_a_quarto_file_up_to_three_folders_deep(tmp_path: Path)
     assert quarto_of("c", ["a/b/c/deep.qmd"]) == (True, True)
     assert quarto_of("d", ["a/b/c/d/too-deep.qmd", "a/run.py"]) == (False, False)
     assert quarto_of("e", [".venv/x.qmd", "analysis/run.py"]) == (False, False)
+
+
+def test_a_sensitive_adopt_offers_to_mark_restricted_folders_private(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a2cps-ehr-data-quality: reports, data-files, and export-data held restricted data
+    root = tmp_path / "ehr-checks"
+    for folder in ("reports", "data-files", "export-data", "R", "docs"):
+        (root / folder).mkdir(parents=True)
+    (root / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
+    from framework.adopt import mark_private, restricted_candidates
+
+    plan = adopt_plan(scan_folders(root))
+    plan.sensitive = True
+    candidates = restricted_candidates(plan)
+    assert set(candidates) == {"reports", "data-files", "export-data"}
+    with pytest.raises(fw.FrameworkError, match="isn't a folder adopt\\(\\) maps here"):
+        mark_private(plan, "nowhere")
+
+    copy = tmp_path / "copy"
+    import shutil
+
+    shutil.copytree(root, copy)
+    fw.adopt(root, yes=True, sensitive=True)
+    assert "May hold restricted data (mark private?):" in capsys.readouterr().err
+
+    fw.adopt(copy, yes=True, sensitive=True, private=candidates)
+    directories = _yaml.read(copy / "settings.yml")["default"]["directories"]
+    marked = {path: key for key, path in directories.items() if "private" in key}
+    assert marked["data-files"] == "inputs_private_data_files"
+    assert marked["export-data"] == "outputs_private_export_data"
+    assert marked["reports"].startswith("outputs_private_")
+    rules = (copy / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert {"/data-files/", "/export-data/", "/reports/"} <= set(rules)
+    monkeypatch.chdir(copy)
+    audit = fw.git_security_audit(verbose=False)
+    assert audit.findings["gitignore_coverage"].empty
+
+
+def test_the_command_line_takes_private(tmp_path: Path) -> None:
+    root = tmp_path / "study"
+    (root / "exports").mkdir(parents=True)
+    (root / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
+    assert main(["adopt", "--path", str(root), "--yes", "--sensitive", "--private", "exports"]) == 0
+    directories = _yaml.read(root / "settings.yml")["default"]["directories"]
+    assert directories == {"outputs_private_exports": "exports"}
