@@ -64,6 +64,7 @@ class _Plan:
     notes: list[str] = field(default_factory=list)
     skills: list[Callable[[], Any]] = field(default_factory=list)
     type: str | None = None
+    move_settings: bool = False
     before: dict[str, Any] = field(default_factory=dict)
     secret_names: dict[tuple[str, str], tuple[str, str]] = field(default_factory=dict)
 
@@ -192,13 +193,15 @@ def _step_settings(plan: _Plan, add_language: bool) -> None:
     if not isinstance(raw, dict):
         plan.note(f"{plan.main} couldn't be read as YAML, so the settings were not upgraded.")
         return
-    if _scoped(raw):
-        ignored = _ignored_keys(raw, "default")
-        if ignored:
-            plan.note(
-                f"{plan.main} has keys outside default: ({', '.join(ignored)}). Framework "
-                "ignores them; move them under default: to use them."
-            )
+    ignored = _ignored_keys(raw, "default") if _scoped(raw) else []
+    if ignored and not plan.move_settings:
+        plan.note(
+            f"{plan.main} has keys outside default: ({', '.join(ignored)}). Framework "
+            "ignores them. upgrade(move_settings=True) moves each into settings/<key>.yml, "
+            "named under default:, so settings_read() and settings() read it."
+        )
+    # Moved first, from the text as written, so the keys keep their layout and comments
+    moved = _move_ignored_keys(plan, ignored) if ignored and plan.move_settings else []
     section = _section(raw)
     settings = _settings_raw(plan)
     plan.before = settings
@@ -248,6 +251,8 @@ def _step_settings(plan: _Plan, add_language: bool) -> None:
             "project_type is project_sensitive but security: sensitive: is false. Framework "
             "treats the project as sensitive; set it to true to match."
         )
+    if moved:
+        changes.append(f"move {', '.join(moved)} under default: (into settings/)")
     if changes:
         # The edits above went straight to pending; record them as one action
         text = plan.pending.pop(plan.main)
@@ -255,6 +260,80 @@ def _step_settings(plan: _Plan, add_language: bool) -> None:
     if to_sensitive:
         _private_directories(plan)
     _sensitive_notes(plan)
+
+
+def _move_ignored_keys(plan: _Plan, keys: list[str]) -> list[str]:
+    """Move top-level keys that no environment reads into ``settings/<key>.yml``, their
+    text as written (comments kept), and name each file under ``default:``
+    (``ehr_source: settings/ehr_source.yml``), as Framework's own split files are. A key
+    whose file exists is left and reported. The main file's new text goes to pending;
+    returns the keys moved."""
+    moved: list[str] = []
+    text = plan.read(plan.main) or ""
+    for key in keys:
+        relative = f"settings/{key}.yml"
+        if plan.read(relative) is not None:
+            plan.note(
+                f"{relative} already exists, so {key}: was left outside default:. Merge it by hand."
+            )
+            continue
+        lines = text.split("\n")
+        starts = [i for i, line in enumerate(lines) if line.startswith(f"{key}:")]
+        if len(starts) != 1:
+            plan.note(
+                f"Couldn't find {key}: in {plan.main} to move; move it under default: by hand."
+            )
+            continue
+        start = starts[0]
+        # The next top-level key; a block sequence may start at the left edge too
+        tops = [
+            i for i, line in enumerate(lines) if i > start and re.match(r"^(?!-(\s|$))[^\s#]", line)
+        ]
+        end = (tops[0] if tops else len(lines)) - 1
+        # Blank lines and comments at the left edge before the next key belong to it
+        while end > start and (not lines[end].strip() or lines[end].startswith("#")):
+            end -= 1
+        block = lines[start : end + 1]
+        # Comments right above the key travel with it
+        above = start - 1
+        while above >= 0 and lines[above].startswith("#"):
+            above -= 1
+        lead = lines[above + 1 : start]
+        remaining = lines[: above + 1] + lines[end + 1 :]
+        while remaining and not remaining[-1].strip():
+            remaining.pop()
+        try:
+            check = _yaml.load("\n".join(block))
+        except Exception:
+            check = None
+        if not isinstance(check, dict) or list(check) != [key]:
+            plan.note(
+                f"Couldn't move {key}: out of {plan.main} cleanly; move it under default: by hand."
+            )
+            continue
+        plan.write(
+            "settings",
+            relative,
+            "\n".join([*lead, *block]) + "\n",
+            f"create from {plan.main}'s top-level {key}: (named under default:)",
+        )
+        text = "\n".join(remaining) + "\n"
+        moved.append(key)
+    if moved:
+
+        def change(data: Any) -> Any:
+            for key in moved:
+                data["default"][key] = f"settings/{key}.yml"
+            return data
+
+        # Cut as text first, so each key moves as written; then one edit names them all
+        plan.pending[plan.main] = _yaml.update_text(text, change)
+        plan.note(
+            f"Moved {', '.join(moved)} into settings/. settings_read() and "
+            f'settings("{moved[0]}...") read them; code that read them from {plan.main} with '
+            "a YAML reader should use framework.settings_read()."
+        )
+    return moved
 
 
 def _private_directories(plan: _Plan) -> None:
@@ -1261,6 +1340,7 @@ def upgrade(
     dry_run: bool = True,
     backup: bool = True,
     type: str | None = None,
+    move_settings: bool = False,
 ) -> UpgradeResult:
     """Bring a project made by an older Framework up to the current layout.
 
@@ -1276,7 +1356,8 @@ def upgrade(
       sections are added: ``tools:`` (Quarto and uv, from the files present)
       and ``security:``. A ``project_sensitive`` project, or one with the
       private folder layout, gets ``security: sensitive: true``. Keys outside
-      ``default:``, which Framework ignores, are reported, not moved.
+      ``default:``, which Framework ignores, are reported, or moved into
+      ``settings/`` with ``move_settings=True``.
     - **Connections**: the old layouts (``options: default_connection:`` with
       connections listed flat, or the empty hybrid of both) are rewritten as
       ``connections:`` with ``default_database``, ``databases``, and
@@ -1324,6 +1405,11 @@ def upgrade(
             ``save_report()`` will write from then on (``outputs/private/...``), and
             lists the data and render folders that aren't private. A sensitive project
             made another type stays sensitive.
+        move_settings: Move top-level keys of the settings file that no environment
+            reads (``ehr_source:`` beside ``default:``) into ``settings/<key>.yml``,
+            keeping their text and comments, and name each file under ``default:``
+            (``ehr_source: settings/ehr_source.yml``), so ``settings_read()`` and
+            ``settings()`` read them. False (default) reports them.
 
     Returns:
         An ``UpgradeResult``: the planned ``actions`` (``step``, ``path``, ``change``),
@@ -1348,7 +1434,7 @@ def upgrade(
             f"Not a Framework project (no settings.yml or Framework config.yml): {root}. To "
             "make it one, use framework.adopt()."
         )
-    plan = _Plan(root, found[0].name, type=type)
+    plan = _Plan(root, found[0].name, type=type, move_settings=move_settings)
     add_language = _language(root, plan.main)
 
     _step_settings_file(plan)

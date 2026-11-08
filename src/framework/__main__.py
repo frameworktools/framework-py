@@ -7,6 +7,7 @@
     python -m framework adopt [--path DIR] [--yes] [--type TYPE] [--sensitive]
         [--cloud [--slug SLUG]] [--force]
     python -m framework upgrade [--path DIR] [--apply] [--no-backup] [--type TYPE]
+        [--move-settings]
     python -m framework bootstrap [--path DIR] [--interactive] [--no-packages]
     python -m framework hook pre-commit
 
@@ -118,6 +119,11 @@ def _parser() -> argparse.ArgumentParser:
         choices=("project", "project_sensitive", "course", "presentation", "bare"),
         help="change the project's type (project_sensitive makes it sensitive)",
     )
+    upgrade.add_argument(
+        "--move-settings",
+        action="store_true",
+        help="move settings keys outside default: into settings/<key>.yml",
+    )
 
     bootstrap = commands.add_parser("bootstrap", help="prepare a cloned project")
     bootstrap.add_argument("--path", default=".", help="the project folder (default: .)")
@@ -166,7 +172,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "upgrade":
             from framework.upgrade import upgrade
 
-            upgrade(args.path, dry_run=not args.apply, backup=not args.no_backup, type=args.type)
+            upgrade(
+                args.path,
+                dry_run=not args.apply,
+                backup=not args.no_backup,
+                type=args.type,
+                move_settings=args.move_settings,
+            )
             return 0
         elif args.command == "bootstrap":
             from framework.bootstrap import bootstrap

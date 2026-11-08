@@ -432,3 +432,31 @@ def test_a_password_name_from_an_example_file_or_made_up(old: Path) -> None:
     (old / ".env").write_text("A_PASSWORD=x\nB_PASSWORD=hunter2\n", encoding="utf-8")
     assert _find_env_name(old, "omop", "password", "hunter2") == ("B_PASSWORD", ".env")
     assert _find_env_name(old, "omop", "token", "hunter2") is None
+
+
+def test_move_settings_moves_keys_outside_default_into_settings(
+    old: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with (old / "settings.yml").open("a", encoding="utf-8") as handle:
+        handle.write("\n# Partner sites\nsites:\n  - north # main\n  - south\n")
+    plan = fw.upgrade(old)
+    assert any("upgrade(move_settings=True) moves each" in n for n in plan.notes)
+
+    plan = fw.upgrade(old, move_settings=True, dry_run=False)
+    assert any("move ehr_source, sites under default:" in c for c in plan.actions["change"])
+    assert (old / "settings/sites.yml").read_text(encoding="utf-8") == (
+        "# Partner sites\nsites:\n  - north # main\n  - south\n"
+    )
+    written = _yaml.read(old / "settings.yml")
+    assert list(written) == ["default"]
+    assert written["default"]["ehr_source"] == "settings/ehr_source.yml"
+    monkeypatch.chdir(old)
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        settings = fw.settings_read()
+    assert settings["ehr_source"] == "optum"
+    assert list(settings["sites"]) == ["north", "south"]
+    assert fw.upgrade(old, move_settings=True).actions.empty
+    assert main(["upgrade", "--path", str(old), "--move-settings", "--type", "project"]) == 0
