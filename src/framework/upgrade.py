@@ -24,7 +24,6 @@ from framework.errors import FrameworkError
 
 REGENERATE = "<!-- @framework:regenerate -->"
 _CONNECTION_KEYS = ("databases", "storage_buckets", "default_database", "default_storage_bucket")
-_SECRET_KEY = re.compile(r"password|passwd|pwd|secret|token|api_?key|access_key", re.IGNORECASE)
 _DERIVED = (
     "name",
     "type",
@@ -650,7 +649,7 @@ def _step_quarto(plan: _Plan) -> None:
 def _spec_connections(connections: Any) -> dict[str, Any]:
     """Connections for the spec: ``env()`` and ``!expr`` stay as written; a password or
     token written in becomes ``env("<NAME>_<KEY>")``, since specs travel to Cloud."""
-    from framework.security import _literal_secret
+    from framework.security import _literal_secret, credential_key, env_call
 
     connections = connections if isinstance(connections, dict) else {}
     if _legacy_connections({"connections": connections}):
@@ -662,8 +661,15 @@ def _spec_connections(connections: Any) -> dict[str, Any]:
             if isinstance(entry, dict):
                 entry = dict(entry)
                 for key, value in entry.items():
-                    if _SECRET_KEY.search(str(key)) and _literal_secret(value):
-                        variable = re.sub(r"[^A-Za-z0-9]+", "_", f"{name}_{key}").upper()
+                    if credential_key(key) and _literal_secret(value):
+                        # env("NAME", "default") keeps its variable and loses the default,
+                        # which Framework Cloud refuses on a credential
+                        call = env_call(value)
+                        variable = (
+                            call[0]
+                            if call is not None
+                            else re.sub(r"[^A-Za-z0-9]+", "_", f"{name}_{key}").upper()
+                        )
                         entry[key] = f'env("{variable}")'
             out[str(name)] = entry
         return out

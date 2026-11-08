@@ -18,8 +18,11 @@ The checks match R's ``git_security_audit()``:
   ``docs/`` folder, and is left out. Python adds this check; R will follow.
 
 - connection_secrets: no password, secret, token, or key in the settings'
-  ``connections`` is written out instead of read from the environment. A
-  tracked settings file fails; an untracked one warns. Python adds this check;
+  ``connections`` is written out instead of read from the environment. A key
+  matching ``password|passwd|pwd|secret|token|access_?key|api_?key|private_?key|
+  credential`` (any case) may hold ``env("VAR")`` or ``env("VAR", "")``;
+  ``env("VAR", "value")`` is a finding, as on Framework Cloud. A tracked
+  settings file fails; an untracked one warns. Python adds this check;
   R will follow.
 
 - identifier_columns: warns about data files git tracks, outside private
@@ -663,21 +666,45 @@ def _check_published(
     return _frame(rows, ["destination", "path", "files", "tracked"]), advice
 
 
-_CREDENTIAL_KEY = re.compile(r"password|passwd|pwd|secret|token|api_?key|access_key", re.I)
+# The rule Framework Cloud uses for specs (password, secret, token, access_key, api_key,
+# private_key, credential), plus passwd and pwd, as R's .fw_credential_key()
+_CREDENTIAL_KEY = re.compile(
+    r"password|passwd|pwd|secret|token|access_?key|api_?key|private_?key|credential", re.I
+)
+_ENV_CALL_ANY = re.compile(r"""^\s*env\(\s*(['"])([^'"]*)\1\s*(?:,\s*(['"])(.*?)\3\s*)?\)\s*$""")
+
+
+def credential_key(key: Any) -> bool:
+    """Whether a settings key holds a credential."""
+    return _CREDENTIAL_KEY.search(str(key)) is not None
+
+
+def env_call(value: Any) -> tuple[str, str | None] | None:
+    """``(name, default)`` for a value of the form ``env("NAME")`` or ``env("NAME",
+    "default")``, single or double quotes; the default is None when there is none.
+    None when the value is something else."""
+    if not isinstance(value, str):
+        return None
+    found = _ENV_CALL_ANY.match(value)
+    if found is None:
+        return None
+    return found.group(2), found.group(4) if found.group(3) else None
 
 
 def _literal_secret(value: Any) -> bool:
-    """Whether a credential value is written out: anything but empty, ``env("VAR")``, or
-    ``!expr Sys.getenv("VAR")``. A default (``env("VAR", "x")``) is written out too."""
-    from framework.settings import _ENV_CALL, _EXPR, _SYS_GETENV
+    """Whether a credential value is written out: anything but missing, empty, a mapping
+    or list, a boolean, ``env("VAR")`` or ``env("VAR", "")`` (single or double quotes),
+    or ``!expr Sys.getenv("VAR")``. A non-empty default (``env("VAR", "x")``) is
+    written out too, as are numbers. The same rule as Framework Cloud's spec check."""
+    from framework.settings import _EXPR, _SYS_GETENV
 
     if value is None or value == "" or isinstance(value, (dict, list, bool)):
         return False
     if not isinstance(value, str):
         return True
-    call = _ENV_CALL.match(value.strip())
+    call = env_call(value)
     if call is not None:
-        return bool(call.group(2))
+        return bool(call[1])
     if _EXPR.match(value):
         system = _SYS_GETENV.match(_EXPR.sub("", value, count=1).strip())
         return system is None or bool(system.group(4))
@@ -691,7 +718,7 @@ def _secret_keys(node: Any, path: str, inside: bool) -> list[str]:
         for key, value in node.items():
             here = f"{path}.{key}" if path else str(key)
             within = inside or str(key) == "connections"
-            if within and _CREDENTIAL_KEY.search(str(key)) and _literal_secret(value):
+            if within and credential_key(key) and _literal_secret(value):
                 found.append(here)
             else:
                 found += _secret_keys(value, here, within)

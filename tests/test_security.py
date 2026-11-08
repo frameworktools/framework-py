@@ -470,3 +470,59 @@ def test_orphans_skip_known_folders_json_and_hidden_folders(
     # Asked for, JSON counts
     asked = fw.git_security_audit(check_git_history=False, verbose=False, extensions=["json"])
     assert list(asked.findings["orphaned_files"]["path"]) == ["cohorts/def.json"]
+
+
+def test_env_on_a_credential_follows_framework_clouds_rule() -> None:
+    from framework.security import _literal_secret, _secret_keys, credential_key
+
+    for value in (
+        'env("DB_PASSWORD")',
+        "env('DB_PASSWORD')",
+        'env("DB_PASSWORD", "")',
+        "env('DB_PASSWORD', '')",
+        ' env( "DB_PASSWORD" ,  "" ) ',
+    ):
+        assert not _literal_secret(value), value
+    for value in ('env("DB_PASSWORD", "hunter2")', "env('DB_PASSWORD', 'hunter2')", "hunter2"):
+        assert _literal_secret(value), value
+    assert _literal_secret("env(DB_PASSWORD)")
+
+    keys = ["password", "db_passwd", "pwd", "client_secret", "token", "access_key", "accessKey"]
+    keys += ["api_key", "apikey", "private_key", "credential", "credentials_file"]
+    assert all(credential_key(k) for k in keys)
+    assert not any(credential_key(k) for k in ("user", "host", "database", "schema", "keyring"))
+
+    found = _secret_keys(
+        {
+            "connections": {
+                "databases": {
+                    "db": {
+                        "password": "env('DB_PASSWORD', '')",
+                        "private_key": 'env("DB_KEY", "-----BEGIN")',
+                        "credential": "env('DB_CRED')",
+                    }
+                }
+            }
+        },
+        "",
+        False,
+    )
+    assert found == ["connections.databases.db.private_key"]
+
+
+def test_upgrade_keeps_an_env_calls_variable_in_the_spec() -> None:
+    from framework.upgrade import _spec_connections
+
+    connections = _spec_connections(
+        {
+            "databases": {
+                "db": {
+                    "driver": "postgres",
+                    "password": 'env("DB_PASSWORD", "fallback")',
+                    "token": "env('DB_TOKEN', '')",
+                }
+            }
+        }
+    )
+    assert connections["databases"]["db"]["password"] == 'env("DB_PASSWORD")'
+    assert connections["databases"]["db"]["token"] == "env('DB_TOKEN', '')"
