@@ -267,3 +267,76 @@ def test_prune_and_ready() -> None:
     pruned["type"] = "Not A Label"
     with pytest.raises(SpecError, match="type: 'Not A Label' does not match"):
         ready(pruned)
+
+
+@pytest.fixture
+def plain(tmp_path: Path) -> Path:
+    """A Python project that isn't sensitive, with AI on and a Claude skills folder."""
+    root = tmp_path / "plain"
+    for folder in ("inputs/raw", "outputs/tables", "notebooks", ".claude/skills/mine"):
+        (root / folder).mkdir(parents=True)
+    (root / "settings.yml").write_text(
+        "default:\n"
+        "  project_name: Plain\n"
+        "  project_type: project\n"
+        "  language: python\n"
+        "  directories:\n"
+        "    notebooks: notebooks\n"
+        "    inputs_raw: inputs/raw\n"
+        "    outputs_tables: outputs/tables\n"
+        "  render_dirs:\n"
+        "    notebooks: outputs/notebooks\n"
+        "  ai:\n"
+        "    enabled: true\n"
+        "    canonical_file: AGENTS.md\n"
+        "    assistants: [claude]\n",
+        encoding="utf-8",
+    )
+    (root / ".claude/skills/mine/SKILL.md").write_text("mine\n", encoding="utf-8")
+    return root
+
+
+def test_type_project_sensitive_makes_a_project_sensitive_in_one_pass(plain: Path) -> None:
+    plan = fw.upgrade(plain, type="project_sensitive")
+    change = " ".join(plan.actions.loc[plan.actions["path"] == "settings.yml", "change"])
+    assert "set project_type: project_sensitive (was project)" in change
+    assert "add the private and public folders" in change
+    notes = " ".join(plan.notes)
+    assert "save_table() to outputs/private/tables (was outputs/tables)" in notes
+    assert "inputs_raw (inputs/raw)" in notes
+    assert "render_dirs.notebooks (outputs/notebooks)" in notes
+
+    fw.upgrade(plain, type="project_sensitive", dry_run=False)
+    settings = _yaml.read(plain / "settings.yml")["default"]
+    assert settings["project_type"] == "project_sensitive"
+    assert settings["security"]["sensitive"] is True
+    assert settings["directories"]["inputs_raw"] == "inputs/raw"
+    assert settings["directories"]["outputs_private_tables"] == "outputs/private/tables"
+    assert settings["directories"]["inputs_private_raw"] == "inputs/private/raw"
+    assert "/inputs/private/" in (plain / ".gitignore").read_text(encoding="utf-8").splitlines()
+    guards = json.loads((plain / ".claude/settings.json").read_text(encoding="utf-8"))
+    assert "Read(/inputs/private/**)" in guards["permissions"]["deny"]
+    assert (plain / ".claude/skills/framework-sensitive-data/SKILL.md").is_file()
+    spec = json.loads((plain / ".framework/spec.json").read_text(encoding="utf-8"))
+    assert spec["type"] == "project_sensitive" and spec["security"]["sensitive"] is True
+    assert fw.upgrade(plain).actions.empty
+    assert fw.upgrade(plain, type="project_sensitive").actions.empty
+
+
+def test_a_project_made_sensitive_by_hand_hears_where_outputs_go(plain: Path) -> None:
+    fw.upgrade(plain, dry_run=False)
+    spec = json.loads((plain / ".framework/spec.json").read_text(encoding="utf-8"))
+    assert spec["security"]["sensitive"] is False
+    text = (plain / "settings.yml").read_text(encoding="utf-8")
+    (plain / "settings.yml").write_text(
+        text.replace("sensitive: false", "sensitive: true"), encoding="utf-8"
+    )
+    plan = fw.upgrade(plain)
+    assert any(
+        "save_figure() to outputs/private/figures (was outputs/figures)" in n for n in plan.notes
+    )
+    with pytest.raises(fw.FrameworkError, match="type must be one of"):
+        fw.upgrade(plain, type="lab")
+    # A sensitive project made another type stays sensitive
+    plan = fw.upgrade(plain, type="course")
+    assert any("stays sensitive" in n for n in plan.notes)

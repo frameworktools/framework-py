@@ -222,6 +222,14 @@ python -m framework upgrade --apply    # apply it
 
 The plan adds missing `tools:` and `security:` sections to the settings (a `project_sensitive` project gets `sensitive: true`), rewrites old connection layouts, appends missing `.gitignore` rules, makes AGENTS.md the canonical AI context file with CLAUDE.md a pointer to it, updates Framework skills that match a released version, adds missing Quarto keys without replacing your configuration, and writes `.framework/spec.json`. Keys outside `default:` and passwords written into the settings are reported, not changed. Every file it rewrites is first copied to `.framework/backups/<timestamp>/`, which git ignores (`--no-backup` or `backup=False` skips the copy). Running it again changes nothing.
 
+`type=` changes the project's type in the same pass (`--type` on the command line). Making a project sensitive is one step:
+
+```python
+fw.upgrade("~/projects/old-study", type="project_sensitive", dry_run=False)
+```
+
+It sets `security: sensitive: true` and adds the private and public folders of the sensitive layout that the project lacks; folders it has keep their keys and paths, so code that names them keeps working. The sensitive `.gitignore` rules, the Claude Code guard, and the `framework-sensitive-data` skill follow. From then on `save_table()`, `save_figure()`, `save_model()`, and `save_report()` write to private folders (`outputs/private/tables` and so on) unless you pass `public=True`; the plan lists those moves, and the data and render folders that aren't private. A sensitive project given another type stays sensitive.
+
 ## Registering on Framework Cloud
 
 [cloud_register()](ref:cloud_register) creates the Framework Cloud project for a project that exists only on your computer, from its `.framework/spec.json`, and links the folder: the project token and server go to `.env`, which git is made to ignore first. The Cloud project gets exactly this folder's type, folders, and tools, not your defaults, and an adopted project is marked as adopted. It is what `fw project link --create` does.

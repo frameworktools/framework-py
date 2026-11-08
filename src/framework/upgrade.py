@@ -61,6 +61,8 @@ class _Plan:
     actions: list[dict[str, str]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     skills: list[Callable[[], Any]] = field(default_factory=list)
+    type: str | None = None
+    before: dict[str, Any] = field(default_factory=dict)
 
     def read(self, relative: str) -> str | None:
         """A file's text as planned, else as on disk, else None."""
@@ -196,7 +198,18 @@ def _step_settings(plan: _Plan, add_language: bool) -> None:
             )
     section = _section(raw)
     settings = _settings_raw(plan)
+    plan.before = settings
     changes: list[str] = []
+    to_sensitive = plan.type == "project_sensitive"
+    current_type = str(settings.get("project_type") or "project")
+    if plan.type is not None and current_type != plan.type:
+        plan.pending[plan.main] = _set_in_main(plan, "project_type", plan.type)
+        changes.append(f"set project_type: {plan.type} (was {current_type})")
+        if settings_sensitive(settings) and not to_sensitive:
+            plan.note(
+                "The project stays sensitive (security: sensitive: true): a type is only a "
+                "label. Set sensitive: false by hand once it holds no sensitive data."
+            )
     if add_language:
         plan.pending[plan.main] = _set_in_main(plan, "language", "python")
         changes.append("add language: python")
@@ -210,14 +223,19 @@ def _step_settings(plan: _Plan, add_language: bool) -> None:
         changes.append(
             f"add tools (quarto: {str(tools['quarto']).lower()}, uv: {str(tools['uv']).lower()})"
         )
-    sensitive = settings_sensitive(settings)
+    sensitive = settings_sensitive(settings) or to_sensitive
     security = section.get("security")
     flag = security.get("sensitive") if isinstance(security, dict) else None
-    if flag is None:
+    if to_sensitive and flag is False:
+        block = dict(security) if isinstance(security, dict) else {}
+        block["sensitive"] = True
+        plan.pending[plan.main] = _set_in_main(plan, "security", block)
+        changes.append("set security.sensitive: true")
+    elif flag is None:
         block = dict(security) if isinstance(security, dict) else {}
         block["sensitive"] = sensitive
         plan.pending[plan.main] = _set_in_main(plan, "security", block)
-        if settings.get("project_type") == "project_sensitive":
+        if settings.get("project_type") == "project_sensitive" or to_sensitive:
             why = "; project_type is project_sensitive"
         else:
             why = "; the folders use the private layout" if sensitive else ""
@@ -231,6 +249,161 @@ def _step_settings(plan: _Plan, add_language: bool) -> None:
         # The edits above went straight to pending; record them as one action
         text = plan.pending.pop(plan.main)
         plan.write("settings", plan.main, text, "; ".join(changes))
+    if to_sensitive:
+        _private_directories(plan)
+    _sensitive_notes(plan)
+
+
+def _private_directories(plan: _Plan) -> None:
+    """A project becoming sensitive gets the private and public folders of the
+    project_sensitive layout it lacks. Folders it has keep their keys and paths, so code
+    that names them keeps working."""
+    from framework._gitignore import rules_summary
+    from framework.spec.resolve import spec_resolve
+
+    current = _directories(_settings_raw(plan))
+    template = spec_resolve(
+        [{"type": "project_sensitive", "language": "python"}], "template", check=False
+    ).spec
+    wanted = {
+        key: path
+        for key, path in (template.get("directories") or {}).items()
+        if re.search(r"_(private|public)_", key)
+        and key not in current
+        and path not in current.values()
+    }
+    if not wanted:
+        return
+    relative = _split_file(_section(plan.yaml(plan.main)).get("directories"))
+    if relative is not None:
+        wrapped = isinstance(plan.yaml(relative), dict) and "directories" in plan.yaml(relative)
+
+        def change_split(data: Any) -> Any:
+            data = data if data is not None else {}
+            target = data.setdefault("directories", {}) if wrapped else data
+            target.update(wanted)
+            return data
+
+        text = _yaml.update_text(plan.read(relative) or "", change_split)
+    else:
+        relative = plan.main
+
+        def change_main(data: Any) -> Any:
+            data = data if data is not None else {}
+            target = data["default"] if _scoped(data) else data
+            if not isinstance(target.get("directories"), dict):
+                target["directories"] = {}
+            target["directories"].update(wanted)
+            return data
+
+        text = _yaml.update_text(plan.read(relative) or "", change_main)
+    plan.write(
+        "settings",
+        relative,
+        text,
+        "add the private and public folders of the sensitive layout: "
+        + rules_summary(list(wanted), n=4),
+    )
+
+
+def _output_dir_for(settings: dict[str, Any], kind: str) -> str:
+    """The folder ``save_table()`` and friends write one kind of output to, from settings
+    as written, as ``_paths.output_directory()`` decides it."""
+    from framework._private import settings_sensitive
+
+    directories = _directories(settings)
+    split = (
+        settings_sensitive(settings)
+        or f"outputs_private_{kind}" in directories
+        or f"outputs_public_{kind}" in directories
+    )
+    if not split:
+        return directories.get(f"outputs_{kind}", f"outputs/{kind}")
+    return directories.get(f"outputs_private_{kind}", f"outputs/private/{kind}")
+
+
+def _old_spec(plan: _Plan) -> dict[str, Any] | None:
+    """The spec recorded in ``.framework/spec.json`` (as on disk or planned), or None."""
+    text = plan.read(".framework/spec.json")
+    if text is None:
+        return None
+    try:
+        spec = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return spec if isinstance(spec, dict) else None
+
+
+def _sensitive_notes(plan: _Plan) -> None:
+    """What changes for a project that becomes sensitive: where ``save_table()`` and
+    friends write, and the folders that hold data but aren't private."""
+    from framework._private import is_private_folder_name, settings_sensitive
+
+    after = _settings_raw(plan)
+    if not settings_sensitive(after):
+        return
+    before = dict(plan.before)
+    old = _old_spec(plan)
+    if plan.type is None and old is not None and isinstance(old.get("security"), dict):
+        # Made sensitive by hand since the last upgrade(): compare with the spec that
+        # upgrade() recorded then
+        if old["security"].get("sensitive") is True:
+            return
+        before = {"project_type": old.get("type"), "directories": old.get("directories")}
+    elif settings_sensitive(before):
+        return
+    before["security"] = {"sensitive": False}
+    if before.get("project_type") == "project_sensitive":
+        before["project_type"] = "project"
+
+    kinds = {
+        "tables": "save_table()",
+        "figures": "save_figure()",
+        "models": "save_model()",
+        "reports": "save_report()",
+    }
+    moved = []
+    for kind, function in kinds.items():
+        old_dir, new_dir = _output_dir_for(before, kind), _output_dir_for(after, kind)
+        if old_dir != new_dir:
+            moved.append(f"{function} to {new_dir} (was {old_dir})")
+    if moved:
+        plan.note(
+            "Sensitive projects keep outputs private by default, so these now write to "
+            f"private folders: {'; '.join(moved)}. Code that reads the old folders reads "
+            "stale copies; point it at the new ones, or pass public=True for output that "
+            "may be shared."
+        )
+
+    def private(path: str) -> bool:
+        return any(is_private_folder_name(part) for part in path.split("/"))
+
+    open_dirs = [
+        f"{key} ({path})"
+        for key, path in _directories(after).items()
+        if (re.match(r"^(inputs|outputs)_", key) or key in ("cache", "scratch"))
+        and not re.search("private|public", key)
+        and not private(path)
+    ]
+    if open_dirs:
+        plan.note(
+            "These folders may hold restricted data but aren't private, so Framework's "
+            f"private-data checks and agent guards don't cover them: {', '.join(open_dirs)}. "
+            "Move their data under a private folder (inputs/private/..., "
+            "outputs/private/...) and update the code that reads it, or rename each key "
+            "to its private form (inputs_raw to inputs_private_raw) and keep the path."
+        )
+    render = [
+        f"render_dirs.{key} ({path})"
+        for key, path in _mapping(after.get("render_dirs")).items()
+        if isinstance(path, str) and not private(path.removeprefix("./").rstrip("/"))
+    ]
+    if render:
+        plan.note(
+            "Rendered notebooks can show restricted data, but these render folders aren't "
+            f"private: {', '.join(render)}. Point them under outputs/private/ (and the "
+            "output-dir in each _quarto.yml)."
+        )
 
 
 def _legacy_connections(raw: Any) -> bool:
@@ -898,7 +1071,15 @@ def _print(plan: _Plan, actions: pd.DataFrame, dry_run: bool, path: str | Path) 
     print("\n".join(lines), file=sys.stderr)
 
 
-def upgrade(path: str | Path = ".", dry_run: bool = True, backup: bool = True) -> UpgradeResult:
+_TYPES = ("project", "project_sensitive", "course", "presentation", "bare")
+
+
+def upgrade(
+    path: str | Path = ".",
+    dry_run: bool = True,
+    backup: bool = True,
+    type: str | None = None,
+) -> UpgradeResult:
     """Bring a project made by an older Framework up to the current layout.
 
     It prints a plan first and, with ``dry_run=False``, backs up every file it
@@ -947,6 +1128,16 @@ def upgrade(path: str | Path = ".", dry_run: bool = True, backup: bool = True) -
         dry_run: Print the plan and change nothing.
         backup: Copy every file before it is rewritten or removed. Skills replaced
             by an update are always backed up, to ``.framework/skills-backups/``.
+        type: Change the project's type: ``"project"``, ``"project_sensitive"``,
+            ``"course"``, ``"presentation"``, or ``"bare"``. None (default) keeps it.
+            Making a project ``project_sensitive`` sets ``security: sensitive: true``,
+            adds the private and public folders of that layout it lacks (folders it has
+            keep their keys and paths), and then gets the sensitive ``.gitignore``
+            rules, agent guards, and skill like any sensitive project. The plan says
+            where ``save_table()``, ``save_figure()``, ``save_model()``, and
+            ``save_report()`` will write from then on (``outputs/private/...``), and
+            lists the data and render folders that aren't private. A sensitive project
+            made another type stays sensitive.
 
     Returns:
         An ``UpgradeResult``: the planned ``actions`` (``step``, ``path``, ``change``),
@@ -960,6 +1151,8 @@ def upgrade(path: str | Path = ".", dry_run: bool = True, backup: bool = True) -
     from framework.project import settings_files
 
     show_messages()
+    if type is not None and type not in _TYPES:
+        raise FrameworkError(f'type must be one of {", ".join(_TYPES)}, not "{type}".')
     root = Path(path).expanduser().resolve()
     if not root.is_dir():
         raise FrameworkError(f"Not a folder: {root}")
@@ -969,7 +1162,7 @@ def upgrade(path: str | Path = ".", dry_run: bool = True, backup: bool = True) -
             f"Not a Framework project (no settings.yml or Framework config.yml): {root}. To "
             "make it one, use framework.adopt()."
         )
-    plan = _Plan(root, found[0].name)
+    plan = _Plan(root, found[0].name, type=type)
     add_language = _language(root, plan.main)
 
     _step_settings_file(plan)
