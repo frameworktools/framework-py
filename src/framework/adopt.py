@@ -406,8 +406,9 @@ def adopt(
     when any folder matches a Framework directory, and ``bare`` otherwise.
 
     The spec records the folder as it is, as R's ``adopt()`` writes it: the
-    mapped folders only, no tools, no default packages, AI files off, and git
-    on when the folder is a git repository.
+    mapped folders only, Quarto on when a ``_quarto.yml`` or ``.qmd`` file is at
+    most three folders deep, no other tools, no default packages, AI files off,
+    and git on when the folder is a git repository.
 
     framework-py adopts Python projects. When the folder's files say another
     language (an ``.Rproj``, ``renv.lock``, or ``.R`` files for R), it stops
@@ -504,7 +505,7 @@ def adopt(
                 "private by default.",
             )
 
-    spec = adopt_spec(root.name, plan, use_git=(root / ".git").exists())
+    spec = adopt_spec(root.name, plan, use_git=(root / ".git").exists(), quarto=detect_quarto(root))
     from framework.create import _record, _write_settings
 
     _write_settings(root, spec)
@@ -548,12 +549,30 @@ def _adopt_gitignore(root: Path, spec: Mapping[str, Any], plan: AdoptPlan) -> st
     return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
-def adopt_spec(name: str, plan: AdoptPlan, use_git: bool = False) -> dict[str, Any]:
+def detect_quarto(root: Path, rules: Mapping[str, Any] | None = None) -> bool:
+    """Whether the folder uses Quarto: a ``_quarto.yml`` (or ``_quarto.yaml``) or a
+    ``.qmd`` file in it or in a folder ``adopt()`` scans (at most the rules' ``max_depth``
+    deep, skipping the folders it skips), so a Quarto project in ``notebooks/`` counts.
+    R and fw: the same rule."""
+    for folder in ["", *scan_folders(root, rules)]:
+        try:
+            names = [p.name.lower() for p in (root / folder).iterdir() if not p.is_dir()]
+        except OSError:
+            continue
+        if any(n in ("_quarto.yml", "_quarto.yaml") or n.endswith(".qmd") for n in names):
+            return True
+    return False
+
+
+def adopt_spec(
+    name: str, plan: AdoptPlan, use_git: bool = False, quarto: bool = False
+) -> dict[str, Any]:
     """The resolved spec for an adopted folder, as R's ``adopt()`` records it.
 
     A project of the mapped type with exactly the mapped folders: the type's own
-    folders and render folders are not added. No tools, no default packages, no
-    skills, and no AI files. Git is on when the folder is a git repository.
+    folders and render folders are not added. Quarto is on when the folder uses it
+    (``detect_quarto()``); no other tools, no default packages, no skills, and no AI
+    files. Git is on when the folder is a git repository.
     """
     from framework.spec.resolve import spec_resolve
 
@@ -563,7 +582,7 @@ def adopt_spec(name: str, plan: AdoptPlan, use_git: bool = False) -> dict[str, A
         "language": "python",
         "core_files": False,
         "settings_layout": "flat",
-        "tools": {"quarto": False, "uv": False},
+        "tools": {"quarto": quarto, "uv": False},
         "git": {"use_git": use_git},
         "ai": {"enabled": False},
         "security": {"sensitive": sensitive},

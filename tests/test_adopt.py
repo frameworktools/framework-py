@@ -414,3 +414,22 @@ def test_adopt_merges_its_gitignore_rules(tmp_path: Path) -> None:
     from framework._gitignore import missing_rules
 
     assert missing_rules(root, spec["git"]["gitignore_content"]).add == []
+
+
+def test_quarto_is_on_for_a_quarto_file_up_to_three_folders_deep(tmp_path: Path) -> None:
+    def quarto_of(name: str, files: list[str]) -> tuple[bool, bool]:
+        root = tmp_path / name
+        for file in files:
+            (root / file).parent.mkdir(parents=True, exist_ok=True)
+            (root / file).write_text("x\n", encoding="utf-8")
+        (root / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
+        fw.adopt(root, yes=True)
+        settings = _yaml.read(root / "settings.yml")["default"]
+        spec = json.loads((root / ".framework/spec.json").read_text(encoding="utf-8"))
+        return settings["tools"]["quarto"], spec["tools"]["quarto"]
+
+    assert quarto_of("a", ["notebooks/_quarto.yml", "notebooks/a.qmd"]) == (True, True)
+    assert quarto_of("b", ["report-template.qmd"]) == (True, True)
+    assert quarto_of("c", ["a/b/c/deep.qmd"]) == (True, True)
+    assert quarto_of("d", ["a/b/c/d/too-deep.qmd", "a/run.py"]) == (False, False)
+    assert quarto_of("e", [".venv/x.qmd", "analysis/run.py"]) == (False, False)
