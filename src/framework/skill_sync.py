@@ -76,10 +76,17 @@ def validate(files: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(result, key=lambda f: f["path"])
 
 
+def hash_bytes(raw: bytes) -> bytes:
+    """Text files hash with LF line endings, so a CRLF checkout (git's
+    core.autocrlf on Windows) matches its LF twin. A file with a NUL byte is
+    binary and hashes raw. R, Go, and Cloud normalize the same way."""
+    return raw if b"\0" in raw else raw.replace(b"\r\n", b"\n")
+
+
 def bundle_hash(files: list[dict[str, Any]]) -> str:
     manifest = "framework-skill-bundle-v1\n"
     for file in validate(files):
-        raw = base64.b64decode(file["content"])
+        raw = hash_bytes(base64.b64decode(file["content"]))
         manifest += (
             f"{file['path']}\t{hashlib.sha256(raw).hexdigest()}\t"
             f"{755 if file['executable'] else 644}\t{len(raw)}\n"
@@ -463,9 +470,7 @@ def shipped_release(target: Path, name: str) -> bool:
         return False
     raw = base64.b64decode(files[0]["content"])
     known = set(_shipped_history().get(name) or [])
-    return any(
-        hashlib.sha256(data).hexdigest() in known for data in (raw, raw.replace(b"\r\n", b"\n"))
-    )
+    return any(hashlib.sha256(data).hexdigest() in known for data in (raw, hash_bytes(raw)))
 
 
 def package_status(source: Traversable, root: Path, relative: str, name: str) -> str:

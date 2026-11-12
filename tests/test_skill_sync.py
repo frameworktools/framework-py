@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from framework.skill_sync import _load, bundle_hash, install_package, scan, skills_sync
+from framework.skill_sync import (
+    _load,
+    bundle_hash,
+    install_package,
+    package_status,
+    scan,
+    skills_sync,
+)
 
 
 def write_skill(root, text="First"):
@@ -67,6 +74,21 @@ def test_cross_language_hash_and_paths():
     for path in ("../escape", ".env", "foo/.env.local", "secret.pem", "SKILL.md/child"):
         with pytest.raises(ValueError):
             bundle_hash(fixture["bundle"] + [{"path": path, "content": "", "executable": False}])
+
+
+def test_text_files_hash_with_lf_and_binary_files_hash_raw(tmp_path):
+    fixture = json.loads((Path(__file__).parent / "fixtures/skill-bundle-crlf.json").read_text())
+    assert bundle_hash(fixture["lf"]) == fixture["hash"]
+    assert bundle_hash(fixture["crlf"]) == fixture["hash"]
+    assert bundle_hash(fixture["binary_lf"]) == fixture["binary_lf_hash"]
+    # A package skill that git checked out with CRLF is still current
+    source = tmp_path / "package"
+    source.mkdir()
+    (source / "SKILL.md").write_bytes(b"---\nname: example\ndescription: Examples\n---\nSource\n")
+    assert install_package(source, tmp_path, ".agents/skills/example", "example")
+    installed = tmp_path / ".agents/skills/example/SKILL.md"
+    installed.write_bytes(installed.read_bytes().replace(b"\n", b"\r\n"))
+    assert package_status(source, tmp_path, ".agents/skills/example", "example") == "current"
 
 
 def test_push_pull_conflict_status_and_timeout_retry(tmp_path, cloud):
