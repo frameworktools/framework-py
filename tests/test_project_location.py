@@ -84,7 +84,9 @@ def test_a_relative_path_is_taken_from_here(here: Path, monkeypatch: pytest.Monk
 def test_a_tilde_path_is_expanded(
     here: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # expanduser reads HOME on POSIX and USERPROFILE on Windows
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     answers(monkeypatch, "n", "~/code")
     assert new() == tmp_path / "home" / "code" / "field-study"
 
@@ -176,7 +178,9 @@ def test_a_projects_folder_is_offered_instead_of_here(
 def test_a_projects_folder_with_a_tilde_is_expanded(
     here: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # expanduser reads HOME on POSIX and USERPROFILE on Windows
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setattr(create, "_projects_dir", lambda: "~/research")
     prompts = answers(monkeypatch, "y")
     assert new() == tmp_path / "home" / "research" / "field-study"

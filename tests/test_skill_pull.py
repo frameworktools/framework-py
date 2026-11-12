@@ -89,7 +89,7 @@ class Cloud:
             entry = next(
                 e
                 for e in _load(Path.cwd())["skills"].values()
-                if str(target.relative_to(Path.cwd())) in e["paths"]
+                if target.relative_to(Path.cwd()).as_posix() in e["paths"]
             )
             return {
                 "skill_id": identity,
