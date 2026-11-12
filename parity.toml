@@ -605,6 +605,9 @@ names = [
     "framework_template_path",
     "tools_available",
     "path",  # alias of project_path()
+    # R exports these in its next release; they move to [functions] after the asset sync
+    "pull_skills",
+    "push_skills",
 ]
 
 [functions.skills_sync]

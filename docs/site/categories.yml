@@ -82,7 +82,8 @@
 - id: ai
   title: AI
   description: AI assistant skills
-  names: [ai_skills_update]
+  common: [pull_skills, push_skills]
+  names: [pull_skills, push_skills, ai_skills_update]
 
 - id: types
   title: Errors and types

@@ -210,59 +210,21 @@ def _installed_spec(root: Path) -> dict[str, Any]:
     }
 
 
-def ai_skills_update(project_path: str | Path = ".") -> list[str]:
-    """Refresh clean Framework skills. Preserve local edits and account forks.
+def ai_skills_update(project_path: str | Path = ".") -> dict[str, Any]:
+    """Bring the project's skills up to date. The same as ``pull_skills(project_path)``.
 
-    Only skills that ship with Framework are updated. Skills from a blueprint
-    or facet, and skills you wrote, are left alone. A skill installed before
-    ``.framework/skills.lock.json`` existed counts as clean when it matches a
-    SKILL.md framework-py has shipped (``templates/skill-history.json``), and
-    is updated, backed up first to ``.framework/skills-backups/``. The skills and assistants
-    come from ``.framework/spec.json``, or from the settings for projects
-    without one.
+    Kept for scripts written before ``pull_skills()``. See ``pull_skills()`` for what is
+    added, updated, kept, and listed.
 
     Args:
         project_path: The project's root directory. Default: the current directory.
 
     Returns:
-        The skill folders whose files changed. Skills that were already current are left
-        out.
+        What ``pull_skills()`` returns.
 
     Raises:
         ProjectNotFoundError: When the folder has no ``.framework/spec.json`` or settings file.
     """
-    from framework._log import inform, show_messages
+    from framework.skill_pull import pull_skills
 
-    show_messages()
-    root = Path(project_path).expanduser()
-    from framework.project import _settings_in
-
-    if not (root / ".framework/spec.json").is_file() and _settings_in(root) is None:
-        from framework.errors import ProjectNotFoundError
-
-        raise ProjectNotFoundError(
-            f"{root} is not a Framework project: it has no .framework/spec.json or settings file."
-        )
-    spec = _installed_spec(root)
-    folders, _ = assistant_targets(spec)
-    updated = []
-    for name, entry in (spec.get("skills") or {}).items():
-        if not (isinstance(entry, dict) and entry.get("package") is True):
-            continue
-        if not _shipped(name).is_dir():
-            continue
-        for folder in folders:
-            from framework.skill_sync import bundle_hash, install_package, scan
-
-            target = root / folder / name
-            # Only a skill whose files changed counts as updated
-            before = bundle_hash(scan(target)) if target.is_dir() else None
-            if install_package(_shipped(name), root, f"{folder}/{name}", name) and (
-                (bundle_hash(scan(target)) if target.is_dir() else None) != before
-            ):
-                updated.append(f"{folder}/{name}")
-    if updated:
-        inform(f"✓ Updated {len(updated)} Framework skill(s)")
-    else:
-        inform("No Framework skills to update")
-    return updated
+    return pull_skills(project_path)

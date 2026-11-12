@@ -465,11 +465,14 @@ def package_status(source: Traversable, root: Path, relative: str, name: str) ->
     return "update" if shipped_release(target, name) else "edited"
 
 
-def _install_package(source: Traversable, root: Path, relative: str, name: str) -> bool:
+def _install_package(
+    source: Traversable, root: Path, relative: str, name: str, *, force: bool = False
+) -> bool:
     """Refresh a clean package installation. Unknown or edited copies are preserved; a copy
-    of a released SKILL.md with no lock entry is clean."""
+    of a released SKILL.md with no lock entry is clean. ``force`` replaces an edited copy,
+    backing it up first."""
     status = package_status(source, root, relative, name)
-    if status in ("account", "edited"):
+    if status in ("account", "edited") and not force:
         return False
     target = _path(root, relative)
     files = validate(_source_files(source))
@@ -490,7 +493,16 @@ def _install_package(source: Traversable, root: Path, relative: str, name: str) 
     return True
 
 
-def _install_cloud(root: Path, relative: str, entry: dict[str, Any]) -> bool:
+def _install_cloud(
+    root: Path,
+    relative: str,
+    entry: dict[str, Any],
+    *,
+    force: bool = False,
+    clean: tuple[str, ...] = (),
+) -> bool:
+    """Install a Cloud skill bundle. A copy that matches neither the lock nor ``clean``
+    (other unedited versions) is kept, unless ``force`` replaces it after a backup."""
     source = entry["sync"]
     files = validate(entry["bundle"])
     if bundle_hash(files) != source["hash"]:
@@ -503,9 +515,11 @@ def _install_cloud(root: Path, relative: str, entry: dict[str, Any]) -> bool:
     tracked = state["skills"].get(key, {"paths": [], "variant": source["variant"]})
     target = _path(root, relative)
     current = bundle_hash(scan(target)) if target.exists() else None
-    if current and current != tracked.get("hash", source["hash"]):
+    unedited = current in (tracked.get("hash", source["hash"]), *clean)
+    if current and not unedited and not force:
         return False
-    _install(root, [relative], files, current)
+    if current != source["hash"]:
+        _install(root, [relative], files, current)
     if relative not in tracked["paths"]:
         tracked["paths"].append(relative)
     tracked.update(source)

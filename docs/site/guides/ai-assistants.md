@@ -79,17 +79,44 @@ Projects created from a framework.pub blueprint can carry additional skills. You
 
 ### Updating skills
 
-New releases of framework-py can include updated skills. [ai_skills_update()](ref:ai_skills_update) replaces a project's Framework skills with the versions in the installed package and returns the folders it wrote.
+A project's skills come from its setup on Framework Cloud: its blueprint, skill sets, and single skills. [pull_skills()](ref:pull_skills) brings the project's skills up to date with that setup.
 
 ```python
 import framework as fw
 
-fw.ai_skills_update()
+fw.pull_skills()
 ```
 
-The `project_path` argument names another project folder. The default is the current folder.
+It reads the project's current skill list with the project's token, then:
 
-Only skills that ship with framework-py are replaced. Skills from a blueprint and skills you wrote are left alone. The function reads the project's skills and assistants from `.framework/spec.json`, or from the settings when that file is missing.
+- adds skills the project is missing,
+- updates unedited skills to their latest versions: Framework's from the installed framework-py, and your Cloud skills from Cloud,
+- keeps skills you edited and lists them,
+- lists skills that are no longer in the project's setup, without deleting them,
+- refreshes the Skills table in `AGENTS.md`.
+
+It prints a summary:
+
+```text
+Skills: 2 added, 3 updated, 5 up to date, 1 locally edited (kept)
+  Kept (locally edited): framework-data — pull_skills(overwrite=True) replaces it
+```
+
+`overwrite=True` replaces edited skills too. The old copies go to `.framework/skills-backups/`. `dry_run=True` shows what would change and writes nothing. The latest versions of your Cloud skills need [cloud_login()](ref:cloud_login); without it, the versions in the project's setup are used.
+
+Offline, or without a project token, it uses the Framework skills in the project's settings and says so. [ai_skills_update()](ref:ai_skills_update) does the same as `pull_skills()`.
+
+### Sending edited skills to Cloud
+
+[push_skills()](ref:push_skills) sends skills you edited in the project to Framework Cloud as new versions of your own skills. It needs [cloud_login()](ref:cloud_login).
+
+```python
+fw.push_skills()
+```
+
+Before pushing, it names what each new version affects and asks to continue. Without a console, pass `confirm=True`. A skill that changed on Cloud since the project pulled it is refused with "Pull first". `force=True` pushes it anyway; the Cloud changes stay in its history. A built-in Framework skill never changes: an edited one is saved as your own copy. `dry_run=True` lists what would be pushed.
+
+Only skills Framework installed are pushed. [skills_sync()](ref:skills_sync) syncs one skill folder, including one you wrote.
 
 ## Privacy-sensitive projects
 

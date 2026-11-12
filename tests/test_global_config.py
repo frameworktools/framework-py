@@ -73,11 +73,14 @@ def test_ai_skills_update(tmp_path: Path) -> None:
     (root / ".claude/skills/mine").mkdir()
     (root / ".claude/skills/mine/SKILL.md").write_text("custom\n", encoding="utf-8")
     shutil.rmtree(root / ".claude/skills/framework-sensitive-data")
-    updated = fw.ai_skills_update(root)
+    result = fw.ai_skills_update(root)
+    statuses = {s["name"]: s["status"] for s in result["skills"]}
     # Audit 2026-11-05: skills that were already current were reported as updated
-    assert updated == [".claude/skills/framework-sensitive-data"]
+    assert statuses["framework-sensitive-data"] == "added"
+    assert statuses["framework-data"] == "edited"
+    assert statuses["framework-workflow"] == "current"
     assert (root / ".claude/skills/framework-sensitive-data/SKILL.md").is_file()
-    assert fw.ai_skills_update(root) == []
+    assert fw.ai_skills_update(root)["counts"]["added"] == 0
     assert skill.read_text(encoding="utf-8") == "stale\n"
     assert (root / ".claude/skills/mine/SKILL.md").read_text(encoding="utf-8") == "custom\n"
 
@@ -86,8 +89,9 @@ def test_ai_skills_update_without_spec(project: Path) -> None:
     (project / "settings.yml").write_text(
         "default:\n  project_type: project\n  ai: {assistants: [codex]}\n", encoding="utf-8"
     )
-    updated = fw.ai_skills_update(project)
-    assert ".agents/skills/framework-workflow" in updated
+    result = fw.ai_skills_update(project)
+    added = [p for s in result["skills"] if s["status"] == "added" for p in s["paths"]]
+    assert ".agents/skills/framework-workflow" in added
     assert (project / ".agents/skills/framework-workflow/SKILL.md").is_file()
 
 
@@ -117,11 +121,12 @@ def test_ai_skills_update_updates_skills_from_an_older_release(
     (skills / "framework-data/SKILL.md").write_bytes(old.replace("\n", "\r\n").encode())
     (skills / "framework-outputs").mkdir()
     (skills / "framework-outputs/SKILL.md").write_text("my own notes\n", encoding="utf-8")
-    updated = fw.ai_skills_update(project)
-    assert ".claude/skills/framework-data" in updated
+    result = fw.ai_skills_update(project)
+    statuses = {s["name"]: s["status"] for s in result["skills"]}
+    assert statuses["framework-data"] == "updated"
     assert "older release" not in (skills / "framework-data/SKILL.md").read_text(encoding="utf-8")
     assert list((project / ".framework/skills-backups").iterdir())
-    assert ".claude/skills/framework-outputs" not in updated
+    assert statuses["framework-outputs"] == "edited"
     text = (skills / "framework-outputs/SKILL.md").read_text(encoding="utf-8")
     assert text == "my own notes\n"
 

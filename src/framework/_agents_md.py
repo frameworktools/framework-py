@@ -55,10 +55,35 @@ def _header(name: str) -> str:
     )
 
 
-def _skills(skills: list[str], skills_dir: str) -> str:
+def skill_description(folder: Path) -> str:
+    """A skill's own description, from its SKILL.md front matter, on one line with pipes
+    escaped, for skills Framework has no line for. R: ``.skill_description()``."""
+    from framework import _yaml
+
+    try:
+        text = (folder / "SKILL.md").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    found = re.match(r"---\r?\n(.*?)\r?\n---", text, re.DOTALL)
+    try:
+        meta = _yaml.load(found.group(1)) if found else None
+    except Exception:
+        meta = None
+    value = meta.get("description") if isinstance(meta, dict) else None
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.split()).replace("|", "\\|")
+
+
+def _skills(skills: list[str], skills_dir: str, root: Path | None = None) -> str:
+    def covers(skill: str) -> str:
+        known = SKILL_DESCRIPTIONS.get(skill)
+        if known is not None or root is None:
+            return known or ""
+        return skill_description(root / skills_dir / skill)
+
     rows = [
-        f"| `{skill}` | {SKILL_DESCRIPTIONS.get(skill, '')} | `{skills_dir}/{skill}/SKILL.md` |"
-        for skill in skills
+        f"| `{skill}` | {covers(skill)} | `{skills_dir}/{skill}/SKILL.md` |" for skill in skills
     ]
     return "\n".join(
         [
@@ -164,6 +189,26 @@ def refresh_packages(root: Path, names: list[str]) -> Path | None:
     if found is None:
         return None
     updated = text[: found.start()] + packages_section(names) + text[found.end() :]
+    if updated == text:
+        return None
+    path.write_text(updated, encoding="utf-8")
+    return path
+
+
+def refresh_skills(root: Path, skills: list[str], skills_dir: str) -> Path | None:
+    """Rewrite the context file's Skills section to list ``skills`` in ``skills_dir``.
+
+    Only a file with a ``## Skills`` heading changes; the rest of it is kept. Returns the
+    file when it changed.
+    """
+    path = context_file(root)
+    if path is None:
+        return None
+    text = path.read_text(encoding="utf-8")
+    found = re.search(r"^## Skills[^\n]*\n.*?(?=\n+## |\n*\Z)", text, re.DOTALL | re.MULTILINE)
+    if found is None:
+        return None
+    updated = text[: found.start()] + _skills(skills, skills_dir, root) + text[found.end() :]
     if updated == text:
         return None
     path.write_text(updated, encoding="utf-8")
