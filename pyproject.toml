@@ -1,6 +1,6 @@
 [project]
 name = "framework-py"
-version = "0.1.0.dev17"
+version = "0.1.0.dev18"
 description = "Structured data science projects: a data catalog, integrity tracking, caching, outputs, and AI guardrails"
 readme = "README.md"
 license = "MIT"
