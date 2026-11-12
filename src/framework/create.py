@@ -403,7 +403,11 @@ def _git_init(root: Path) -> None:
 
     def git(*args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["git", "-C", str(root), *args], capture_output=True, text=True, check=False
+            ["git", "-C", str(root), *args],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
         )
 
     from framework.hooks import git_hooks_install, outer_repository

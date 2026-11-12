@@ -132,8 +132,13 @@ def _hook_name(name: str) -> str:
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    # git writes paths as UTF-8, whatever the locale (cp1252 on Windows)
     return subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, text=True, check=False
+        ["git", "-C", str(root), *args],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
 
 

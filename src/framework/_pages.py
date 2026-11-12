@@ -36,7 +36,11 @@ class _Remote:
 
 def _git(top: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", "-C", str(top), *args], capture_output=True, text=True, check=False
+        ["git", "-C", str(top), *args],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
 
 

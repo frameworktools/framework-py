@@ -268,7 +268,9 @@ def _create_private_folders(root: Path, config: dict[str, Any]) -> list[str]:
 def _git(*args: str) -> str | None:
     if shutil.which("git") is None:
         return None
-    result = subprocess.run(["git", *args], capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        ["git", *args], capture_output=True, encoding="utf-8", errors="replace", check=False
+    )
     return result.stdout.strip() if result.returncode == 0 else None
 
 
