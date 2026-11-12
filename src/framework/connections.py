@@ -639,6 +639,11 @@ def db_execute_file(
                 cursor = opened.cursor()
                 try:
                     cursor.execute(statement.sql)
+                    if opened.driver == "sqlserver":
+                        # A batch returns one result per statement, and pyodbc raises a
+                        # later statement's error only when its result is read.
+                        while cursor.nextset():
+                            pass
                 except Exception as error:
                     raise FrameworkError(
                         f"Statement {number} of {len(statements)} in {source.name} (line "

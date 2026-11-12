@@ -150,8 +150,23 @@ def test_execute_file_and_copy_from(database: tuple[str, str], project: Path) ->
         f"INSERT INTO {extra} (id, label) VALUES (1, 'a; b');\n",
         encoding="utf-8",
     )
+    # SQL Server runs a file as GO batches; this file has no GO, so it is one batch.
+    total = 1 if name == "sqlserver" else 2
     try:
-        assert fw.db_execute_file(name, "load.sql") == 2
+        assert fw.db_execute_file(name, "load.sql") == total
+        assert fw.db_query(f"SELECT label FROM {extra}", name)["label"].tolist() == ["a; b"]
+
+        # A statement that fails after another succeeded, in the same SQL Server batch,
+        # still stops the file and rolls it back.
+        (project / "broken.sql").write_text(
+            f"INSERT INTO {extra} (id, label) VALUES (2, 'kept?');\n"
+            f"INSERT INTO {table}_nowhere (id) VALUES (1);\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(
+            fw.FrameworkError, match=f"(?s)Statement {total} of {total} .*rolled back"
+        ):
+            fw.db_execute_file(name, "broken.sql")
         assert fw.db_query(f"SELECT label FROM {extra}", name)["label"].tolist() == ["a; b"]
     finally:
         fw.db_execute(f"DROP TABLE {extra}", name)
