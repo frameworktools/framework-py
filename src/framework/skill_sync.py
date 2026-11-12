@@ -270,7 +270,7 @@ def skills_sync(
     Returns:
         The action, skill identity, hashes, paths, and resulting version.
     """
-    from framework.cloud import _require_token, api, cloud_server
+    from framework.cloud import CloudConflictError, _require_token, api, cloud_server
 
     if (
         direction not in ("auto", "push", "pull", "status")
@@ -311,17 +311,27 @@ def skills_sync(
             )
         elif entry.get("origin"):
             origin = entry["origin"]
-            remote = api(
-                f"/api/v1/skills/sync/{quote(origin['skill_id'], safe='')}"
-                f"?variant={variant}&hash={origin['hash']}",
-                token,
-                server,
-            )
+            try:
+                remote = api(
+                    f"/api/v1/skills/sync/{quote(origin['skill_id'], safe='')}"
+                    f"?variant={variant}&hash={origin['hash']}",
+                    token,
+                    server,
+                )
+            except CloudConflictError:
+                # Cloud never published this built-in copy (the package shipped its own
+                # text): an edited one is pushed as a new skill of your own
+                remote = None
         if remote and bundle_hash(remote["bundle"]) != remote["hash"]:
             raise ValueError("Cloud skill verification failed")
         base = entry.get("hash") if entry.get("skill_id") else entry.get("origin", {}).get("hash")
         if not remote:
-            action = "push" if files else "missing"
+            if not files:
+                action = "missing"
+            elif not entry.get("skill_id") and local_hash == base:
+                action = "unchanged"
+            else:
+                action = "push"
         elif local_hash == remote["hash"]:
             action = "adopt" if not entry.get("skill_id") else "unchanged"
         elif local_hash is None:

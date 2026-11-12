@@ -11,7 +11,7 @@ import json
 import logging
 import re
 import sys
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -78,8 +78,12 @@ def _describe(row: dict[str, Any]) -> str:
     return _version(row) or "any version"
 
 
-def _local(root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
-    """The project's packages from pyproject.toml, by normalized name, and their requirements."""
+def _local(root: Path, cloud: Collection[str]) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    """The project's packages from pyproject.toml, by normalized name, and their requirements.
+
+    framework-py and the workflow tool packages count only when ``cloud``, the normalized
+    names of the setup's packages, lists them too, or when they are pinned.
+    """
     from framework.packages import _dependencies
 
     rows: dict[str, dict[str, Any]] = {}
@@ -89,11 +93,26 @@ def _local(root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
         if row is None:
             continue
         key = _key(row["name"])
-        if key in _IMPLIED and row["version"] is None and row["source"] == "pypi":
+        implied = key in _IMPLIED and row["version"] is None and row["source"] == "pypi"
+        if implied and key not in cloud:
             continue
         rows[key] = row
         requirements[key] = requirement
     return rows, requirements
+
+
+def _other_language(language: str, function: str) -> FrameworkError | None:
+    """An error for a project whose packages framework-py doesn't manage, such as an R one."""
+    from framework.cloud import CloudError
+
+    if language in ("python", "stata"):
+        return None
+    name = {"r": "an R"}.get(language, f"a {language}")
+    package = "the framework R package's" if language == "r" else "its language package's"
+    return CloudError(
+        f"This is {name} project on Framework Cloud. Use {package} {function}() "
+        f"or fw setup {function.split('_')[0]}. Nothing changed."
+    )
 
 
 def _lock_read(root: Path) -> dict[str, Any]:
@@ -195,8 +214,9 @@ def _install(root: Path, requirements: list[str]) -> None:
 
     uv = _uv()
     if uv is not None:
-        # uv add replaces the requirement of a package already listed
-        _check(_run([uv, "add", *requirements], root), "uv add")
+        # uv add replaces the requirement of a package already listed. --raw keeps each
+        # as Cloud has it: no added lower bound, and a GitHub URL stays in dependencies
+        _check(_run([uv, "add", "--raw", *requirements], root), "uv add")
     else:
         path = _pyproject(root)
         for requirement in requirements:
@@ -268,11 +288,13 @@ def pull_setup(
         raise _unreachable(error) from error
     revision = str(setup.get("revision") or "")
     language = setup.get("language") or "python"
+    if refusal := _other_language(language, "pull_setup"):
+        raise refusal
 
-    local, _ = _local(root) if language == "python" else ({}, {})
     cloud = {_key(p["name"]): p for p in setup.get("packages") or [] if isinstance(p, dict)}
     if language != "python":
         cloud = {}
+    local, _ = _local(root, cloud) if language == "python" else ({}, {})
     added = [cloud[k] for k in cloud if k not in local]
     differ = [(local[k], cloud[k]) for k in cloud if k in local and not _same(local[k], cloud[k])]
     kept_local = [local[k]["name"] for k in local if k not in cloud]
@@ -401,6 +423,8 @@ def push_setup(
             raise _unreachable(error) from error
         raise
     base = _lock_read(root).get("revision") or setup.get("revision")
+    if refusal := _other_language(setup.get("language") or "python", "push_setup"):
+        raise refusal
     if setup.get("language") == "stata":
         inform("Packages are not managed for Stata projects; pushing skills only.")
         return {
@@ -411,7 +435,8 @@ def push_setup(
             "dry_run": dry_run,
             "message": "Packages are not managed for Stata projects.",
         }
-    local, _ = _local(root)
+    cloud = {_key(p["name"]) for p in setup.get("packages") or [] if isinstance(p, dict)}
+    local, _ = _local(root, cloud)
 
     def send(dry: bool) -> dict[str, Any]:
         body = {

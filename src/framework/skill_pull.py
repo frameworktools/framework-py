@@ -129,6 +129,22 @@ def _inline_bundle(entry: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _newer(entry: dict[str, Any], tracked: dict[str, Any], current: str | None) -> bool:
+    """Whether the project holds a newer version of a Cloud skill than its setup names.
+
+    After push_skills(), the lock tracks the pushed version while the setup still names
+    the one it was resolved with. Without your login, that older version is all a pull
+    has, and it must not replace the newer one.
+    """
+    sync = entry.get("sync") or {}
+    return (
+        bool(sync)
+        and tracked.get("skill_id") == sync.get("skill_id")
+        and current == tracked.get("hash")
+        and int(tracked.get("version") or 0) > int(sync.get("version") or 0)
+    )
+
+
 def _plan(root: Path, name: str, entry: dict[str, Any], relative: str, overwrite: bool) -> str:
     """What pulling one skill into one folder does."""
     from framework.ai import _shipped
@@ -153,7 +169,7 @@ def _plan(root: Path, name: str, entry: dict[str, Any], relative: str, overwrite
         clean = {tracked.get("hash"), entry.get("_setup_hash")} - {None}
         if current is None:
             status = "added"
-        elif current == fresh:
+        elif current == fresh or _newer(entry, tracked, current):
             status = "current"
         elif entry.get("sync") and current in clean:
             status = "updated"
@@ -177,6 +193,14 @@ def _apply(root: Path, name: str, entry: dict[str, Any], relative: str, status: 
     if entry.get("package") is True:
         _install_package(_shipped(name), root, relative, name, force=force)
     elif entry.get("sync"):
+        target = _path(root, relative)
+        if (
+            status == "current"
+            and target.exists()
+            and bundle_hash(scan(target)) != entry["sync"]["hash"]
+        ):
+            # Current with other files: a newer version than the setup's, kept as it is
+            return
         clean = (entry["_setup_hash"],) if entry.get("_setup_hash") else ()
         _install_cloud(root, relative, entry, force=force, clean=clean)
     elif status != "current":

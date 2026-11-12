@@ -147,7 +147,7 @@ def test_pull_lists_changes_and_adds_packages(cloud: Cloud, project: Path, caplo
     assert "Only in this project (kept): requests" in text
     # framework-py and the unpinned tool packages are not part of the setup
     assert "ipykernel" not in text and "framework-py" not in text
-    assert cloud.runs == [["uv", "add", "polars", "numpy"]]  # type: ignore[attr-defined]
+    assert cloud.runs == [["uv", "add", "--raw", "polars", "numpy"]]  # type: ignore[attr-defined]
     assert result["applied"] is True
     assert result["packages"]["differ_kept"] == ["pandas"]
     assert result["skills"] is not None
@@ -157,7 +157,7 @@ def test_pull_lists_changes_and_adds_packages(cloud: Cloud, project: Path, caplo
 
 def test_pull_overwrite_uses_clouds_version(cloud: Cloud, project: Path) -> None:
     result = fw.pull_setup(overwrite=True, confirm=True)
-    assert cloud.runs == [["uv", "add", "polars", "numpy", "pandas>=2.2"]]  # type: ignore[attr-defined]
+    assert cloud.runs == [["uv", "add", "--raw", "polars", "numpy", "pandas>=2.2"]]  # type: ignore[attr-defined]
     assert result["packages"]["changed"] == ["pandas"]
 
 
@@ -292,3 +292,32 @@ def test_requirement_rows() -> None:
     assert _row("thing @ https://example.org/thing.whl") is None
     assert _same(row("x", "==1.2"), row("x", "1.2"))
     assert not _same(row("x", source="github", repo="a/x"), row("x", source="github", repo="b/x"))
+
+
+def test_tool_packages_count_when_the_setup_lists_them(
+    cloud: Cloud, project: Path, caplog: Any
+) -> None:
+    # A Jupyter project's setup lists ipykernel, as pyproject.toml does
+    caplog.set_level("INFO", logger="framework")
+    cloud.packages = [row("pandas", ">=2.0"), row("requests"), row("ipykernel")]
+    fw.pull_skills()
+    fw.pull_setup()
+    assert "Setup is up to date with Framework Cloud (revision rev-1)." in caplog.text
+    assert "Packages to add" not in caplog.text
+
+    # So remove keeps it, and framework-py is still never sent
+    fw.push_setup(remove=True, confirm=True)
+    sent = [p["name"] for p in cloud.posts[-1]["packages"]]
+    assert sent == ["pandas", "requests", "ipykernel"]
+
+
+def test_r_projects_are_refused(cloud: Cloud, project: Path) -> None:
+    cloud.language = "r"
+    with pytest.raises(
+        CloudError,
+        match=r"This is an R project on Framework Cloud\. Use the framework R package's pull_setup",
+    ):
+        fw.pull_setup(dry_run=True)
+    with pytest.raises(CloudError, match=r"push_setup\(\) or fw setup push\. Nothing changed\."):
+        fw.push_setup(remove=True, confirm=True)
+    assert cloud.posts == [] and cloud.runs == []  # type: ignore[attr-defined]

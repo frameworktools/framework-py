@@ -334,3 +334,49 @@ def test_push_needs_a_login(cloud: Cloud, project: Path) -> None:
 def test_lock_file_is_json(cloud: Cloud, project: Path) -> None:
     fw.pull_skills(project)
     json.loads((project / ".framework/skills.lock.json").read_text())
+
+
+def test_pull_keeps_a_newer_pushed_version_when_signed_out(
+    cloud: Cloud, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pulled(cloud, project)
+    monkeypatch.setenv("FW_CLOUD_TOKEN", "fw_user")
+    cloud.heads["team-id"] = {**copy.deepcopy(cloud.skills["team-style"]["sync"]), "version": 1}
+    cloud.heads["team-id"]["bundle"] = cloud.skills["team-style"]["bundle"]
+    mine = "---\nname: team-style\ndescription: Edited\n---\nMine\n"
+    (project / ".claude/skills/team-style/SKILL.md").write_text(mine)
+    fw.push_skills(project, confirm=True)
+    assert cloud.heads["team-id"]["version"] == 2
+
+    # The setup still names version 1, and without a login that is all a pull sees
+    monkeypatch.delenv("FW_CLOUD_TOKEN")
+    monkeypatch.setenv("FW_TOKEN_FILE", str(project.parent / "no-token"))
+    result = fw.pull_skills(project)
+    assert statuses(result)["team-style"] == "current"
+    assert skill_text(project, "team-style") == mine
+    entry = next(e for e in _load(project)["skills"].values() if e.get("skill_id") == "team-id")
+    assert entry["version"] == 2
+
+
+def test_push_saves_an_unpublished_builtin_as_a_new_skill(
+    cloud: Cloud, project: Path, signed_in: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from framework.cloud import CloudConflictError
+
+    pulled(cloud, project)
+    answer = cloud.api
+
+    def api(path: str, *args: Any, **kwargs: Any) -> Any:
+        # The package shipped a version of the built-in Cloud never published
+        if "hash=" in path:
+            raise CloudConflictError("The installed source version is unavailable.", {})
+        return answer(path, *args, **kwargs)
+
+    monkeypatch.setattr("framework.cloud.api", api)
+    assert fw.push_skills(project, confirm=True)["message"] == "Skills pushed: nothing to push"
+    (project / ".claude/skills/framework-data/SKILL.md").write_text(
+        "---\nname: framework-data\ndescription: x\n---\nMine\n"
+    )
+    result = fw.push_skills(project, confirm=True)
+    assert statuses(result)["framework-data"] == "pushed"
+    assert cloud.posts[-1]["skill_id"] is None and cloud.posts[-1]["expected_version"] == 0
