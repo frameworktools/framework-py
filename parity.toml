@@ -608,6 +608,8 @@ names = [
     # R exports these in its next release; they move to [functions] after the asset sync
     "pull_skills",
     "push_skills",
+    "pull_setup",
+    "push_setup",
 ]
 
 [functions.skills_sync]

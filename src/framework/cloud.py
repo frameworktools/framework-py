@@ -343,6 +343,17 @@ class _MissingEndpointError(CloudError):
     """HTTP 404 or 405: an older server without this endpoint."""
 
 
+class CloudConflictError(CloudError):
+    """HTTP 409: what was sent was based on a version the server has moved past.
+
+    ``body`` is the reply, such as ``{"message": ..., "revision": ...}``.
+    """
+
+    def __init__(self, message: str, body: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.body = body
+
+
 def _error(response: httpx.Response, what: str) -> CloudError:
     try:
         body = response.json()
@@ -363,6 +374,8 @@ def _error(response: httpx.Response, what: str) -> CloudError:
             message = "\n".join([str(message), *details])
     if response.status_code in (404, 405):
         return _MissingEndpointError(str(message))
+    if response.status_code == 409:
+        return CloudConflictError(str(message), body)
     if response.status_code >= 500:
         return CloudOfflineError(str(message))
     return CloudError(str(message))

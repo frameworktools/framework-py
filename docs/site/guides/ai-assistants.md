@@ -118,6 +118,8 @@ Before pushing, it names what each new version affects and asks to continue. Wit
 
 Only skills Framework installed are pushed. [skills_sync()](ref:skills_sync) syncs one skill folder, including one you wrote.
 
+[pull_setup()](ref:pull_setup) and [push_setup()](ref:push_setup) do the same for the whole setup: packages and skills together. See [Packages](guide:packages#setup-on-framework-cloud).
+
 ## Privacy-sensitive projects
 
 Privacy-sensitive projects add two protections for restricted data.
