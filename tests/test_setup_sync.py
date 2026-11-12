@@ -102,6 +102,15 @@ class Cloud:
         return SimpleNamespace(json=lambda: reply)
 
 
+@pytest.fixture(autouse=True)
+def _messages() -> None:
+    # Before caplog sets a level, so its teardown restores INFO, not NOTSET, and
+    # later tests that read stderr still see Framework's messages
+    from framework._log import show_messages
+
+    show_messages()
+
+
 @pytest.fixture
 def cloud(project: Path, monkeypatch: pytest.MonkeyPatch) -> Cloud:
     import framework.cloud as module

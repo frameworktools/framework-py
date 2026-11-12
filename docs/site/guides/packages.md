@@ -85,8 +85,8 @@ Signed in to Framework Cloud, you can also add one of your account's sets by its
 A project's setup on Framework Cloud is its packages and skills. Folders and structure are not part of it. [pull_setup()](ref:pull_setup) brings Cloud's setup into the project, and [push_setup()](ref:push_setup) sends the project's packages back. Both use the project token in `.env`.
 
 ```python
-fw.pull_setup(dry_run=True)   # list the changes only
-fw.pull_setup()               # list them, ask, then apply
+fw.pull_setup(dry_run=True)  # list the changes only
+fw.pull_setup()  # list them, ask, then apply
 fw.push_setup()
 ```
 
