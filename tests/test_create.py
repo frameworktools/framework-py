@@ -319,7 +319,7 @@ def test_new_defaults_to_project_and_needs_answers(tmp_path: Path) -> None:
     assert json.loads((root / ".framework/spec.json").read_text("utf-8"))["type"] == "bare"
     with pytest.raises(fw.FrameworkError, match="name is required"):
         fw.new(interactive=False)
-    with pytest.raises(fw.FrameworkError, match="location is required"):
+    with pytest.raises(fw.FrameworkError, match="No project location given"):
         fw.new("x", interactive=False)
     with pytest.raises(fw.FrameworkError, match="Invalid project type"):
         fw.new("x", tmp_path / "x", "website", interactive=False)

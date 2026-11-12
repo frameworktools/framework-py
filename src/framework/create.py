@@ -704,7 +704,12 @@ def new_project(
 
     Args:
         name: Project name. Asked for when interactive.
-        location: The project folder to create. Asked for when interactive.
+        location: The project folder to create. ``~`` is expanded and a relative path is
+            taken from the current directory. With no location, an interactive session
+            shows ``<current directory>/<project-name>`` and asks
+            ``Create the project here (<path>)? [y/n]``. Answering n asks for the folder
+            to put the project in; leaving it blank uses the current directory. A
+            non-interactive session raises an error asking for ``location``.
         type: project, project_sensitive, course, presentation, or bare. App types
             ``"shiny"`` (Shiny for Python; ``"shiny_python"`` is the same) and
             ``"fastapi"`` are Framework Cloud blueprints: ``type="fastapi"`` is
@@ -800,11 +805,95 @@ def new_project(
         name = input("Project name: ").strip()
         if not name:
             raise FrameworkError("Project name cannot be empty")
-    if location is None:
-        if not interactive:
-            raise FrameworkError("Project location is required in non-interactive mode")
-        suggested = Path("~") / "projects" / kebab_case(name)
-        location = input(f"Project location [{suggested}]: ").strip() or suggested
+    location = _project_location(location, kebab_case(name), interactive)
+    root = _new_build(
+        name,
+        location,
+        type,
+        workflow,
+        tools,
+        package_sets,
+        skill_sets,
+        blueprint,
+        structure,
+        skills,
+        sensitive,
+        ai,
+        git,
+        interactive,
+        offline,
+        cloud_choices,
+    )
+    inform(f"Project ready at {root}")
+    return root
+
+
+def _readline(prompt: str) -> str:
+    """Read an answer from the user. A seam for tests."""
+    return input(prompt)
+
+
+def _abs_location(location: str | Path) -> Path:
+    """A location as an absolute path: ``~`` expanded, a relative path taken from here."""
+    path = Path(str(location).strip()).expanduser()
+    return path if path.is_absolute() else Path.cwd() / path
+
+
+def _ask_location(slug: str, interactive: bool) -> Path:
+    """Where a new project goes when no location was given, as in R.
+
+    An interactive session confirms a folder named for the project in the
+    current directory, or takes the folder to put it in. There is never a
+    default elsewhere: the location is always explicit.
+    """
+    here = Path.cwd()
+    suggested = here / slug
+    if not interactive:
+        raise FrameworkError(
+            "No project location given. Pass `location=`, the folder to create, "
+            f'such as location="{suggested}".'
+        )
+    while True:
+        answer = _readline(f"Create the project here ({suggested})? [y/n] ").strip().lower()
+        if answer in ("", "y", "yes"):
+            return suggested
+        if answer in ("n", "no"):
+            break
+        inform("Answer y or n.")
+    typed = _readline(
+        f"Where should the project go? Leave blank to use the current directory ({here}): "
+    ).strip()
+    parent = _abs_location(typed) if typed else here
+    # A typed path that already names the project folder is used as is
+    return parent if parent.name == slug else parent / slug
+
+
+def _project_location(location: str | Path | None, slug: str, interactive: bool) -> Path:
+    """The absolute project folder, asked for when not given, announced before creation."""
+    root = _ask_location(slug, interactive) if location is None else _abs_location(location)
+    inform(f"Creating the project at {root}")
+    return root
+
+
+def _new_build(
+    name: str,
+    location: Path,
+    type: str | None,
+    workflow: str | None,
+    tools: Mapping[str, bool] | Sequence[str] | None,
+    package_sets: Sequence[str],
+    skill_sets: Sequence[str],
+    blueprint: str | None,
+    structure: str | None,
+    skills: Sequence[str],
+    sensitive: bool | None,
+    ai: bool | Mapping[str, Any] | None,
+    git: bool | None,
+    interactive: bool,
+    offline: bool,
+    cloud_choices: bool,
+) -> Path:
+    """Build the project at its resolved location: from the cloud, or locally."""
 
     def local(register: bool = True) -> Path:
         return _new_local(
@@ -1095,10 +1184,7 @@ def _new_from_cloud(
     name = envelope.get("name")
     if not name:
         raise FrameworkError("The cloud project has no name")
-    if location is None:
-        suggested = Path("~") / "projects" / kebab_case(str(name))
-        answer = input(f"Location [{suggested}]: ").strip() if interactive else ""
-        location = answer or suggested
+    location = _project_location(location, _envelope_slug(envelope, str(name)), interactive)
     resolved = spec_resolve(envelope.get("layers") or [], str(name), envelope.get("author"))
     spec = resolved.spec
     spec["source"] = envelope.get("source") or {"origin": "cloud"}
@@ -1107,6 +1193,16 @@ def _new_from_cloud(
         write_project_token(root, key, server)
     inform(f"Project ready at {root}")
     return root
+
+
+def _envelope_slug(envelope: Mapping[str, Any], name: str) -> str:
+    """The cloud project's slug, the key of its project layer, or one made from its name."""
+    for entry in reversed(envelope.get("layers") or []):
+        if isinstance(entry, dict) and entry.get("kind") == "project":
+            key = entry.get("key")
+            if isinstance(key, str) and key:
+                return key
+    return kebab_case(name)
 
 
 def project_add_directory(project_path: str | Path, key: str, label: str, path: str) -> Path:

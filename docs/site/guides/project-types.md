@@ -23,14 +23,14 @@ Pass the type to [new_project()](ref:new_project) or to the command line.
 ```python
 import framework as fw
 
-fw.new_project("Sales Analysis", "~/projects/sales-analysis", type="project")
-fw.new_project("Patient Outcomes", "~/projects/patient-outcomes", type="project_sensitive")
+fw.new_project("Sales Analysis", "~/code/sales-analysis", type="project")
+fw.new_project("Patient Outcomes", "~/code/patient-outcomes", type="project_sensitive")
 fw.new_project("Data Science 101", "~/teaching/ds101", type="course")
 fw.new_project("Q4 Report", "~/talks/q4-report", type="presentation")
 ```
 
 ```sh
-python -m framework create --name "Sales Analysis" --path ~/projects/sales-analysis --type project
+python -m framework create --name "Sales Analysis" --path ~/code/sales-analysis --type project
 ```
 
 Without a type, an interactive session asks for one and suggests `project`. A script creates a Standard Project. Pass `type="bare"` for a bare project.
@@ -46,8 +46,8 @@ Framework Cloud adds two app types as built-in blueprints. They need a Framework
 
 ```python
 fw.cloud_login()
-fw.new_project("My App", "~/projects/my-app", type="shiny")
-fw.new_project("My API", "~/projects/my-api", type="fastapi")
+fw.new_project("My App", "~/code/my-app", type="shiny")
+fw.new_project("My API", "~/code/my-api", type="fastapi")
 ```
 
 In Python, `type="shiny"` is Shiny for Python, not R Shiny. Plumber is R only; use `type="fastapi"` instead. Signed out, these types stop and say to run `cloud_login()`.

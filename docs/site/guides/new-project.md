@@ -13,20 +13,26 @@ position: 5
 ```python
 import framework as fw
 
-fw.new_project("Vaccine Study", "~/projects/vaccine-study", type="project")
+fw.new_project("Vaccine Study", "~/code/vaccine-study", type="project")
 ```
 
 The type is one of `project`, `project_sensitive`, `course`, `presentation`, or `bare`. The [Project types](guide:project-types) guide describes each one.
 
 ```python
-fw.new_project("Patient Outcomes", "~/projects/patient-outcomes", type="project_sensitive")
+fw.new_project("Patient Outcomes", "~/code/patient-outcomes", type="project_sensitive")
 fw.new_project("Stats 101", "~/teaching/stats-101", type="course")
 fw.new_project("Q4 Review", "~/talks/q4-review", type="presentation")
 ```
 
-In an interactive session, `new_project()` asks for any value you leave out. It suggests `~/projects/<name>` as the location and `project`, the Standard Project, as the type. In a script or notebook, where standard input is not a terminal, a missing name or location is an error and a missing type means `project`. Pass `type="bare"` for a bare project. Pass `interactive=True` or `interactive=False` to choose the behavior yourself.
+In an interactive session, `new_project()` asks for any value you leave out. It suggests `project`, the Standard Project, as the type. With no location, it shows a folder named for the project in the current directory and asks:
 
-The folder must not exist yet. `new_project()` returns the path of the new project.
+```text
+Create the project here (/home/ada/work/vaccine-study)? [y/n]
+```
+
+Enter or `y` creates it there. `n` asks for the folder to put the project in; leaving that blank uses the current directory. The project folder goes inside the folder you type, unless the path already ends in the project's name. Any other answer asks again. In a script or notebook, where standard input is not a terminal, a missing name or location is an error and a missing type means `project`. Pass `type="bare"` for a bare project. Pass `interactive=True` or `interactive=False` to choose the behavior yourself.
+
+`~` is expanded and a relative location is taken from the current directory. `new_project()` prints `Creating the project at <path>` with the absolute path before it starts, and `Project ready at <path>` when it is done. The folder must not exist yet. `new_project()` returns the path of the new project.
 
 ### Workflows
 
@@ -41,7 +47,7 @@ The workflow decides how notebooks are written. Pass it as `workflow`.
 Python projects of type `project` and `project_sensitive` use the Jupyter workflow unless you choose another. Course and presentation projects use Quarto, and bare projects have no workflow. A scripts-only project gets no notebook files. Any starter scripts come from its blueprint. The workflow and the notebook format are recorded under `scaffold:` in the project's settings.
 
 ```python
-fw.new_project("Pipeline", "~/projects/pipeline", type="project", workflow="scripts")
+fw.new_project("Pipeline", "~/code/pipeline", type="project", workflow="scripts")
 ```
 
 ### Tools and sets
@@ -58,7 +64,7 @@ Pass `tools` as a list of tools to turn on, or as a map that can also turn a def
 
 ```python
 fw.new_project(
-    "Lab Notes", "~/projects/lab-notes", type="project", tools={"quarto": False, "jupyter": True}
+    "Lab Notes", "~/code/lab-notes", type="project", tools={"quarto": False, "jupyter": True}
 )
 fw.new_project("Q4 Review", "~/talks/q4-review", type="project", tools=["quarto_slides"])
 ```
@@ -74,7 +80,7 @@ With the command line, `--tool ID` turns a tool on and `--tool ID=false` turns i
 The package's command-line entry point runs `new_project()` with the same defaults.
 
 ```sh
-python -m framework create --name "Vaccine Study" --path ~/projects/vaccine-study --type project
+python -m framework create --name "Vaccine Study" --path ~/code/vaccine-study --type project
 ```
 
 Without `--type`, the project is a Standard Project (`project`). Pass `--type bare` for a bare project. With `--interactive`, the command asks for missing answers. The command prints the project folder on success and exits with status 1 and a message on failure.
@@ -82,7 +88,7 @@ Without `--type`, the project is a Standard Project (`project`). Pass `--type ba
 When framework-py is not installed in any environment yet, uv can run the command with a temporary copy of the package.
 
 ```sh
-uv run --with framework-py python -m framework create --name "Vaccine Study" --path ~/projects/vaccine-study --type project
+uv run --with framework-py python -m framework create --name "Vaccine Study" --path ~/code/vaccine-study --type project
 ```
 
 ### The fw command
@@ -114,14 +120,14 @@ fw.new_project(key="fw_...")
 fw.new(key="fw_...", url="https://cloud.example.edu")
 ```
 
-`url` names a self-hosted server that issued the token, so no login is needed first. Without it, the server is `FW_CLOUD_URL`, then the one you last logged in to, then framework.pub. `new_project()` fetches the project's definition from the server and saves the token and server in the new project's `.env` as `FW_PROJECT_TOKEN` and `FW_CLOUD_URL`. The project then publishes to that server and uses its integrity ledger. The [Framework Cloud](guide:cloud) guide describes what the server receives.
+`url` names a self-hosted server that issued the token, so no login is needed first. Without it, the server is `FW_CLOUD_URL`, then the one you last logged in to, then framework.pub. With no `location`, `new_project()` asks where to create the project, as above, offering a folder named for the project's slug; a script must pass `location`. `new_project()` fetches the project's definition from the server and saves the token and server in the new project's `.env` as `FW_PROJECT_TOKEN` and `FW_CLOUD_URL`. The project then publishes to that server and uses its integrity ledger. The [Framework Cloud](guide:cloud) guide describes what the server receives.
 
 ### Blueprints and structures
 
 Blueprints, structures, and sets saved on Framework Cloud can be used directly. Log in first with [cloud_login()](ref:cloud_login), then pass a `blueprint` or a `structure` handle.
 
 ```python
-fw.new_project("Lab Notes", "~/projects/lab-notes", blueprint="ada/lab")
+fw.new_project("Lab Notes", "~/code/lab-notes", blueprint="ada/lab")
 fw.new_project(
     "Stats 101",
     "~/teaching/stats-101",
@@ -141,7 +147,7 @@ When you are logged in, Framework Cloud resolves every choice, as it does for R 
 When the server cannot be reached, `new_project()` builds your defaults from that cache and says so: "Using your Framework Cloud defaults from 2026-11-01". Otherwise, including any explicit choice and a server too old to resolve projects, an interactive session asks before building from the built-in defaults described above. A script stops with an error unless you pass `offline=True`. `new_project()` never switches to a different configuration silently. A rejected token is reported as an error, never treated as offline. When you are not logged in, `new_project()` uses the built-in defaults without asking.
 
 ```python
-fw.new_project("Field Notes", "~/projects/field-notes", offline=True)
+fw.new_project("Field Notes", "~/code/field-notes", offline=True)
 ```
 
 ## Project contents
@@ -172,7 +178,7 @@ After creation, `new_project()` does three more things.
 Install the packages before you start work.
 
 ```sh
-cd ~/projects/vaccine-study
+cd ~/code/vaccine-study
 uv sync
 ```
 
@@ -181,11 +187,11 @@ uv sync
 [adopt()](ref:adopt) turns a folder you already have into a Framework project, in place. It lists the folder's subfolders, at most three levels deep, and proposes a role for each: a Framework directory key such as `inputs_raw`, a folder of its own under `extra_directories`, or a folder of rendered notebooks under `render_dirs`. It reads folder names only, never files or their contents. Hidden folders, version control, environments such as `.venv` and `renv`, caches, Framework's `settings/` folder, and Quarto's `*_files/` and `*_cache/` folders are left out.
 
 ```python
-fw.adopt("~/projects/old-study")  # review the mapping
-fw.adopt("~/projects/old-study", yes=True)  # accept it as proposed
-fw.adopt("~/projects/cohort", yes=True, sensitive=True)  # the project holds sensitive data
+fw.adopt("~/code/old-study")  # review the mapping
+fw.adopt("~/code/old-study", yes=True)  # accept it as proposed
+fw.adopt("~/code/cohort", yes=True, sensitive=True)  # the project holds sensitive data
 fw.adopt("~/teaching/methods", yes=True, type="course")  # choose the type
-fw.adopt("~/projects/old-study", yes=True, cloud=True)  # register and link it too
+fw.adopt("~/code/old-study", yes=True, cloud=True)  # register and link it too
 ```
 
 The type follows from the folders unless you pass `type`: `course` when the folder has at least two course folders (`slides/`, `modules/`, `assignments/`, `readings/`, and similar), `project_sensitive` when the private and public layout is present (`inputs/private/raw/`, `outputs/public/figures/`), `project` when any folder maps to a Framework directory, and `bare` otherwise. A folder with no subfolders, such as one `analysis.qmd`, is adopted with no folders.
@@ -197,13 +203,13 @@ A folder whose path contains "private" gets a warning: "'data/private' looks pri
 From a shell:
 
 ```bash
-python -m framework adopt --path ~/projects/old-study --yes [--type TYPE] [--sensitive] [--cloud [--slug SLUG]]
+python -m framework adopt --path ~/code/old-study --yes [--type TYPE] [--sensitive] [--cloud [--slug SLUG]]
 ```
 
 The R package and `fw adopt` map folders with the same shared rules. When you are logged in and decline to register, `adopt()` offers to save the folder layout as a structure. [structure_import()](ref:structure_import) does that on its own. It sends only the folder paths, and the structure is private to you.
 
 ```python
-fw.structure_import("~/projects/old-study", name="Lab layout")
+fw.structure_import("~/code/old-study", name="Lab layout")
 ```
 
 ## Upgrading an older project
@@ -211,8 +217,8 @@ fw.structure_import("~/projects/old-study", name="Lab layout")
 [upgrade()](ref:upgrade) brings a project made by an older framework-py (or a 1.x `config.yml` project) to the current layout. It prints a plan and changes nothing until you apply it:
 
 ```python
-fw.upgrade("~/projects/old-study")  # print the plan
-fw.upgrade("~/projects/old-study", dry_run=False)  # apply it
+fw.upgrade("~/code/old-study")  # print the plan
+fw.upgrade("~/code/old-study", dry_run=False)  # apply it
 ```
 
 ```bash
@@ -225,7 +231,7 @@ The plan adds missing `tools:` and `security:` sections to the settings (a `proj
 `type=` changes the project's type in the same pass (`--type` on the command line). Making a project sensitive is one step:
 
 ```python
-fw.upgrade("~/projects/old-study", type="project_sensitive", dry_run=False)
+fw.upgrade("~/code/old-study", type="project_sensitive", dry_run=False)
 ```
 
 It sets `security: sensitive: true` and adds the private and public folders of the sensitive layout that the project lacks; folders it has keep their keys and paths, so code that names them keeps working. The sensitive `.gitignore` rules, the Claude Code guard, and the `framework-sensitive-data` skill follow. From then on `save_table()`, `save_figure()`, `save_model()`, and `save_report()` write to private folders (`outputs/private/tables` and so on) unless you pass `public=True`; the plan lists those moves, and the data and render folders that aren't private. A sensitive project given another type stays sensitive.
@@ -235,8 +241,8 @@ It sets `security: sensitive: true` and adds the private and public folders of t
 [cloud_register()](ref:cloud_register) creates the Framework Cloud project for a project that exists only on your computer, from its `.framework/spec.json`, and links the folder: the project token and server go to `.env`, which git is made to ignore first. The Cloud project gets exactly this folder's type, folders, and tools, not your defaults, and an adopted project is marked as adopted. It is what `fw project link --create` does.
 
 ```python
-fw.cloud_register("~/projects/old-study", dry_run=True)  # show the request
-fw.cloud_register("~/projects/old-study", slug="old-study")
+fw.cloud_register("~/code/old-study", dry_run=True)  # show the request
+fw.cloud_register("~/code/old-study", slug="old-study")
 ```
 
 A project with no spec needs `upgrade()` first. A project already linked is left alone. When you already have a project with the slug, an interactive session offers to link the folder to it instead (as `fw project link --from SLUG` does); a slug held by a project in your Trash can't be reused.
@@ -265,7 +271,7 @@ The command takes `--path` for another folder, `--interactive` to ask for the va
 From Python, `bootstrap()` returns a `BootstrapResult` with the steps it took and the work left for you.
 
 ```python
-result = fw.bootstrap("~/projects/vaccine-study", packages=False)
+result = fw.bootstrap("~/code/vaccine-study", packages=False)
 result.todo
 ```
 

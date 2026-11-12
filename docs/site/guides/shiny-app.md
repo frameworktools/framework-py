@@ -62,25 +62,25 @@ Sign in to Framework Cloud first. [cloud_login()](ref:cloud_login) opens the app
 import framework as fw
 
 fw.cloud_login()
-fw.new_project("My App", "~/projects/my-app", type="shiny")
+fw.new_project("My App", "~/code/my-app", type="shiny")
 ```
 
 In Python, `type="shiny"` is Shiny for Python. `type="shiny_python"` is the same. Both equal `blueprint="framework/shiny_python"`. Signed out, `new_project()` stops and says to run `cloud_login()`.
 
 ```python
-fw.new_project("My App", "~/projects/my-app", blueprint="framework/shiny_python")
+fw.new_project("My App", "~/code/my-app", blueprint="framework/shiny_python")
 ```
 
 On the command line, pass `--type shiny`.
 
 ```sh
-python -m framework create --name "My App" --path ~/projects/my-app --type shiny
+python -m framework create --name "My App" --path ~/code/my-app --type shiny
 ```
 
 You can also start in Framework Cloud. Open the Shiny for Python blueprint on the Blueprints page and choose **New project**. Then create the project on your computer from its project token.
 
 ```python
-fw.new_project(key="fw_...", location="~/projects/my-app")
+fw.new_project(key="fw_...", location="~/code/my-app")
 ```
 
 The [New projects](guide:new-project) guide covers blueprints and project tokens.

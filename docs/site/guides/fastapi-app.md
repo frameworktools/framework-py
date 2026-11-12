@@ -69,25 +69,25 @@ Sign in to Framework Cloud first. [cloud_login()](ref:cloud_login) opens the app
 import framework as fw
 
 fw.cloud_login()
-fw.new_project("My API", "~/projects/my-api", type="fastapi")
+fw.new_project("My API", "~/code/my-api", type="fastapi")
 ```
 
 `type="fastapi"` equals `blueprint="framework/fastapi"`. Signed out, `new_project()` stops and says to run `cloud_login()`. R's Plumber type is not available in Python; `type="plumber"` raises an error that points to `type="fastapi"`.
 
 ```python
-fw.new_project("My API", "~/projects/my-api", blueprint="framework/fastapi")
+fw.new_project("My API", "~/code/my-api", blueprint="framework/fastapi")
 ```
 
 On the command line, pass `--type fastapi`.
 
 ```sh
-python -m framework create --name "My API" --path ~/projects/my-api --type fastapi
+python -m framework create --name "My API" --path ~/code/my-api --type fastapi
 ```
 
 You can also start in Framework Cloud. Open the FastAPI app blueprint on the Blueprints page and choose **New project**. Then create the project on your computer from its project token.
 
 ```python
-fw.new_project(key="fw_...", location="~/projects/my-api")
+fw.new_project(key="fw_...", location="~/code/my-api")
 ```
 
 The [New projects](guide:new-project) guide covers blueprints and project tokens.

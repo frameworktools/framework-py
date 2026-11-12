@@ -55,7 +55,7 @@ Outside a project, it raises `ProjectNotFoundError`. To use a specific settings 
 ```python
 from pathlib import Path
 
-fw.scaffold(Path.home() / "projects" / "vaccine-study" / "settings.yml")
+fw.scaffold(Path.home() / "code" / "vaccine-study" / "settings.yml")
 ```
 
 [project_root()](ref:project_root) returns the root without the other steps, and [project_path()](ref:project_path) builds a path under it: `fw.project_path("outputs", "tables", "x.csv")`.
