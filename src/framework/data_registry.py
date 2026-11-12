@@ -280,9 +280,166 @@ def _call(
 
 
 def _project_name(root: Path) -> str:
-    from framework.setup_sync import _project_name as name
+    from framework.sync_all import _project_name as name
 
     return name(root)
+
+
+# Plans, shared with pull_all() and push_all() ------------------------------------------
+
+
+def _pull_plan(
+    root: Path, server: str, token: str, overwrite: bool, fn: str = "pull_data_registry()"
+) -> dict[str, Any]:
+    """What pulling the registry would change. ``fn`` is the call the overwrite advice names."""
+    registry = _call(token, server)
+    revision = str(registry.get("revision") or "")
+    local = _local(root)
+    cloud = {
+        str(r["name"]): r
+        for r in registry.get("entries") or []
+        if isinstance(r, dict) and r.get("name")
+    }
+    added = [cloud[n] for n in cloud if n not in local]
+    differ = [n for n in cloud if n in local and not _same(local[n], cloud[n])]
+    kept_local = [n for n in local if n not in cloud]
+
+    lines: list[str] = []
+    if added:
+        lines.append(f"  Entries to add: {_names(added)}")
+    if differ:
+        details = "; ".join(f"{n} ({_diff(local[n], cloud[n])})" for n in differ)
+        advice = fn.replace("()", "(overwrite=True)")
+        tail = "Cloud's will be used" if overwrite else f"kept; {advice} uses Cloud's"
+        lines.append(f"  Entries that differ (local -> Cloud): {details} — {tail}")
+    if kept_local:
+        lines.append(f"  Only in this project (kept): {', '.join(kept_local)}")
+    rows = added + ([cloud[n] for n in differ] if overwrite else [])
+    return {
+        "revision": revision,
+        "lines": lines,
+        "quiet": not lines,
+        "pending": bool(rows),
+        "rows": rows,
+        "entries": {
+            "added": [str(r["name"]) for r in added],
+            "changed": differ if overwrite else [],
+            "differ_kept": [] if overwrite else differ,
+            "kept_local": kept_local,
+        },
+    }
+
+
+def _pull_apply(root: Path, plan: dict[str, Any], server: str) -> None:
+    """Write a pull plan's entries and record the revision pulled."""
+    from framework._log import inform
+
+    rows = plan["rows"]
+    if rows:
+        _write(root, rows)
+    _lock_write(root, plan["revision"], server)
+    if rows:
+        inform(
+            f"✓ Data registry: {len(rows)} {'entry' if len(rows) == 1 else 'entries'} "
+            "added or updated"
+        )
+
+
+def _push_plan(
+    root: Path,
+    server: str,
+    token: str,
+    remove: bool,
+    force: bool,
+    pull_fn: str = "pull_data_registry()",
+    push_fn: str = "push_data_registry(force=True)",
+) -> dict[str, Any]:
+    """What pushing the registry would change, from Cloud's dry run. A registry that changed
+    on Cloud since the last pull raises "Pull first", naming ``pull_fn`` and ``push_fn``."""
+    from framework.cloud import CloudConflictError, CloudError
+
+    local = _local(root)
+    # The base revision for a project that never pulled its registry
+    base = _lock_read(root).get("revision")
+    if base is None:
+        base = _call(token, server).get("revision")
+
+    def send(dry: bool) -> dict[str, Any]:
+        body = {
+            "base_revision": base,
+            "entries": list(local.values()),
+            "remove": remove,
+            "force": force,
+            "dry_run": dry,
+        }
+        try:
+            return _call(token, server, "POST", body)
+        except CloudConflictError as error:
+            latest = error.body.get("revision") or "unknown"
+            raise CloudError(
+                "Framework Cloud's data registry changed since this project last pulled it "
+                f"(revision {latest}). Pull first: {pull_fn}. "
+                f"{push_fn} replaces Cloud's changes."
+            ) from error
+
+    preview = send(True)
+    changes = preview.get("changes") or {}
+    added = changes.get("added") or []
+    changed = changes.get("changed") or []
+    removed = changes.get("removed") or []
+    kept = changes.get("kept") or []
+
+    lines: list[str] = []
+    if added:
+        lines.append(f"  Entries to add: {_names(added)}")
+    if changed:
+        details = "; ".join(f"{c['name']} ({_diff(c['from'], c['to'])})" for c in changed)
+        lines.append(f"  Entries to change: {details}")
+    if removed:
+        lines.append(f"  Entries to remove: {_names(removed)}")
+    if kept:
+        lines.append(f"  On Cloud only (kept): {_names(kept)}")
+    pending = bool(added or changed or removed)
+    warnings: list[str] = []
+    if pending:
+        warnings.append(
+            f"This changes {_project_name(root)}'s data registry on Framework Cloud. "
+            "New copies of the project, zips, and Update on GitHub will use it. "
+            "Only definitions are sent: no data files and no hashes."
+        )
+        if force and preview.get("revision") is not None and base != preview.get("revision"):
+            warnings.append(
+                "Cloud's newer data registry changes will be replaced by this project's entries."
+            )
+    return {
+        "revision": preview.get("revision"),
+        "lines": lines,
+        "warnings": warnings,
+        "quiet": not pending,
+        "pending": pending,
+        "send": send,
+        "changes": {"added": added, "changed": changed, "removed": removed, "kept": kept},
+    }
+
+
+def _push_apply(root: Path, plan: dict[str, Any], server: str) -> dict[str, Any]:
+    """Push a plan's entries and record the new revision."""
+    from framework._log import inform
+
+    reply = plan["send"](False)
+    revision = str(reply.get("revision") or "")
+    _lock_write(root, revision, server)
+    done = reply.get("changes") or plan["changes"]
+    if reply.get("applied"):
+        parts = [
+            f"{len(done.get(key) or [])} {key}"
+            for key in ("added", "changed", "removed")
+            if done.get(key)
+        ]
+        inform(f"Data registry pushed: revision {revision} ({', '.join(parts)})")
+    else:
+        inform("Already up to date.")
+    return {"applied": bool(reply.get("applied")), "revision": revision}
 
 
 # Pull and push -----------------------------------------------------------------------------
@@ -306,6 +463,7 @@ def pull_data_registry(
     Local entries are never removed, and an entry whose local definition differs keeps it
     unless ``overwrite=True``. Fields Framework Cloud doesn't keep stay as they are. The
     revision pulled is kept in ``.framework/data.lock.json`` for ``push_data_registry()``.
+    ``pull_all()`` pulls it with the packages and skills.
 
     Args:
         project_path: The project's root directory. Default: the current directory.
@@ -323,71 +481,40 @@ def pull_data_registry(
         FrameworkError: Without a console and without ``confirm=True`` or ``dry_run=True``.
     """
     from framework._log import inform, show_messages
-    from framework.setup_sync import _ask
     from framework.skill_pull import _root
+    from framework.sync_all import _ask
 
     show_messages()
     root = _root(project_path)
     server, token = _connection(root)
-    registry = _call(token, server)
-    revision = str(registry.get("revision") or "")
-
-    local = _local(root)
-    cloud = {
-        str(r["name"]): r
-        for r in registry.get("entries") or []
-        if isinstance(r, dict) and r.get("name")
-    }
-    added = [cloud[n] for n in cloud if n not in local]
-    differ = [n for n in cloud if n in local and not _same(local[n], cloud[n])]
-    kept_local = [n for n in local if n not in cloud]
-
-    lines = [f"Data registry changes from Framework Cloud (revision {revision}):"]
-    if added:
-        lines.append(f"  Entries to add: {_names(added)}")
-    if differ:
-        details = "; ".join(f"{n} ({_diff(local[n], cloud[n])})" for n in differ)
-        tail = (
-            "Cloud's will be used"
-            if overwrite
-            else "kept; pull_data_registry(overwrite=True) uses Cloud's"
-        )
-        lines.append(f"  Entries that differ (local -> Cloud): {details} — {tail}")
-    if kept_local:
-        lines.append(f"  Only in this project (kept): {', '.join(kept_local)}")
-    changes = bool(added or (differ and overwrite))
-    if not added and not differ and not kept_local:
+    plan = _pull_plan(root, server, token, overwrite)
+    revision = plan["revision"]
+    if plan["quiet"]:
         lines = [f"Data registry is up to date with Framework Cloud (revision {revision})."]
+    else:
+        lines = [
+            f"Data registry changes from Framework Cloud (revision {revision}):",
+            *plan["lines"],
+        ]
     for line in lines:
         inform(line)
 
     result: dict[str, Any] = {
         "revision": revision,
-        "entries": {
-            "added": [str(r["name"]) for r in added],
-            "changed": differ if overwrite else [],
-            "differ_kept": [] if overwrite else differ,
-            "kept_local": kept_local,
-        },
+        "entries": plan["entries"],
         "applied": False,
         "dry_run": dry_run,
         "message": "\n".join(lines),
     }
     if dry_run:
         return result
-    if not changes:
+    if not plan["pending"]:
         _lock_write(root, revision, server)
         return result
     if not _ask("Apply these changes?", confirm, "pull_data_registry"):
         inform("Nothing changed.")
         return result
-
-    rows = added + ([cloud[n] for n in differ] if overwrite else [])
-    _write(root, rows)
-    _lock_write(root, revision, server)
-    inform(
-        f"✓ Data registry: {len(rows)} {'entry' if len(rows) == 1 else 'entries'} added or updated"
-    )
+    _pull_apply(root, plan, server)
     result["applied"] = True
     return result
 
@@ -432,94 +559,32 @@ def push_data_registry(
         FrameworkError: Without a console and without ``confirm=True`` or ``dry_run=True``.
     """
     from framework._log import inform, show_messages
-    from framework.cloud import CloudConflictError, CloudError
-    from framework.setup_sync import _ask
     from framework.skill_pull import _root
+    from framework.sync_all import _ask
 
     show_messages()
     root = _root(project_path)
     server, token = _connection(root)
-    local = _local(root)
-    # The base revision for a project that never pulled its registry
-    base = _lock_read(root).get("revision")
-    if base is None:
-        base = _call(token, server).get("revision")
-
-    def send(dry: bool) -> dict[str, Any]:
-        body = {
-            "base_revision": base,
-            "entries": list(local.values()),
-            "remove": remove,
-            "force": force,
-            "dry_run": dry,
-        }
-        try:
-            return _call(token, server, "POST", body)
-        except CloudConflictError as error:
-            latest = error.body.get("revision") or "unknown"
-            raise CloudError(
-                "Framework Cloud's data registry changed since this project last pulled it "
-                f"(revision {latest}). Pull first: pull_data_registry(). "
-                "push_data_registry(force=True) replaces Cloud's changes."
-            ) from error
-
-    preview = send(True)
-    changes = preview.get("changes") or {}
-    added = changes.get("added") or []
-    changed = changes.get("changed") or []
-    removed = changes.get("removed") or []
-    kept = changes.get("kept") or []
-
-    lines = ["Data registry changes for Framework Cloud:"]
-    if added:
-        lines.append(f"  Entries to add: {_names(added)}")
-    if changed:
-        details = "; ".join(f"{c['name']} ({_diff(c['from'], c['to'])})" for c in changed)
-        lines.append(f"  Entries to change: {details}")
-    if removed:
-        lines.append(f"  Entries to remove: {_names(removed)}")
-    if kept:
-        lines.append(f"  On Cloud only (kept): {_names(kept)}")
-    pending = bool(added or changed or removed)
-    if not pending:
-        lines[0] = "Data registry on Framework Cloud already matches this project."
+    plan = _push_plan(root, server, token, remove, force)
+    if plan["pending"]:
+        lines = ["Data registry changes for Framework Cloud:", *plan["lines"], *plan["warnings"]]
     else:
-        lines.append(
-            f"This changes {_project_name(root)}'s data registry on Framework Cloud. "
-            "New copies of the project, zips, and Update on GitHub will use it. "
-            "Only definitions are sent: no data files and no hashes."
-        )
-        if force and preview.get("revision") is not None and base != preview.get("revision"):
-            lines.append(
-                "Cloud's newer data registry changes will be replaced by this project's entries."
-            )
+        lines = ["Data registry on Framework Cloud already matches this project.", *plan["lines"]]
     for line in lines:
         inform(line)
     result: dict[str, Any] = {
-        "revision": preview.get("revision"),
-        "changes": {"added": added, "changed": changed, "removed": removed, "kept": kept},
+        "revision": plan["revision"],
+        "changes": plan["changes"],
         "applied": False,
         "dry_run": dry_run,
         "message": "\n".join(lines),
     }
-    if not pending or dry_run:
+    if not plan["pending"] or dry_run:
         return result
 
     if not _ask("Push these changes?", confirm, "push_data_registry"):
         inform("Data registry not pushed.")
         return result
-    reply = send(False)
-    revision = str(reply.get("revision") or "")
-    result.update(applied=bool(reply.get("applied")), revision=revision)
-    _lock_write(root, revision, server)
-    done = reply.get("changes") or changes
-    if reply.get("applied"):
-        parts = [
-            f"{len(done.get(key) or [])} {key}"
-            for key in ("added", "changed", "removed")
-            if done.get(key)
-        ]
-        inform(f"Data registry pushed: revision {revision} ({', '.join(parts)})")
-    else:
-        inform("Already up to date.")
+    reply = _push_apply(root, plan, server)
+    result.update(applied=reply["applied"], revision=reply["revision"])
     return result

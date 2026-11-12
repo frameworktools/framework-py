@@ -607,20 +607,20 @@ names = [
     "path",  # alias of project_path()
 ]
 
+[functions.pull_all]
+python = "pull_all"
+status = "ported"
+
+[functions.push_all]
+python = "push_all"
+status = "ported"
+
 [functions.pull_skills]
 python = "pull_skills"
 status = "ported"
 
 [functions.push_skills]
 python = "push_skills"
-status = "ported"
-
-[functions.pull_setup]
-python = "pull_setup"
-status = "ported"
-
-[functions.push_setup]
-python = "push_setup"
 status = "ported"
 
 [functions.pull_data_registry]

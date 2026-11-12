@@ -118,7 +118,7 @@ Before pushing, it names what each new version affects and asks to continue. Wit
 
 Only skills Framework installed are pushed. [skills_sync()](ref:skills_sync) syncs one skill folder, including one you wrote.
 
-[pull_setup()](ref:pull_setup) and [push_setup()](ref:push_setup) do the same for the whole setup: packages and skills together. See [Packages](guide:packages#setup-on-framework-cloud).
+[pull_all()](ref:pull_all) and [push_all()](ref:push_all) sync skills together with packages and the data registry. See [Packages](guide:packages#sync-with-framework-cloud).
 
 ## Privacy-sensitive projects
 

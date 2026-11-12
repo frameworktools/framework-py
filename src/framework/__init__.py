@@ -129,7 +129,6 @@ from framework.scaffold import project_info, scaffold, status
 from framework.scratch import scratch_capture, scratch_clean
 from framework.security import AuditResult, git_security_audit
 from framework.settings import settings, settings_read, settings_write
-from framework.setup_sync import pull_setup, push_setup
 from framework.skill_pull import pull_skills, push_skills
 from framework.skill_sync import skills_sync
 from framework.spec.check import spec_check
@@ -143,6 +142,7 @@ from framework.storage import (
     publish_notebook,
     storage_test,
 )
+from framework.sync_all import pull_all, push_all
 from framework.upgrade import UpgradeResult, upgrade
 
 try:
@@ -250,11 +250,11 @@ __all__ = [
     "publish_dir",
     "publish_list",
     "publish_notebook",
+    "pull_all",
     "pull_data_registry",
-    "pull_setup",
     "pull_skills",
+    "push_all",
     "push_data_registry",
-    "push_setup",
     "push_skills",
     "quarto_generate_all",
     "quarto_regenerate",

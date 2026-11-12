@@ -343,21 +343,58 @@ def pull_skills(
     }
 
 
+def _push_edited(root: Path) -> list[tuple[dict[str, Any], list[str]]]:
+    """Tracked skills whose files changed since the last pull, with their present paths.
+
+    Reads only the project; checking them against Cloud needs your login.
+    """
+    from framework.skill_sync import _load, _path, bundle_hash, scan
+
+    edited = []
+    for entry in _load(root)["skills"].values():
+        paths = [p for p in entry["paths"] if _path(root, p).exists()]
+        if not paths:
+            continue
+        if all(bundle_hash(scan(_path(root, p))) == entry.get("hash") for p in paths):
+            continue
+        edited.append((entry, paths))
+    return edited
+
+
+def _push_apply(root: Path, plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Push each planned skill; its status becomes pushed, refused, or failed."""
+    from framework.skill_sync import skills_sync
+
+    for plan in plans:
+        if plan["status"] != "push":
+            continue
+        try:
+            result = skills_sync(
+                plan["path"],
+                root,
+                direction="push",
+                resolve="local" if plan["forced"] else None,
+            )
+        except Exception as error:
+            plan.update(status="failed", reason=str(error))
+            continue
+        if result["action"] == "push":
+            plan.update(status="pushed", version=result.get("version"))
+        else:
+            plan["status"] = "refused"
+    return plans
+
+
 def _push_plan(root: Path, force: bool) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Locally edited tracked skills and what pushing each would do, and untracked folders."""
     from framework.ai import _installed_spec
-    from framework.skill_sync import _load, _path, bundle_hash, scan, skills_sync
+    from framework.skill_sync import _load, skills_sync
 
     state = _load(root)
     tracked = {p for e in state["skills"].values() for p in e["paths"]}
     plans: list[dict[str, Any]] = []
-    for entry in state["skills"].values():
-        paths = [p for p in entry["paths"] if _path(root, p).exists()]
-        if not paths:
-            continue
+    for entry, paths in _push_edited(root):
         name = Path(paths[0]).name
-        if all(bundle_hash(scan(_path(root, p))) == entry.get("hash") for p in paths):
-            continue
         builtin = not entry.get("skill_id") or str(entry["skill_id"]).startswith("framework:")
         try:
             action = skills_sync(paths[0], root, direction="status")["action"]
@@ -431,7 +468,6 @@ def push_skills(
     """
     from framework._log import inform, show_messages
     from framework.cloud import _require_token, cloud_server
-    from framework.skill_sync import skills_sync
 
     show_messages()
     root = _root(project_path).resolve()
@@ -452,21 +488,7 @@ def push_skills(
             for plan in pushes:
                 plan["status"] = "cancelled"
         else:
-            for plan in pushes:
-                try:
-                    result = skills_sync(
-                        plan["path"],
-                        root,
-                        direction="push",
-                        resolve="local" if plan["forced"] else None,
-                    )
-                except Exception as error:
-                    plan.update(status="failed", reason=str(error))
-                    continue
-                if result["action"] == "push":
-                    plan.update(status="pushed", version=result.get("version"))
-                else:
-                    plan["status"] = "refused"
+            _push_apply(root, plans)
     elif pushes:
         for plan in pushes:
             inform(_warning(plan))

@@ -51,6 +51,21 @@ After cloning a project, prepare it with:
 uv run python -m framework bootstrap
 ```
 
+## Sync with Framework Cloud
+
+Pull or push everything that syncs with the project on Framework Cloud: its
+packages, skills, and data registry. Each call lists the changes by part and
+asks once.
+
+```python
+fw.pull_all(dry_run=True)
+fw.pull_all()
+fw.push_all()
+```
+
+`pull_skills()` / `push_skills()` and `pull_data_registry()` /
+`push_data_registry()` sync one part.
+
 ## Skill sync
 
 Sync a local skill and its companion files with your Framework Cloud account:

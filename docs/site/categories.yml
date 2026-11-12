@@ -21,10 +21,10 @@
 - id: packages
   title: Packages
   description: Package management with uv
-  common: [package_add, packages_status, pull_setup]
+  common: [package_add, packages_status, pull_all]
   names: [package_add, package_set_add, package_sets_list, packages_list, packages_install,
-          packages_restore, packages_snapshot, packages_update, packages_status, pull_setup,
-          push_setup]
+          packages_restore, packages_snapshot, packages_update, packages_status, pull_all,
+          push_all]
 
 - id: saving-work
   title: Saving work
