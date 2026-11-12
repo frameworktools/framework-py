@@ -80,14 +80,23 @@ def _same(a: dict[str, Any], b: dict[str, Any]) -> bool:
     return _key(a) == _key(b)
 
 
-def _describe(row: dict[str, Any]) -> str:
-    parts = [row.get("path") or "no path"]
-    if row.get("type"):
-        parts.append(str(row["type"]))
-    if row.get("locked"):
-        parts.append("locked")
-    if row.get("private"):
-        parts.append("private")
+def _diff(before: dict[str, Any], after: dict[str, Any]) -> str:
+    """How ``after`` differs from ``before``, one item per field: "path a -> b" for the
+    short fields, "description changed" or "stata_names changed" for the long ones."""
+
+    def shown(value: Any) -> str:
+        if value is None or value == "":
+            return "none"
+        return str(value).lower() if isinstance(value, bool) else str(value)
+
+    parts = []
+    for field, a, b in zip(DATA_FIELDS, _key(before), _key(after), strict=True):
+        if a == b:
+            continue
+        if field in ("description", "stata_names"):
+            parts.append(f"{field} changed")
+        else:
+            parts.append(f"{field} {shown(a)} -> {shown(b)}")
     return ", ".join(parts)
 
 
@@ -246,19 +255,26 @@ def _call(
         raise CloudError(
             "This Framework Cloud server has no data registry endpoint yet. Nothing changed."
         ) from error
-    except CloudOfflineError as error:
-        reason = str(error).rstrip(".") or type(error).__name__
-        raise CloudError(f"Framework Cloud not reached ({reason}). Nothing changed.") from error
     except CloudError as error:
         reason = str(error).rstrip(".")
-        if method == "GET":
+        if isinstance(error, CloudOfflineError) and error.status is None:
+            reason = reason or type(error).__name__
+            raise CloudError(f"Framework Cloud not reached ({reason}). Nothing changed.") from error
+        if error.status in (401, 403):
             # A revoked or mistyped project token
             raise CloudError(
                 f"Framework Cloud refused the project token ({reason or 'not accepted'}). "
                 "Check FW_PROJECT_TOKEN in the project's .env. Nothing changed."
             ) from error
+        if error.status == 422:
+            raise CloudError(
+                f"{reason or 'Framework Cloud refused the data registry'}. Nothing changed."
+            ) from error
+        # Anything else is reported as Cloud answered it
+        status = f"HTTP {error.status}" if error.status else "error"
         raise CloudError(
-            f"{reason or 'Framework Cloud refused the data registry'}. Nothing changed."
+            f"Framework Cloud answered with an error ({status}): "
+            f"{reason or 'no message'}. Nothing changed."
         ) from error
     return reply if isinstance(reply, dict) else {}
 
@@ -330,15 +346,13 @@ def pull_data_registry(
     if added:
         lines.append(f"  Entries to add: {_names(added)}")
     if differ:
-        details = ", ".join(
-            f"{n} (local {_describe(local[n])}; Cloud {_describe(cloud[n])})" for n in differ
-        )
+        details = "; ".join(f"{n} ({_diff(local[n], cloud[n])})" for n in differ)
         tail = (
             "Cloud's will be used"
             if overwrite
             else "kept; pull_data_registry(overwrite=True) uses Cloud's"
         )
-        lines.append(f"  Entries that differ: {details} — {tail}")
+        lines.append(f"  Entries that differ (local -> Cloud): {details} — {tail}")
     if kept_local:
         lines.append(f"  Only in this project (kept): {', '.join(kept_local)}")
     changes = bool(added or (differ and overwrite))
@@ -460,9 +474,7 @@ def push_data_registry(
     if added:
         lines.append(f"  Entries to add: {_names(added)}")
     if changed:
-        details = ", ".join(
-            f"{c['name']} ({_describe(c['from'])} -> {_describe(c['to'])})" for c in changed
-        )
+        details = "; ".join(f"{c['name']} ({_diff(c['from'], c['to'])})" for c in changed)
         lines.append(f"  Entries to change: {details}")
     if removed:
         lines.append(f"  Entries to remove: {_names(removed)}")

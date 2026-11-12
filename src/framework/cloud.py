@@ -61,7 +61,12 @@ _TIMEOUT = 30.0
 
 
 class CloudError(FrameworkError):
-    """A Framework Cloud request failed."""
+    """A Framework Cloud request failed.
+
+    ``status`` is the HTTP status of the reply, or None when there was no reply.
+    """
+
+    status: int | None = None
 
 
 def _version() -> str:
@@ -372,13 +377,17 @@ def _error(response: httpx.Response, what: str) -> CloudError:
         ]
         if details:
             message = "\n".join([str(message), *details])
+    error: CloudError
     if response.status_code in (404, 405):
-        return _MissingEndpointError(str(message))
-    if response.status_code == 409:
-        return CloudConflictError(str(message), body)
-    if response.status_code >= 500:
-        return CloudOfflineError(str(message))
-    return CloudError(str(message))
+        error = _MissingEndpointError(str(message))
+    elif response.status_code == 409:
+        error = CloudConflictError(str(message), body)
+    elif response.status_code >= 500:
+        error = CloudOfflineError(str(message))
+    else:
+        error = CloudError(str(message))
+    error.status = response.status_code
+    return error
 
 
 def api(

@@ -6,7 +6,7 @@ import pytest
 
 import framework as fw
 from framework import _yaml
-from framework.cloud import CloudError
+from framework.cloud import CloudError, CloudOfflineError
 from framework.errors import FrameworkError
 from framework.spec.check import catalog_nest, data_registry_problems
 from framework.spec.merge import merge_layers
@@ -65,9 +65,10 @@ class Cloud:
         self.missing = False
         self.offline = False
         self.refused = False
+        self.failure: tuple[int, str] | None = None
 
     def api(self, path: str, token: str, url: str, method: str = "GET", body: Any = None) -> Any:
-        from framework.cloud import CloudConflictError, CloudOfflineError, _MissingEndpointError
+        from framework.cloud import CloudConflictError, _MissingEndpointError
 
         assert token == "fw_project" and url == SERVER and path == PATH
         if self.offline:
@@ -75,7 +76,14 @@ class Cloud:
         if self.missing:
             raise _MissingEndpointError("Not found")
         if self.refused:
-            raise CloudError("Unauthenticated.")
+            error = CloudError("Unauthenticated.")
+            error.status = 401
+            raise error
+        if self.failure:
+            status, message = self.failure
+            error = (CloudOfflineError if status >= 500 else CloudError)(message)
+            error.status = status
+            raise error
         if method == "GET":
             return {"revision": self.revision, "entries": self.entries}
         self.posts.append(body)
@@ -89,7 +97,7 @@ class Cloud:
             before = current.get(row["name"])
             if before is None:
                 changes["added"].append(row)
-            elif before["path"] != row["path"]:
+            elif any(before.get(k) != row.get(k) for k in ("path", "description")):
                 changes["changed"].append({"name": row["name"], "from": before, "to": row})
         named = {r["name"] for r in body["entries"]}
         for name, row in current.items():
@@ -169,7 +177,10 @@ def test_pull_lists_changes_then_adds_and_keeps_edits(
     text = caplog.text
     assert "Data registry changes from Framework Cloud (revision rev-1):" in text
     assert "Entries to add: inputs.final.analysis" in text
-    assert "Entries that differ: inputs.raw.survey" in text
+    assert (
+        "Entries that differ (local -> Cloud): inputs.raw.survey "
+        "(path inputs/raw/survey.csv -> inputs/raw/survey_v2.csv)" in text
+    )
     assert "kept; pull_data_registry(overwrite=True) uses Cloud's" in text
     assert not (project / ".framework/data.lock.json").exists()
 
@@ -267,12 +278,49 @@ def test_offline_refused_older_server_and_no_token(
     cloud.offline, cloud.refused = False, True
     with pytest.raises(CloudError, match="refused the project token"):
         fw.push_data_registry()
-    cloud.refused, cloud.missing = False, True
+    cloud.refused = False
+    cloud.failure = (429, "Too Many Attempts.")
+    with pytest.raises(
+        CloudError,
+        match=r"Framework Cloud answered with an error \(HTTP 429\): Too Many Attempts\. Nothing",
+    ):
+        fw.pull_data_registry()
+    cloud.failure = (500, "Server Error")
+    with pytest.raises(CloudError, match=r"\(HTTP 500\): Server Error\. Nothing changed\."):
+        fw.pull_data_registry()
+    cloud.failure, cloud.missing = None, True
     with pytest.raises(CloudError, match="no data registry endpoint yet"):
         fw.pull_data_registry()
     (project / ".env").write_text(f"FW_CLOUD_URL={SERVER}\n")
     with pytest.raises(CloudError, match="no project token"):
         fw.pull_data_registry()
+
+
+def test_changes_name_the_fields_that_differ(cloud: Cloud, project: Path, caplog: Any) -> None:
+    caplog.set_level("INFO", logger="framework")
+    survey = entry("inputs.raw.survey", "inputs/raw/survey.csv", type="csv", locked=True)
+    cloud.entries = [
+        {**survey, "description": "Wave 1"},
+        entry("inputs.raw.visits", "inputs/raw/visits.csv"),
+    ]
+    fw.pull_data_registry(dry_run=True)
+    assert (
+        "Entries that differ (local -> Cloud): inputs.raw.survey (description changed)"
+        in caplog.text
+    )
+
+    cloud.entries = [
+        {**survey, "stata_names": {"long_name": "short"}},
+        entry("inputs.raw.visits", "inputs/raw/visits.csv"),
+    ]
+    caplog.clear()
+    fw.pull_data_registry(dry_run=True)
+    assert "inputs.raw.survey (stata_names changed)" in caplog.text
+
+    cloud.entries = [{**survey, "description": "Wave 1"}]
+    caplog.clear()
+    fw.push_data_registry(dry_run=True)
+    assert "Entries to change: inputs.raw.survey (description changed)" in caplog.text
 
 
 def test_project_creation_writes_the_spec_data_entries(tmp_path: Path) -> None:
