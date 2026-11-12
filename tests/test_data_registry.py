@@ -251,7 +251,7 @@ def test_push_previews_asks_and_records(cloud: Cloud, project: Path, caplog: Any
     result = fw.push_data_registry(confirm=True)
     assert result["applied"]
     assert lock(project)["revision"] == "rev-2"
-    assert "Data registry pushed: revision rev-2 (2 added)" in caplog.text
+    assert "✓ Data registry pushed: revision rev-2 (2 added)" in caplog.text
 
 
 def test_push_refuses_a_stale_revision_unless_forced(

@@ -436,7 +436,7 @@ def _push_apply(root: Path, plan: dict[str, Any], server: str) -> dict[str, Any]
             for key in ("added", "changed", "removed")
             if done.get(key)
         ]
-        inform(f"Data registry pushed: revision {revision} ({', '.join(parts)})")
+        inform(f"✓ Data registry pushed: revision {revision} ({', '.join(parts)})")
     else:
         inform("Already up to date.")
     return {"applied": bool(reply.get("applied")), "revision": revision}

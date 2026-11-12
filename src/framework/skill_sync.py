@@ -240,6 +240,22 @@ def _install(
     # Backups retain the replaced bytes for recovery and explicit conflict resolution.
 
 
+def _project_token(root: Path, server: str) -> str | None:
+    """The project's token when the project is on this server, else None.
+
+    A push that names the project lets Cloud list a pushed copy of a built-in
+    skill in the project's setup, so the next pull keeps it.
+    """
+    from framework.cloud import cloud_server, project_token
+
+    token = project_token(root)
+    if not token:
+        return None
+    if cloud_server(scope="project", project_dir=root).url.rstrip("/") != server:
+        return None
+    return token
+
+
 def skills_sync(
     path: str,
     project_path: str | Path = ".",
@@ -376,20 +392,17 @@ def skills_sync(
             entry["pending"] = pending
             state["skills"][key] = entry
             _save(root, state)  # Retry identity survives a lost HTTP response.
-            remote = api(
-                "/api/v1/skills/sync",
-                token,
-                server,
-                method="POST",
-                body={
-                    "request_id": pending["request_id"],
-                    "skill_id": remote["skill_id"] if remote else None,
-                    "expected_version": expected,
-                    "variant": variant,
-                    "bundle": files,
-                    "client": {"app": "framework-py"},
-                },
-            )
+            body = {
+                "request_id": pending["request_id"],
+                "skill_id": remote["skill_id"] if remote else None,
+                "expected_version": expected,
+                "variant": variant,
+                "bundle": files,
+                "client": {"app": "framework-py"},
+            }
+            if named := _project_token(root, server):
+                body["project_token"] = named
+            remote = api("/api/v1/skills/sync", token, server, method="POST", body=body)
         if remote:
             if bundle_hash(remote["bundle"]) != remote["hash"]:
                 raise ValueError("Cloud skill verification failed")

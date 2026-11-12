@@ -307,6 +307,8 @@ def test_push_saves_an_edited_builtin_as_your_own(
         if ".claude/skills/framework-data" in e["paths"]
     )
     assert entry["skill_id"] == "own-id"
+    # The project's token names the project, so Cloud lists the copy in its setup
+    assert cloud.posts[-1]["project_token"] == "fw_project"
 
 
 def test_push_dry_run_and_confirmation(

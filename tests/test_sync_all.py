@@ -397,7 +397,7 @@ def test_push_previews_every_part_asks_once_and_pushes(
     assert "  Entries to remove: inputs.raw.visits" in text
     assert "✓ Packages pushed: revision rev-2 (1 added, 1 changed, 2 removed)" in text
     assert "✓ Skills pushed: analysis" in text
-    assert "Data registry pushed: revision data-2 (1 removed)" in text
+    assert "✓ Data registry pushed: revision data-2 (1 removed)" in text
     assert result["applied"] == ["packages", "skills", "data_registry"]
     assert pushed == ["analysis"]
     assert cloud.posts[-1]["remove"] and not cloud.posts[-1]["dry_run"]
