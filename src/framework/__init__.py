@@ -63,6 +63,7 @@ from framework.create import (
     project_create_from_layers,
 )
 from framework.data import data_add, data_read, data_save
+from framework.data_registry import pull_data_registry, push_data_registry
 from framework.display import TableDisplay, show_table
 from framework.errors import (
     CacheWarning,
@@ -249,8 +250,10 @@ __all__ = [
     "publish_dir",
     "publish_list",
     "publish_notebook",
+    "pull_data_registry",
     "pull_setup",
     "pull_skills",
+    "push_data_registry",
     "push_setup",
     "push_skills",
     "quarto_generate_all",

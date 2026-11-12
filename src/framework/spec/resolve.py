@@ -49,6 +49,7 @@ _ORDER = (
     "publish",
     "security",
     "env",
+    "data",
     "data_hooks",
     "files",
     "skills",

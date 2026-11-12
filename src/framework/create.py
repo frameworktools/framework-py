@@ -26,7 +26,7 @@ from framework.ai import write_ai_files
 from framework.config_home import config_dir, global_settings, project_register
 from framework.errors import FrameworkError
 from framework.quarto import quarto_generate_all
-from framework.spec.check import ASSISTANTS, spec_check
+from framework.spec.check import ASSISTANTS, catalog_nest, spec_check
 from framework.spec.merge import SpecError
 from framework.spec.resolve import (
     TYPES,
@@ -172,11 +172,11 @@ def _write_settings(root: Path, spec: Mapping[str, Any]) -> None:
         main["connections"] = "settings/connections.yml"
         _yaml.write(root / "settings/connections.yml", {"connections": sections["connections"]})
         main["data"] = "settings/data.yml"
-        _yaml.write(root / "settings/data.yml", {"data": {}})
+        _yaml.write(root / "settings/data.yml", {"data": catalog_nest(spec.get("data"))})
     else:
         for section in ("author", "quarto", "git", "ai", "scaffold"):
             main[section] = sections[section]
-        main["data"] = {}
+        main["data"] = catalog_nest(spec.get("data"))
         main["connections"] = sections["connections"]
 
     if spec.get("publish") is not None:

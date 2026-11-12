@@ -29,7 +29,17 @@ REQUIRED = (
     "files",
     "skills",
 )
-OPTIONAL = ("quarto", "source", "tools", "core_files", "settings_layout", "publish")
+OPTIONAL = ("quarto", "source", "tools", "core_files", "settings_layout", "publish", "data")
+
+# The data registry: the fields a catalog entry carries in a spec and to and from
+# Framework Cloud, the types data_read() reads (with R's aliases), and its names.
+DATA_FIELDS = ("path", "type", "delimiter", "locked", "private", "description", "stata_names")
+DATA_TYPES = (
+    "csv", "tsv", "rds", "excel", "xlsx", "xls", "parquet", "stata", "dta",
+    "spss", "sav", "zsav", "spss_por", "por", "sas", "sas7bdat", "sas7bcat", "sas_xpt", "xpt",
+)  # fmt: skip
+DATA_DELIMITERS = ("comma", "tab", "semicolon", "space")
+_DATA_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_-]*([.][A-Za-z0-9_][A-Za-z0-9_-]*)*$")
 
 # Assistant -> (skills folder, stub file). Adding an assistant is one row.
 ASSISTANTS: dict[str, tuple[str, str | None]] = {
@@ -267,8 +277,72 @@ def spec_check(spec: dict[str, Any]) -> list[str]:
             add(f"env: invalid variable name '{name}'")
         elif _SECRET_NAME.search(name) and value not in (None, ""):
             add(f"env.{name}: secrets must not be stored in the spec; leave the value empty")
+    problems.extend(data_registry_problems(spec.get("data")))
     for key, hook in _dict(spec.get("data_hooks")).items():
         if not isinstance(hook, str) or not _HOOK.match(hook):
             add(f"data_hooks.{key}: expected 'path/to/file.py::function'")
 
     return problems
+
+
+def data_registry_problems(data: Any) -> list[str]:
+    """Problems with a spec's ``data`` section (catalog name -> entry), as R's
+    spec_check() and the schema's data_entry see them."""
+    if data is None or data == {} or data == []:
+        return []
+    if not isinstance(data, dict):
+        return ["data must be an object keyed by catalog name, not a list"]
+    problems: list[str] = []
+    add = problems.append
+    for name, entry in data.items():
+        where = f"data.{name}"
+        if not _DATA_NAME.match(str(name)):
+            add(f"data: invalid catalog name '{name}'")
+        if not isinstance(entry, dict):
+            add(f"{where}: must be an entry with a path")
+            continue
+        for field in entry:
+            if field not in DATA_FIELDS:
+                add(f"{where}: unknown field '{field}'")
+        path = entry.get("path")
+        if not isinstance(path, str) or not path:
+            add(f"{where}: missing path")
+        elif not is_safe_path(path):
+            add(f"{where}: path '{path}' must be relative and stay inside the project")
+        if entry.get("type") is not None and entry["type"] not in DATA_TYPES:
+            add(f"{where}: type must be one of {', '.join(DATA_TYPES)}")
+        if entry.get("delimiter") is not None and entry["delimiter"] not in DATA_DELIMITERS:
+            add(f"{where}: delimiter must be comma, tab, semicolon, or space")
+        for flag in ("locked", "private"):
+            if entry.get(flag) is not None and not isinstance(entry[flag], bool):
+                add(f"{where}.{flag} must be true or false")
+        if entry.get("description") is not None and not isinstance(entry["description"], str):
+            add(f"{where}.description must be text")
+        names = entry.get("stata_names")
+        if names and (
+            not isinstance(names, dict) or not all(isinstance(v, str) for v in names.values())
+        ):
+            add(f"{where}.stata_names must map column names to Stata names")
+    # A name that is also a group of other names can't be written nested
+    for name in data:
+        inside = [other for other in data if str(other).startswith(f"{name}.")]
+        if inside:
+            add(f"data: '{name}' is an entry, so '{inside[0]}' can't be inside it")
+    return problems
+
+
+def catalog_nest(data: Any) -> dict[str, Any]:
+    """A spec's ``data`` section (dot-notation names) as the nested catalog the settings
+    hold: ``inputs.raw.survey`` becomes ``inputs: raw: survey:``."""
+    catalog: dict[str, Any] = {}
+    for name, entry in (data if isinstance(data, dict) else {}).items():
+        if entry is None:
+            continue
+        node = catalog
+        *groups, last = str(name).split(".")
+        for part in groups:
+            if not isinstance(node.get(part), dict):
+                node[part] = {}
+            node = node[part]
+        node[last] = entry
+    return catalog

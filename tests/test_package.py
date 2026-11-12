@@ -46,4 +46,4 @@ def test_parity_manifest_is_consistent() -> None:
 
 
 def test_every_r_export_is_mapped() -> None:
-    assert len(check_parity.r_exports()) == 134
+    assert len(check_parity.r_exports()) == 140

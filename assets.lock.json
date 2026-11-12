@@ -1,5 +1,5 @@
 {
-  "commit": "57ba88367e928396f8e44fae0080907106bcf1c4",
+  "commit": "c4e42fe50f2a0e7fa51b9c73716a585432734c7b",
   "files": {
     "docs/docs-site.md": {
       "sha256": "2b86e376b11401881ef77a595d20af203ffc50ed95d99a55e895157e8f8dca25",
@@ -50,15 +50,15 @@
       "source": "inst/schema/docs-reference.v1.json"
     },
     "src/framework/_assets/schema/layer.v1.json": {
-      "sha256": "40c6878cb147a9c3fd9c980f8fa88fe4cbcc55a2255a7c3b1be401de45336402",
+      "sha256": "aa2ff761b97420612af23731f7d00edf3258e44682a8705e97a4ed4289667baf",
       "source": "inst/schema/layer.v1.json"
     },
     "src/framework/_assets/schema/layers.v1.json": {
-      "sha256": "aa3df242985189da4f1bf889e06ebb61d4c0f3383920ce3cf329058695d1907d",
+      "sha256": "0c3b1f7ad47240bb53b68c578e1f78b61e9d688bb687e21d3a6e4592e6306dde",
       "source": "inst/schema/layers.v1.json"
     },
     "src/framework/_assets/schema/spec.v1.json": {
-      "sha256": "767fddb1071e0ce2cd88eb0d9999921c5009ff97ef51193f079224648df56536",
+      "sha256": "95f6ebd2974545cfba7a6a77dc2da79af681fbd6447e8548f600b19f3a6e6243",
       "source": "inst/schema/spec.v1.json"
     },
     "src/framework/_assets/sets/packages/bayes-r.json": {
@@ -68,6 +68,10 @@
     "src/framework/_assets/sets/packages/causal-inference-r.json": {
       "sha256": "85caa461ac4eddedce26f294d0021cd4e752c5934f6b31eeeb9630fccb5e77f9",
       "source": "inst/sets/packages/causal-inference-r.json"
+    },
+    "src/framework/_assets/sets/packages/easystats-r.json": {
+      "sha256": "6216e0393059cdc974170573674fd17ab32a3bec864be239e23b73d026e5c296",
+      "source": "inst/sets/packages/easystats-r.json"
     },
     "src/framework/_assets/sets/packages/fastapi-python.json": {
       "sha256": "e1a1d48f61f4f48c54374ba6bc8212ed3181d72e4e22cfcef47fa841fe95e5e9",
@@ -206,7 +210,7 @@
       "source": "tests/integration/sqlserver/init.sql"
     },
     "tests/shared/NAMESPACE": {
-      "sha256": "27a70be7e8154de4a23c01e3a4a191b0b12f6f163d5af89c3ca9995d64d88302",
+      "sha256": "b583eddb5677018981bbcc09565b274a92c192d75ad490d6fa5c6c466a231391",
       "source": "NAMESPACE"
     },
     "tests/shared/conformance/README.md": {
@@ -337,6 +341,10 @@
       "sha256": "255e5b8a5bdea9767332eebaf8403eafbb1f67b021b85b13216f5165898321a4",
       "source": "inst/conformance/merge/conflicts-and-labels.json"
     },
+    "tests/shared/conformance/merge/data-entries.json": {
+      "sha256": "432b177bbebdc2f79f999a0f7af4c2c4c02cf92a7f17ba64d8f2397e43dc92fa",
+      "source": "inst/conformance/merge/data-entries.json"
+    },
     "tests/shared/conformance/merge/empty-sections.json": {
       "sha256": "c86a7003717fa7a843ce19348f9a43a53ab135b347b5afd3ce403de385c1ef3c",
       "source": "inst/conformance/merge/empty-sections.json"
@@ -354,6 +362,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "57ba88367e928396f8e44fae0080907106bcf1c4",
+  "ref": "c4e42fe50f2a0e7fa51b9c73716a585432734c7b",
   "source": "framework (R package)"
 }

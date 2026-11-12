@@ -37,6 +37,7 @@ ATOMIC_MAPS = frozenset(
         "packages/default_packages",
         "connections/databases",
         "connections/storage_buckets",
+        "data",
     }
 )
 
