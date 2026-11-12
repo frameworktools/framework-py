@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import httpx
 import pandas as pd
@@ -1617,9 +1618,28 @@ def cloud_register(
 
 def fetch_layers(key: str, url: str | None = None) -> tuple[dict[str, Any], str]:
     """A project's layers file from the cloud, by its project token."""
+    envelope, server, _ = pull_project(key, url)
+    return envelope, server
+
+
+def pull_project(key: str, url: str | None = None) -> tuple[dict[str, Any], str, str | None]:
+    """A project's layers file, its server, and the owner's Projects folder, by project token.
+
+    The Projects folder is the ``Framework-Projects-Dir`` header, percent-encoded
+    UTF-8, or None when the server doesn't send it.
+    """
     server = cloud_server(url).url
     inform(f"Fetching this project's definition from {server} (what is shared: {server}/privacy)")
-    envelope = api("/api/v1/projects/pull", key, server)
+    response = _request("/api/v1/projects/pull", key, server)
+    envelope = response.json()
     if not isinstance(envelope, dict):
         raise CloudError("The server returned an unexpected project definition.")
-    return envelope, server
+    return envelope, server, header_projects_dir(response.headers.get("Framework-Projects-Dir"))
+
+
+def header_projects_dir(value: str | None) -> str | None:
+    """A Framework-Projects-Dir header value, decoded, or None when absent or blank."""
+    if not value:
+        return None
+    decoded = unquote(value, encoding="utf-8", errors="replace").strip()
+    return decoded or None

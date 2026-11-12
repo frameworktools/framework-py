@@ -707,8 +707,11 @@ def new_project(
         location: The project folder to create. ``~`` is expanded and a relative path is
             taken from the current directory. With no location, an interactive session
             shows ``<current directory>/<project-name>`` and asks
-            ``Create the project here (<path>)? [y/n]``. Answering n asks for the folder
-            to put the project in; leaving it blank uses the current directory. A
+            ``Create the project here (<path>)? [y/n]``. With a Projects folder set in
+            Framework Cloud Settings, it offers ``<Projects folder>/<project-name>``
+            instead and asks ``Create the project in <path>? [y/n]``, creating the
+            Projects folder if needed. Answering n asks for the folder to put the
+            project in; leaving it blank uses the current directory. A
             non-interactive session raises an error asking for ``location``.
         type: project, project_sensitive, course, presentation, or bare. App types
             ``"shiny"`` (Shiny for Python; ``"shiny_python"`` is the same) and
@@ -839,11 +842,49 @@ def _abs_location(location: str | Path) -> Path:
     return path if path.is_absolute() else Path.cwd() / path
 
 
-def _ask_location(slug: str, interactive: bool) -> Path:
+def _projects_dir() -> str | None:
+    """The Projects folder set in Framework Cloud Settings, or None when unset.
+
+    It is ``defaults.projects_dir`` in the person's settings document. Signed in,
+    it comes from the cloud, or from the mirror ``cloud_sync()`` keeps when the
+    cloud can't be reached. Signed out, it comes from the mirror alone.
+    """
+    from framework.cloud import _sync_paths, api, cloud_server, cloud_token
+
+    def from_document(document: Any) -> str | None:
+        defaults = document.get("defaults") if isinstance(document, dict) else None
+        value = defaults.get("projects_dir") if isinstance(defaults, dict) else None
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    try:
+        server = cloud_server().url
+        token = cloud_token(server)
+    except FrameworkError:
+        token = None
+    if token:
+        try:
+            response = api("/api/v1/settings", token, server)
+        except FrameworkError:
+            response = None
+        if isinstance(response, dict) and "document" in response:
+            return from_document(response["document"])
+
+    mirror = _sync_paths()[0]
+    if not mirror.is_file():
+        return None
+    try:
+        return from_document(_yaml.read(mirror))
+    except Exception:  # an unreadable mirror counts as unset
+        return None
+
+
+def _ask_location(slug: str, interactive: bool, projects_dir: str | None = None) -> Path:
     """Where a new project goes when no location was given, as in R.
 
     An interactive session confirms a folder named for the project in the
-    current directory, or takes the folder to put it in. There is never a
+    Projects folder (``projects_dir``, else the one in Framework Cloud Settings),
+    or in the current directory when neither is set, or takes the folder to put
+    it in. There is never a
     default elsewhere: the location is always explicit.
     """
     here = Path.cwd()
@@ -853,8 +894,14 @@ def _ask_location(slug: str, interactive: bool) -> Path:
             "No project location given. Pass `location=`, the folder to create, "
             f'such as location="{suggested}".'
         )
+    projects_dir = projects_dir or _projects_dir()
+    if projects_dir is None:
+        question = f"Create the project here ({suggested})? [y/n] "
+    else:
+        suggested = _abs_location(projects_dir) / slug
+        question = f"Create the project in {suggested}? [y/n] "
     while True:
-        answer = _readline(f"Create the project here ({suggested})? [y/n] ").strip().lower()
+        answer = _readline(question).strip().lower()
         if answer in ("", "y", "yes"):
             return suggested
         if answer in ("n", "no"):
@@ -868,9 +915,14 @@ def _ask_location(slug: str, interactive: bool) -> Path:
     return parent if parent.name == slug else parent / slug
 
 
-def _project_location(location: str | Path | None, slug: str, interactive: bool) -> Path:
+def _project_location(
+    location: str | Path | None, slug: str, interactive: bool, projects_dir: str | None = None
+) -> Path:
     """The absolute project folder, asked for when not given, announced before creation."""
-    root = _ask_location(slug, interactive) if location is None else _abs_location(location)
+    if location is None:
+        root = _ask_location(slug, interactive, projects_dir)
+    else:
+        root = _abs_location(location)
     inform(f"Creating the project at {root}")
     return root
 
@@ -1178,13 +1230,15 @@ def _replace_default_skills(spec: dict[str, Any], type: str, layers: Sequence[An
 def _new_from_cloud(
     key: str, location: str | Path | None, interactive: bool, url: str | None = None
 ) -> Path:
-    from framework.cloud import fetch_layers, write_project_token
+    from framework.cloud import pull_project, write_project_token
 
-    envelope, server = fetch_layers(key, url)
+    envelope, server, owner_projects_dir = pull_project(key, url)
     name = envelope.get("name")
     if not name:
         raise FrameworkError("The cloud project has no name")
-    location = _project_location(location, _envelope_slug(envelope, str(name)), interactive)
+    location = _project_location(
+        location, _envelope_slug(envelope, str(name)), interactive, owner_projects_dir
+    )
     resolved = spec_resolve(envelope.get("layers") or [], str(name), envelope.get("author"))
     spec = resolved.spec
     spec["source"] = envelope.get("source") or {"origin": "cloud"}

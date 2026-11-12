@@ -30,6 +30,14 @@ In an interactive session, `new_project()` asks for any value you leave out. It 
 Create the project here (/home/ada/work/vaccine-study)? [y/n]
 ```
 
+With a Projects folder set in Framework Cloud Settings, it offers a folder in your Projects folder instead:
+
+```text
+Create the project in /home/ada/research/vaccine-study? [y/n]
+```
+
+The Projects folder is created if it doesn't exist yet. Signed out or offline, `new_project()` reads it from the copy of your settings that `cloud_sync()` keeps. A script or notebook never uses it.
+
 Enter or `y` creates it there. `n` asks for the folder to put the project in; leaving that blank uses the current directory. The project folder goes inside the folder you type, unless the path already ends in the project's name. Any other answer asks again. In a script or notebook, where standard input is not a terminal, a missing name or location is an error and a missing type means `project`. Pass `type="bare"` for a bare project. Pass `interactive=True` or `interactive=False` to choose the behavior yourself.
 
 `~` is expanded and a relative location is taken from the current directory. `new_project()` prints `Creating the project at <path>` with the absolute path before it starts, and `Project ready at <path>` when it is done. The folder must not exist yet. `new_project()` returns the path of the new project.
@@ -120,7 +128,7 @@ fw.new_project(key="fw_...")
 fw.new(key="fw_...", url="https://cloud.example.edu")
 ```
 
-`url` names a self-hosted server that issued the token, so no login is needed first. Without it, the server is `FW_CLOUD_URL`, then the one you last logged in to, then framework.pub. With no `location`, `new_project()` asks where to create the project, as above, offering a folder named for the project's slug; a script must pass `location`. `new_project()` fetches the project's definition from the server and saves the token and server in the new project's `.env` as `FW_PROJECT_TOKEN` and `FW_CLOUD_URL`. The project then publishes to that server and uses its integrity ledger. The [Framework Cloud](guide:cloud) guide describes what the server receives.
+`url` names a self-hosted server that issued the token, so no login is needed first. Without it, the server is `FW_CLOUD_URL`, then the one you last logged in to, then framework.pub. With no `location`, `new_project()` asks where to create the project, as above, offering a folder named for the project's slug; a script must pass `location`. The offered folder is in the project owner's Projects folder when the server sends one with the project, else in yours from Framework Cloud Settings, else in the current directory. `new_project()` fetches the project's definition from the server and saves the token and server in the new project's `.env` as `FW_PROJECT_TOKEN` and `FW_CLOUD_URL`. The project then publishes to that server and uses its integrity ledger. The [Framework Cloud](guide:cloud) guide describes what the server receives.
 
 ### Blueprints and structures
 

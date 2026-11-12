@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 import pytest
@@ -153,3 +154,126 @@ def test_a_cloud_key_without_a_location_is_an_error_when_not_interactive(
     with pytest.raises(fw.FrameworkError, match="No project location given"):
         fw.new(key="fwp_project0123", interactive=False)
     assert list(here.iterdir()) == []
+
+
+# The Projects folder ------------------------------------------------------------------
+
+IN_PROMPT = "Create the project in {path}? [y/n] "
+
+
+def test_a_projects_folder_is_offered_instead_of_here(
+    here: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    projects = tmp_path / "not" / "yet" / "research"
+    monkeypatch.setattr(create, "_projects_dir", lambda: str(projects))
+    prompts = answers(monkeypatch, "")
+    root = new()
+    assert root == projects / "field-study"
+    assert root.is_dir()
+    assert prompts == [IN_PROMPT.format(path=projects / "field-study")]
+
+
+def test_a_projects_folder_with_a_tilde_is_expanded(
+    here: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(create, "_projects_dir", lambda: "~/research")
+    prompts = answers(monkeypatch, "y")
+    assert new() == tmp_path / "home" / "research" / "field-study"
+    assert prompts == [IN_PROMPT.format(path=tmp_path / "home" / "research" / "field-study")]
+
+
+def test_declining_the_projects_folder_asks_where(
+    here: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(create, "_projects_dir", lambda: str(tmp_path / "research"))
+    prompts = answers(monkeypatch, "n", "")
+    assert new() == here / "field-study"
+    assert prompts == [
+        IN_PROMPT.format(path=tmp_path / "research" / "field-study"),
+        WHERE_PROMPT.format(here=here),
+    ]
+    assert not (tmp_path / "research").exists()
+
+
+def test_non_interactive_ignores_the_projects_folder(
+    here: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail() -> str:
+        raise AssertionError("not asked for")
+
+    monkeypatch.setattr(create, "_projects_dir", fail)
+    with pytest.raises(fw.FrameworkError, match="No project location given"):
+        fw.new_project("Field Study", type="bare", interactive=False, offline=True)
+
+
+def test_the_projects_folder_comes_from_the_cloud_settings(
+    server: FakeCloud, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FW_CLOUD_TOKEN", "fw_user")
+    server.settings = {"revision": 3, "document": {"defaults": {"projects_dir": "~/research"}}}
+    assert create._projects_dir() == "~/research"
+    server.settings = {"revision": 4, "document": {"defaults": {"projects_dir": None}}}
+    assert create._projects_dir() is None
+    server.settings = {"revision": 5, "document": {"defaults": {"projects_dir": "  "}}}
+    assert create._projects_dir() is None
+
+
+def test_unset_without_a_token_or_mirror() -> None:
+    assert create._projects_dir() is None
+
+
+def test_offline_or_signed_out_the_projects_folder_comes_from_the_mirror(
+    server: FakeCloud, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mirror = cloud._sync_paths()[0]
+    mirror.parent.mkdir(parents=True, exist_ok=True)
+    mirror.write_text("defaults:\n  projects_dir: ~/cached\n")
+    assert create._projects_dir() == "~/cached"
+
+    monkeypatch.setenv("FW_CLOUD_TOKEN", "fw_user")
+    server.route("GET", "/api/v1/settings", lambda r: httpx.Response(503))
+    assert create._projects_dir() == "~/cached"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("~/research", "~/research"),
+        ("~/My%20Projects/%C3%A9tudes", "~/My Projects/études"),
+    ],
+)
+def test_the_projects_dir_header_is_decoded(value: str | None, expected: str | None) -> None:
+    assert cloud.header_projects_dir(value) == expected
+
+
+def test_a_cloud_key_offers_the_owners_projects_folder_from_the_header(
+    here: Path, tmp_path: Path, server: FakeCloud, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    projects = tmp_path / "My Projects" / "études"
+    encoded = "/".join(quote(part) for part in str(projects).split("/"))
+    server.route(
+        "GET",
+        "/api/v1/projects/pull",
+        lambda r: httpx.Response(200, json=envelope(), headers={"Framework-Projects-Dir": encoded}),
+    )
+    monkeypatch.setattr(create, "_projects_dir", lambda: "/from/settings")
+    prompts = answers(monkeypatch, "")
+    root = fw.new(key="fwp_project0123", interactive=True)
+    assert root == projects / "cloud-study-2"
+    assert (root / "settings.yml").is_file()
+    assert prompts == [IN_PROMPT.format(path=projects / "cloud-study-2")]
+
+
+def test_a_cloud_key_without_the_header_uses_the_synced_projects_folder(
+    here: Path, tmp_path: Path, server: FakeCloud, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server.route("GET", "/api/v1/projects/pull", lambda r: httpx.Response(200, json=envelope()))
+    monkeypatch.setattr(create, "_projects_dir", lambda: str(tmp_path / "research"))
+    prompts = answers(monkeypatch, "")
+    assert (
+        fw.new(key="fwp_project0123", interactive=True) == tmp_path / "research" / "cloud-study-2"
+    )
+    assert prompts == [IN_PROMPT.format(path=tmp_path / "research" / "cloud-study-2")]
