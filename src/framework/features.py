@@ -147,7 +147,10 @@ def _pick(ids: Iterable[str], kind: str, label: str) -> list[dict[str, Any]]:
         definition = sets.get(set_id)
         if definition is None:
             available = ", ".join(i for i, d in sets.items() if _for_python(d))
-            raise FrameworkError(f"Unknown {label}: {set_id}. Available: {available}")
+            raise FrameworkError(
+                f"Unknown {label}: {set_id}. Available offline: {available}. "
+                "Other sets require Framework Cloud; sign in and resolve the project online."
+            )
         if not _for_python(definition):
             raise FrameworkError(f"The {definition['name']} {label} isn't available for Python.")
         prefix = "packages-" if kind == "packages" else "skills-"
