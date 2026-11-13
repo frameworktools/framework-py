@@ -137,7 +137,7 @@ def test_pull_adds_updates_keeps_and_reports(cloud: Cloud, project: Path, capsys
     first = fw.pull_skills(project)
     assert first["source"] == "cloud"
     assert statuses(first)["team-style"] == "added"
-    assert first["counts"]["added"] == 5
+    assert first["counts"]["added"] == 8
     assert "Version one" in skill_text(project, "team-style")
 
     # Edited on Cloud: a new version, a removed skill. Edited here: framework-data.
@@ -154,7 +154,7 @@ def test_pull_adds_updates_keeps_and_reports(cloud: Cloud, project: Path, capsys
     # Never deleted
     assert (project / ".claude/skills/framework-outputs/SKILL.md").is_file()
     assert second["message"] == (
-        "Skills: 1 updated, 2 up to date, 1 locally edited (kept), "
+        "Skills: 1 updated, 5 up to date, 1 locally edited (kept), "
         "1 no longer in the project's setup"
     )
     err = capsys.readouterr().err
@@ -215,7 +215,7 @@ def test_pull_without_cloud_uses_the_package_skills(
     assert "team-style" not in statuses(result)
     # Without the setup, nothing is reported as removed
     assert "mine" not in statuses(result)
-    assert result["counts"]["added"] == 4
+    assert result["counts"]["added"] == 7
     assert (
         "Framework Cloud not reached (Could not reach cloud.example); "
         "using the package skills for this project type." in capsys.readouterr().err
@@ -229,8 +229,8 @@ def test_pull_without_a_project_token_says_so(cloud: Cloud, project: Path) -> No
 
 def test_pull_dry_run_writes_nothing(cloud: Cloud, project: Path) -> None:
     result = fw.pull_skills(project, dry_run=True)
-    assert result["counts"]["added"] == 5
-    assert result["message"].startswith("Skills (dry run, nothing written): 5 added")
+    assert result["counts"]["added"] == 8
+    assert result["message"].startswith("Skills (dry run, nothing written): 8 added")
     assert not (project / ".claude").exists()
     assert not (project / ".framework").exists()
 

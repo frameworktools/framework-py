@@ -1,53 +1,49 @@
 ---
 name: framework-data
-description: Use whenever reading or writing data files (CSV, Parquet, Excel, Stata, SPSS, SAS) in this Framework project. Read with fw.data_read() and write with fw.data_save(), which record a hash of each file in framework.db.
+description: Use when reading or writing data files (CSV, Parquet, Excel, Stata, SPSS, SAS) in a project that uses the Framework package. Covers fw.data_read(), fw.data_save(), the data catalog, and the data folders.
 metadata:
-  title: Reading and saving data
+  title: "Framework: reading and saving data"
   summary: Read and save data files through Framework, which records each file's hash.
 ---
 
-# Framework Data
+# Framework: reading and saving data
 
-`fw.data_read()` and `fw.data_save()` record a SHA-256 hash of each data file
-in the project's `framework.db`. Reading the file directly with pandas skips
-that record, so a changed or replaced file would go unnoticed.
+`fw.data_read()` and `fw.data_save()` record a hash of each data file in the
+project's `framework.db`. A file read directly with pandas or pyreadstat skips
+that record, so a changed file goes unnoticed. Follow these conventions in
+code that calls `fw.scaffold()`. Leave existing code as it is unless the user
+asks you to change it.
 
 ## Reading
 
+Prefer `fw.data_read()`. It reads CSV, TSV, Parquet, Excel, Stata, SPSS, and
+SAS files.
+
 ```python
-survey = fw.data_read("inputs.raw.survey")  # by catalog name (preferred)
+survey = fw.data_read("inputs.raw.survey")            # by catalog name
 customers = fw.data_read("inputs/raw/customers.csv")  # by path
 ```
 
-`data_read()` reads CSV, TSV, Parquet, Excel, Stata, SPSS, and SAS files.
-Catalog files are checked against their recorded hash: a locked file that
-changed raises an error, and an unlocked one warns. Use it instead of
-`pd.read_csv()`, `pd.read_parquet()`, `pd.read_excel()`, `pd.read_stata()`,
-or `pyreadstat`.
+Datasets listed in the settings (often `settings/data.yml`) have a dotted
+catalog name. Prefer it to the path when an entry exists. `fw.data_list()`
+shows the catalog.
 
-`.rds` files can only be read by R. Ask for a Parquet or CSV copy instead.
+Python cannot read `.rds` files. Ask for a Parquet or CSV copy.
 
 ## Saving
+
+Prefer `fw.data_save()` to `DataFrame.to_csv()` and `DataFrame.to_parquet()`
+for project data. It writes Parquet or CSV, which R can also read.
 
 ```python
 # Locked by default: a later read raises an error if the file changed
 fw.data_save(final, "inputs/final/analysis_ready.csv")
 
 # Data a pipeline rebuilds on every run: unlocked, so a rebuild doesn't warn
-fw.data_save(clean, "inputs.intermediate.survey_clean", locked=False)  # Parquet, in the catalog
+fw.data_save(clean, "inputs.intermediate.survey_clean", locked=False)
 ```
-
-`data_save()` writes Parquet or CSV, which R can read too. Use it instead of
-`DataFrame.to_csv()` or `DataFrame.to_parquet()` for project data.
-
-## The data catalog
-
-Datasets are listed under `data` in the settings (often `settings/data.yml`)
-and read by dot-notation name. Use the catalog name when an entry exists.
-`fw.data_list()` shows the catalog.
 
 ## Folders
 
-Data moves from raw to intermediate to final. The folders are listed under
-`directories` in the settings. Raw inputs are never changed, and only
-Framework writes go to the intermediate and final folders.
+Data moves from raw to intermediate to final. AGENTS.md lists this project's
+folders. Raw inputs stay unchanged.

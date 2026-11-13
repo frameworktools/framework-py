@@ -1,63 +1,40 @@
 ---
 name: framework-sensitive-data
-description: Use before any data operation, commit, output, or publish step in this privacy-sensitive Framework project. Covers private and public folders and the handling of identifiable data.
+description: Use in a privacy-sensitive project that uses the Framework package, before saving data or outputs, committing, or publishing. Covers the private and public folders and the checks Framework runs.
 metadata:
-  title: Handling sensitive data
-  summary: Keep private data in private folders, out of Git and published work.
+  title: "Framework: sensitive data"
+  summary: The private and public folders of a privacy-sensitive Framework project.
 ---
 
-# Sensitive Data
+# Framework: sensitive data
 
-This project holds identifiable or restricted data. When it is unclear
-whether something is safe, treat it as private.
+This project was created as privacy sensitive. Framework keeps private files
+in their own folders and checks them before they leave the project.
 
-## Rules
-
-1. Files in `inputs/private/` and `outputs/private/` are never committed. They
-   can identify people, and the `.gitignore` keeps them out of git.
-2. Raw data with identifiers goes in a `private/` folder.
-3. Only de-identified, aggregated data goes in a `public/` folder.
-4. Review every output before saving it to a public folder.
-5. Save sensitive data into a private folder:
-   `fw.data_save(df, "inputs.private.intermediate.cleaned")`, or a path under
-   `inputs/private/` or `outputs/private/`.
-6. Run `fw.git_security_audit()` before commits to scan for data leaks, and
-   keep the `data_security` git hook on (`fw.git_hooks_list()`,
-   `fw.git_hooks_enable("data_security")`).
-7. Never publish anything from a private folder. Never pass
-   `include_private=True` to a publish function or answer its prompt on the
-   user's behalf.
-8. Do not read or print restricted files. Values you print are sent to the
-   model provider. Work from the data dictionary and simulated data instead.
-
-## Data flow
+## Folders
 
 ```
-Raw identifiable data  -> inputs/private/raw/
-    | clean, de-identify
-Intermediate           -> inputs/private/intermediate/
-    | aggregate, anonymize
-Public-safe data       -> inputs/public/final/
+inputs/private/raw/            original data
+inputs/private/intermediate/   working data
+inputs/private/final/          analysis-ready data
+inputs/public/                 data cleared for sharing
+outputs/private/               outputs before review
+outputs/public/                outputs cleared for sharing
 ```
 
-## Learning a file's layout
+- Git ignores the private folders.
+- In Claude Code, the project's settings deny reading the private folders and
+  `.env`.
+- Save private data under `inputs/private/`, for example
+  `fw.data_save(df, "inputs.private.intermediate.cleaned")`.
+- The `save_*()` helpers save to the private output folders by default. Pass
+  `public=True` only when the user asks.
 
-To learn what a private or restricted file holds, use
-`fw.data_info(name, columns=True)` instead of reading the file, printing it, or
-calling `.head()`, `.info()`, or `.describe()` on it:
+## Checks
 
-```python
-info = fw.data_info("inputs.private.raw.patients", columns=True)
-info.columns  # name, type, and count of missing values for each column
-info.rows  # number of rows
-```
-
-It never shows values, category levels, ranges, or examples, and it records
-nothing in framework.db.
-
-## Writing code
-
-- Do not print rows with identifiers in notebook output that will be rendered.
-- Do not put identifiers, names, or record-level values in code or comments.
-- Public tables follow small-cell suppression rules where they apply.
-- Save outputs with `public=False` (the default) until they have been reviewed.
+- The `data_security` git hook runs `fw.git_security_audit()` before each
+  commit and stops a commit that fails it. `fw.git_hooks_list()` shows whether
+  the hook is on.
+- The publish functions warn about files in private folders and ask the user
+  to confirm. In a script they stop. Leave `include_private` off, and let the
+  user answer the prompt.

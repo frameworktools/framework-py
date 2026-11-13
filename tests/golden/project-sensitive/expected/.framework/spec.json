@@ -137,6 +137,15 @@
     "framework-outputs": {
       "package": true
     },
+    "framework-cache": {
+      "package": true
+    },
+    "framework-databases": {
+      "package": true
+    },
+    "framework-publishing": {
+      "package": true
+    },
     "framework-sensitive-data": {
       "package": true
     }

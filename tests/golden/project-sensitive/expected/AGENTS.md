@@ -15,29 +15,36 @@ on a matching task.
 
 | Skill | Covers | Path |
 |-------|--------|------|
-| `framework-workflow` | scaffold() initialization, critical rules, creating notebooks/scripts | `.claude/skills/framework-workflow/SKILL.md` |
-| `framework-data` | reading and saving data (data_read/data_save are mandatory) | `.claude/skills/framework-data/SKILL.md` |
-| `framework-packages` | adding and managing Python packages (package_add, never pip install) | `.claude/skills/framework-packages/SKILL.md` |
-| `framework-outputs` | results, caching, database queries, publishing | `.claude/skills/framework-outputs/SKILL.md` |
-| `framework-sensitive-data` | PII/PHI handling and private/public directory rules | `.claude/skills/framework-sensitive-data/SKILL.md` |
+| `framework-workflow` | Framework package initialization and notebook or script creation | `.claude/skills/framework-workflow/SKILL.md` |
+| `framework-data` | reading and saving data with data_read() and data_save() | `.claude/skills/framework-data/SKILL.md` |
+| `framework-packages` | adding and managing Python packages with package_add() | `.claude/skills/framework-packages/SKILL.md` |
+| `framework-outputs` | saving results with the Framework package | `.claude/skills/framework-outputs/SKILL.md` |
+| `framework-cache` | caching computations with the Framework package | `.claude/skills/framework-cache/SKILL.md` |
+| `framework-databases` | querying configured Framework databases | `.claude/skills/framework-databases/SKILL.md` |
+| `framework-publishing` | publishing artifacts with the Framework package | `.claude/skills/framework-publishing/SKILL.md` |
+| `framework-sensitive-data` | private and public folders in a privacy-sensitive project | `.claude/skills/framework-sensitive-data/SKILL.md` |
 
 ## Framework Environment <!-- @framework:regenerate -->
 
-This project uses Framework for reproducible data analysis. **Every notebook and script
-MUST begin with `import framework as fw` and `fw.scaffold()`**, which initializes the environment.
+This project uses the Framework Python package. Follow its conventions in code that
+calls `fw.scaffold()`. Leave existing code as it is unless the user asks you to
+change it.
 
-### What scaffold() Does
+### scaffold()
 
-1. **Finds the project root** and loads `.env` and the settings (it does not change the working directory)
-2. **Creates framework.db** if needed and records the scaffold time
-3. **Puts `functions/` on the import path**, so its modules import directly
-4. **Runs `scaffold.py`** from the project root, if there is one
+Start each notebook and script with `import framework as fw` and `fw.scaffold()`. It:
 
-### CRITICAL RULES
+1. Finds the project root and loads `.env` and the settings. The working directory stays as it is.
+2. Creates framework.db if needed and records the scaffold time
+3. Puts `functions/` on the import path, so its modules import directly
+4. Runs `scaffold.py` from the project root, if there is one
 
-**DO NOT** run `pip install` or `uv add` yourself. Add packages with `fw.package_add("name")`, which records them in pyproject.toml.
+### Conventions
 
-**DO NOT** copy helpers between notebooks. Put them in `functions/` and import them.
+- Prefer `fw.package_add("name")` to `pip install`. It records the package in pyproject.toml.
+- Put helpers shared between notebooks in `functions/` and import them.
+- Ask before running a database statement that changes data.
+- Ask before publishing anything public. GitHub Pages is public even from a private repository.
 
 ## Installed Packages <!-- @framework:regenerate -->
 
@@ -47,12 +54,12 @@ Add packages with `fw.package_add("name")`.
 
 ## Data Management <!-- @framework:regenerate -->
 
-**All data I/O MUST use `fw.data_read()` and `fw.data_save()`** - see the
-`framework-data` skill for the full rules. This project's data directories:
+Prefer `fw.data_read()` and `fw.data_save()` for project data. They record a hash
+of each file. This project's data directories:
 
 | Purpose | Directory |
 |---------|-----------|
-| Private raw data (PII/PHI) | `inputs/private/raw/` |
+| Private raw data | `inputs/private/raw/` |
 | Public raw data | `inputs/public/raw/` |
 | Private intermediate | `inputs/private/intermediate/` |
 | Public intermediate | `inputs/public/intermediate/` |
@@ -63,11 +70,11 @@ Add packages with `fw.package_add("name")`.
 | Private figures | `outputs/private/figures/` |
 | Public figures | `outputs/public/figures/` |
 
-## Privacy Requirements
+## Private Folders
 
-**This is a privacy-sensitive project.** Before ANY data operation, output, or
-commit, follow the `framework-sensitive-data` skill. Never commit or publish
-anything under a `private/` directory.
+This project was created as privacy sensitive. Private files go in the
+`private/` folders, which Git ignores. The `framework-sensitive-data` skill
+describes the folders and the checks Framework runs.
 
 ## Project Notes
 
