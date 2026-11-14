@@ -1,5 +1,5 @@
 {
-  "commit": "1fc99c805a7a73379126cc6751d7a56fe89f9fa9",
+  "commit": "b9499a565d993dcd300f701615db9685732dc9d6",
   "files": {
     "docs/docs-site.md": {
       "sha256": "2b86e376b11401881ef77a595d20af203ffc50ed95d99a55e895157e8f8dca25",
@@ -50,15 +50,15 @@
       "source": "inst/schema/docs-reference.v1.json"
     },
     "src/framework/_assets/schema/layer.v1.json": {
-      "sha256": "aa2ff761b97420612af23731f7d00edf3258e44682a8705e97a4ed4289667baf",
+      "sha256": "7ef0260c22cf970763c7550ff04c23ecf6527a4190d265bf035c501835148061",
       "source": "inst/schema/layer.v1.json"
     },
     "src/framework/_assets/schema/layers.v1.json": {
-      "sha256": "0c3b1f7ad47240bb53b68c578e1f78b61e9d688bb687e21d3a6e4592e6306dde",
+      "sha256": "5d80c9898374c64d80072adbd85a153f521b99bbfc027799d08cd43aecb48eec",
       "source": "inst/schema/layers.v1.json"
     },
     "src/framework/_assets/schema/spec.v1.json": {
-      "sha256": "95f6ebd2974545cfba7a6a77dc2da79af681fbd6447e8548f600b19f3a6e6243",
+      "sha256": "a7081a513da0752b57d87c84a0a832583b2627e391eef50189dee0898bf1fb18",
       "source": "inst/schema/spec.v1.json"
     },
     "src/framework/_assets/sets/packages/bayes-r.json": {
@@ -128,6 +128,22 @@
     "src/framework/_assets/sets/packages/spatial-r.json": {
       "sha256": "0751ba7e4fae1d57a61da3d54435ef99a77c397809939168c678e37c239631a2",
       "source": "inst/sets/packages/spatial-r.json"
+    },
+    "src/framework/_assets/sets/packages/stata-data-tools.json": {
+      "sha256": "1dcb39c1be0222979e054518d140b5e44762fcad5bd1446b9df83b04eca7916f",
+      "source": "inst/sets/packages/stata-data-tools.json"
+    },
+    "src/framework/_assets/sets/packages/stata-fixed-effects.json": {
+      "sha256": "25582d2d2ec2a916a336fb5c6e2f755879c38720054de7c21317d5f8390f4075",
+      "source": "inst/sets/packages/stata-fixed-effects.json"
+    },
+    "src/framework/_assets/sets/packages/stata-graphs.json": {
+      "sha256": "4ec55b333e510d1f5d47aeeffd74886b30f08be1df5bf9ea2253e6c3f973101d",
+      "source": "inst/sets/packages/stata-graphs.json"
+    },
+    "src/framework/_assets/sets/packages/stata-tables.json": {
+      "sha256": "230b64b3b3fb7205e4794f6f50cf71bb4fb7da9389b2591660b8256b811111f6",
+      "source": "inst/sets/packages/stata-tables.json"
     },
     "src/framework/_assets/sets/packages/survey-r.json": {
       "sha256": "9f8ef8507516297b8acff5dcb24b32cd582981afe5f4bb8c9ab2438fae1bf799",
@@ -366,6 +382,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "v2.0.7",
+  "ref": "b9499a565d993dcd300f701615db9685732dc9d6",
   "source": "framework (R package)"
 }

@@ -250,3 +250,14 @@ def test_python_projects_get_what_their_workflow_needs(tmp_path: Path) -> None:
     spec = fw.spec_resolve([layer], name="Pinned").spec
     pinned = fw.project_create(spec, tmp_path / "pinned")
     assert dependencies(pinned) == ["framework-py", "nbclient>=0.10", "ipykernel", "nbformat"]
+
+
+def test_the_matplotlib_style_goes_into_the_scaffold_settings(tmp_path: Path) -> None:
+    layer = {
+        "language": "python",
+        "scaffold": {"set_theme_on_scaffold": True, "matplotlib_style": "ggplot"},
+    }
+    spec = fw.spec_resolve([layer], name="Styled").spec
+    root = fw.project_create(spec, tmp_path / "styled")
+    scaffold = _yaml.read(root / "settings/scaffold.yml")["scaffold"]
+    assert (scaffold["set_theme_on_scaffold"], scaffold["matplotlib_style"]) == (True, "ggplot")

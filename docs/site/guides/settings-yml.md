@@ -126,7 +126,7 @@ A Python project's settings contain these sections.
 | `author` | `name`, `email`, and `affiliation`, used in notebook front matter. |
 | `git` | `enabled` and the pre-commit `hooks`. See [Git](guide:git). |
 | `ai` | `enabled`, `canonical_file` (`AGENTS.md`), and `assistants`. See [AI assistants](guide:ai-assistants). |
-| `scaffold` | `seed_on_scaffold`, `seed`, `source_all_functions`, and `notebook_format` (`quarto` or `jupyter`). |
+| `scaffold` | `seed_on_scaffold`, `seed`, `set_theme_on_scaffold`, `matplotlib_style`, `source_all_functions`, and `notebook_format` (`quarto` or `jupyter`). |
 | `quarto` | HTML and reveal.js rendering options. |
 | `connections` | Databases and storage buckets. See [Connections](guide:connections). |
 | `data` | The data catalog. See [Data management](guide:data-management). |

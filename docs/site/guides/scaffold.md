@@ -111,16 +111,26 @@ scaffold:
 
 When the settings do not set `seed_on_scaffold`, the `FW_SEED` environment variable turns seeding on. The project's `seed` takes precedence over the value of `FW_SEED`, and the fallback seed is 123.
 
+## Plot style
+
+With `set_theme_on_scaffold: true`, `scaffold()` applies the matplotlib style in `matplotlib_style`, as R's `scaffold()` sets a ggplot2 theme. Every figure then starts from the same style.
+
+```yaml
+scaffold:
+  set_theme_on_scaffold: true
+  matplotlib_style: seaborn-v0_8-whitegrid
+```
+
+`matplotlib.style.available` lists the styles. An unknown style, or a missing matplotlib, gives a warning and leaves the style alone.
+
 ## scaffold.py
 
-New projects have a `scaffold.py` file in the root. `scaffold()` runs it after the other steps. Use it for setup that every notebook and script shares, such as a plotting style or pandas display options.
+New projects have a `scaffold.py` file in the root. `scaffold()` runs it after the other steps. Use it for setup that every notebook and script shares, such as pandas display options.
 
 ```python
 # scaffold.py
-import matplotlib.pyplot as plt
 import pandas as pd
 
-plt.style.use("seaborn-v0_8-whitegrid")
 pd.set_option("display.max_columns", 50)
 ```
 

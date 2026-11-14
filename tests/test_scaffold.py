@@ -278,3 +278,33 @@ def test_scaffold_creates_missing_private_folders(project: Path) -> None:
     assert not (project / "outputs/public/tables").exists()
     assert not (project / "notebooks").exists()
     assert not (project.parent / "outside").exists()
+
+
+def test_matplotlib_style_from_scaffold_settings(project: Path) -> None:
+    style = pytest.importorskip("matplotlib.style")
+    import matplotlib
+
+    style.use("default")
+    (project / "settings.yml").write_text(
+        "default:\n  scaffold: {set_theme_on_scaffold: true, matplotlib_style: ggplot}\n",
+        encoding="utf-8",
+    )
+    try:
+        fw.scaffold()
+        assert matplotlib.rcParams["axes.facecolor"] == "#E5E5E5"
+        # Off by default, and an unknown style warns and changes nothing
+        style.use("default")
+        (project / "settings.yml").write_text(
+            "default:\n  scaffold: {matplotlib_style: ggplot}\n", encoding="utf-8"
+        )
+        fw.scaffold()
+        assert matplotlib.rcParams["axes.facecolor"] == "white"
+        (project / "settings.yml").write_text(
+            "default:\n  scaffold: {set_theme_on_scaffold: true, matplotlib_style: nope}\n",
+            encoding="utf-8",
+        )
+        with pytest.warns(fw.errors.FrameworkWarning, match="not found"):
+            fw.scaffold()
+        assert matplotlib.rcParams["axes.facecolor"] == "white"
+    finally:
+        style.use("default")

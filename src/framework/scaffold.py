@@ -120,6 +120,37 @@ def _set_seed(config: dict[str, Any]) -> int | None:
     return value
 
 
+def _set_theme(config: dict[str, Any]) -> str | None:
+    """Apply the matplotlib style when ``set_theme_on_scaffold`` is on, as R sets
+    its ggplot2 theme: ``matplotlib_style`` from ``scaffold:``, then ``options:``,
+    then the top level. A missing style or matplotlib warns and changes nothing.
+    """
+    if _first(config, "set_theme_on_scaffold") is not True:
+        return None
+    style = str(_first(config, "matplotlib_style") or "").strip()
+    if not style:
+        return None
+    try:
+        import matplotlib.style
+    except ImportError:
+        warnings.warn(
+            "set_theme_on_scaffold is on, but matplotlib is not installed.",
+            FrameworkWarning,
+            stacklevel=3,
+        )
+        return None
+    if style != "default" and style not in matplotlib.style.available:
+        warnings.warn(
+            f"matplotlib style '{style}' not found, so scaffold() left the style alone.",
+            FrameworkWarning,
+            stacklevel=3,
+        )
+        return None
+    matplotlib.style.use(style)
+    inform(f"matplotlib style set to {style}.")
+    return style
+
+
 def _top_level_modules(folder: Path) -> list[tuple[str, str]]:
     """The modules a folder provides, as (module name, entry name) pairs."""
     found = []
@@ -196,6 +227,7 @@ def scaffold(settings_file: str | Path | None = None) -> Path:
     - creates the settings' private folders that are missing (a fresh checkout has
       none, since git ignores them),
     - sets the random seed when ``seed_on_scaffold`` is on (or ``FW_SEED`` is set),
+    - applies ``matplotlib_style`` when ``set_theme_on_scaffold`` is on,
     - puts the project's ``functions`` folder on the import path, and
     - runs ``scaffold.py`` from the project root, if there is one.
 
@@ -232,6 +264,7 @@ def scaffold(settings_file: str | Path | None = None) -> Path:
     # code that saves into them works
     _create_private_folders(root, config)
     _set_seed(config)
+    _set_theme(config)
     _add_function_folders(config, root)
 
     script = root / "scaffold.py"

@@ -138,6 +138,12 @@ def _sections(spec: Mapping[str, Any]) -> dict[str, Any]:
             "seed_on_scaffold": scaffold.get("seed_on_scaffold", False),
             "seed": scaffold.get("seed", ""),
             "source_all_functions": scaffold.get("source_all_functions", True),
+            # The plot style scaffold() applies, as R's ggplot2 theme
+            **{
+                k: scaffold[k]
+                for k in ("set_theme_on_scaffold", "matplotlib_style")
+                if scaffold.get(k) is not None
+            },
             **({"workflow": scaffold["workflow"]} if scaffold.get("workflow") else {}),
             "notebook_format": scaffold.get("notebook_format")
             or ("quarto" if spec_tool_on(spec, "quarto") else "jupyter"),
@@ -593,7 +599,14 @@ def _defaults_layer(settings: Mapping[str, Any], type: str) -> dict[str, Any]:
         layer["author"] = author_normalize(settings["author"])
     scaffold = defaults.get("scaffold")
     if isinstance(scaffold, dict):
-        keys = ("seed_on_scaffold", "seed", "source_all_functions", "ide")
+        keys = (
+            "seed_on_scaffold",
+            "seed",
+            "set_theme_on_scaffold",
+            "matplotlib_style",
+            "source_all_functions",
+            "ide",
+        )
         layer["scaffold"] = {k: scaffold[k] for k in keys if k in scaffold}
         if "seed" in layer["scaffold"]:
             layer["scaffold"]["seed"] = str(layer["scaffold"]["seed"])
