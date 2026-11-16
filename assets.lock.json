@@ -1,8 +1,8 @@
 {
-  "commit": "72b4791159375ef26b8b6b69376d5d3ce2077e49",
+  "commit": "d6f87d6fbb4feb76e2551e12d49843bb62505899",
   "files": {
     "docs/docs-site.md": {
-      "sha256": "2b86e376b11401881ef77a595d20af203ffc50ed95d99a55e895157e8f8dca25",
+      "sha256": "c3a40ae3f22e6a7b9c9237d778a17de707af166d8c86a04877a89e9a2ab4b14f",
       "source": "inst/schema/docs-site.md"
     },
     "src/framework/_assets/adopt/rules.json": {
@@ -382,6 +382,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "v2.0.8",
+  "ref": "v2.0.9",
   "source": "framework (R package)"
 }
