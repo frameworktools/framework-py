@@ -90,10 +90,10 @@ If a credential is ever committed to git, remove the file, commit, and rotate th
 | `FW_SEED` | Enables seeding in `scaffold()` when `seed_on_scaffold` is unset. |
 | `FW_CACHE_DIR` | Cache directory override. See [Caching](guide:caching). |
 | `FW_LEDGER` | `live`/`on`/`true` enables live Cloud ledger pushes; `off` disables them. |
-| `FW_CLOUD_URL` | Framework Cloud server URL. |
+| `FW_CLOUD_URL` | Framework Cloud server URL. In a project's `.env`, the server that issued `FW_PROJECT_TOKEN`. |
 | `FW_CLOUD_TOKEN` | Personal Cloud token override (checked before keyring). |
 | `FW_TOKEN_FILE` | File path storing the personal Cloud token. |
-| `FW_PROJECT_TOKEN` | Project Cloud token (typically stored in `.env`). |
+| `FW_PROJECT_TOKEN` | Project Cloud token (typically stored in `.env`). Project calls require `FW_CLOUD_URL` with it. |
 | `S3_*`, `AWS_*` | S3-compatible bucket credentials and endpoints. See [Publishing](guide:publishing). |
 
 ## Scratch captures

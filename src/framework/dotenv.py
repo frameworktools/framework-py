@@ -112,19 +112,60 @@ def value(path: str | Path, key: str) -> str | None:
     return found or None
 
 
-def add_missing(path: str | Path, values: Mapping[str, str]) -> list[str]:
-    """Append ``KEY=value`` lines for keys the file does not already define.
+def _defines(line: str, key: str) -> bool:
+    if line.startswith("#") or not line.strip():
+        return False
+    match = _LINE.match(line)
+    return match is not None and match["key"] == key
 
-    Returns the keys that were added. Existing lines are never changed.
+
+def _placeholder(line: str, key: str) -> bool:
+    """A commented ``# KEY=`` line, as in a starter ``.env``."""
+    return re.match(rf"^#\s*(?:export\s+)?{re.escape(key)}=", line) is not None
+
+
+def set_values(path: str | Path, values: Mapping[str, str], header: str | None = None) -> list[str]:
+    """Set ``KEY=value`` lines, keeping every other line as it is.
+
+    A key the file defines has its line replaced in place. Otherwise a commented
+    ``# KEY=`` placeholder is filled, or the line goes after the key set just
+    before it. Keys with no place go at the end, under ``header`` when given.
+    Returns the keys whose value changed.
     """
     file = Path(path)
     text = file.read_text(encoding="utf-8") if file.exists() else ""
     present = parse(text)
-    added = [key for key in values if key not in present]
-    if not added:
+    lines = text.splitlines()
+    changed: list[str] = []
+    appended: list[str] = []
+    previous: int | None = None
+    for key, new in values.items():
+        line = f"{key}={new}"
+        if key in present and present[key] == new:
+            previous = max(i for i, old in enumerate(lines) if _defines(old, key))
+            continue
+        changed.append(key)
+        defining = [i for i, old in enumerate(lines) if _defines(old, key)]
+        filled = next((i for i, old in enumerate(lines) if _placeholder(old, key)), None)
+        if defining:
+            for i in defining:
+                lines[i] = line
+            previous = defining[-1]
+        elif filled is not None:
+            lines[filled] = line
+            previous = filled
+        elif previous is not None:
+            lines.insert(previous + 1, line)
+            previous += 1
+        else:
+            appended.append(line)
+    if not changed:
         return []
-    if text and not text.endswith("\n"):
-        text += "\n"
-    text += "".join(f"{key}={values[key]}\n" for key in added)
-    file.write_text(text, encoding="utf-8")
-    return added
+    if appended:
+        if lines and lines[-1].strip():
+            lines.append("")
+        if header:
+            lines.append(f"# {header}")
+        lines += appended
+    file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return changed

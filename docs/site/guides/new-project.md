@@ -118,7 +118,7 @@ fw.new_project(key="fw_...")
 fw.new(key="fw_...", url="https://cloud.example.edu")
 ```
 
-`url` targets a self-hosted instance without signing in first; otherwise Framework checks `FW_CLOUD_URL`, your saved login server, and `https://framework.pub`. `new_project()` downloads the project spec, scaffolds the directory, and writes `FW_PROJECT_TOKEN` and `FW_CLOUD_URL` to `.env` for publishing and ledger verification. Scripts must pass `location` explicitly. See [Framework Cloud](guide:cloud).
+`url` targets a self-hosted instance without signing in first; otherwise Framework checks `FW_CLOUD_URL`, then your saved login server. `new_project()` downloads the project spec, scaffolds the directory, and writes `FW_PROJECT_TOKEN` and `FW_CLOUD_URL` to `.env` for publishing and ledger verification. `FW_CLOUD_URL` is the server that issued the token. Scripts must pass `location` explicitly. See [Framework Cloud](guide:cloud).
 
 ### Blueprints and structures
 
@@ -168,7 +168,7 @@ Post-creation steps:
 
 1. Initializes git (when installed and enabled), creates the initial commit when `user.name` and `user.email` are set, and installs `.git/hooks/pre-commit` when any hook check is enabled.
 2. Registers the project in global `settings.yml` (unless inside the system temp directory).
-3. Registers non-`bare` projects on Framework Cloud when signed in and writes `FW_PROJECT_TOKEN` to `.env`.
+3. Registers non-`bare` projects on Framework Cloud when signed in and writes `FW_PROJECT_TOKEN` and `FW_CLOUD_URL` to `.env`.
 
 Install project packages before starting work:
 

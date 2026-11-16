@@ -258,11 +258,13 @@ def pull_skills(
 
     Raises:
         ProjectNotFoundError: When the folder is not a Framework project.
+        ProjectServerMissingError: When ``.env`` has ``FW_PROJECT_TOKEN`` but no
+            ``FW_CLOUD_URL``.
     """
     from framework._agents_md import refresh_skills
     from framework._log import inform, show_messages
     from framework.ai import _installed_spec
-    from framework.cloud import CloudError
+    from framework.cloud import CloudError, ProjectServerMissingError
     from framework.skill_sync import _lock
     from framework.spec.merge import SpecError
 
@@ -274,6 +276,8 @@ def pull_skills(
     try:
         wanted = _cloud_skills(root, notes)
         source = "cloud"
+    except ProjectServerMissingError:
+        raise
     except (CloudError, SpecError) as error:
         reason = str(error).rstrip(".") or type(error).__name__
         inform(

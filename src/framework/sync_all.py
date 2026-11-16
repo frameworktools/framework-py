@@ -313,11 +313,13 @@ def _partial(function: str, done: str, outcome: dict[str, Any]) -> str:
 
 def _setup(root: Path) -> tuple[str, str, dict[str, Any]]:
     """The project's server, token, and package list; errors change nothing."""
-    from framework.cloud import CloudError, _request
+    from framework.cloud import CloudError, ProjectServerMissingError, _request
 
     try:
         server, token = _connection(root)
         setup = _request("/api/v1/projects/setup", token, server).json()
+    except ProjectServerMissingError:
+        raise
     except CloudError as error:
         raise _unreachable(error) from error
     return server, token, setup if isinstance(setup, dict) else {}

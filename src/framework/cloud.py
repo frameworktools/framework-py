@@ -13,8 +13,12 @@ The server is resolved per call, as in R:
 - Project calls (publishing, the ledger): the ``url`` argument, then
   ``FW_CLOUD_URL`` in the project's ``.env``, then the environment variable,
   then the saved login. A project token is only valid on the server that
-  issued it, so when saved logins name different servers these calls stop
-  instead of guessing.
+  issued it. A project whose ``.env`` has ``FW_PROJECT_TOKEN`` but no
+  ``FW_CLOUD_URL`` never uses the saved login: these calls raise
+  ``ProjectServerMissingError``. When saved logins name different servers,
+  they stop instead of guessing.
+- Every call that writes a new ``FW_PROJECT_TOKEN`` also writes
+  ``FW_CLOUD_URL``, the server that issued it.
 - With nothing set, calls raise ``NoServerError``. Only ``cloud_login()``
   falls back to https://framework.pub, which its notice names before
   connecting. Using the public cloud is always the user's choice.
@@ -79,6 +83,22 @@ class NoServerError(CloudError):
 
 class AmbiguousServerError(CloudError):
     """A project call found logins to several servers and nothing naming the project's."""
+
+
+class ProjectServerMissingError(CloudError):
+    """A project's ``.env`` has ``FW_PROJECT_TOKEN`` but no ``FW_CLOUD_URL``.
+
+    The token is only valid on the server that issued it, so project calls stop
+    instead of using the saved login. Not a ``NoServerError``, so code that
+    treats "no server" as "not signed in" still surfaces it.
+    """
+
+
+PROJECT_SERVER_MISSING = (
+    "This project's .env has FW_PROJECT_TOKEN but no FW_CLOUD_URL, so it does not say which "
+    "Framework Cloud server issued the token. Add FW_CLOUD_URL=<server> to .env, or pass "
+    'url="<server>".'
+)
 
 
 def _version() -> str:
@@ -178,7 +198,10 @@ def cloud_server(
 
     ``scope`` is ``"user"``, ``"project"``, or ``"login"``. Raises
     ``NoServerError`` when nothing names a server, except for ``"login"``,
-    which falls back to https://framework.pub.
+    which falls back to https://framework.pub. A project whose ``.env`` has
+    ``FW_PROJECT_TOKEN`` but no ``FW_CLOUD_URL`` never uses the saved login:
+    without the ``url`` argument or the ``FW_CLOUD_URL`` environment variable,
+    project calls raise ``ProjectServerMissingError``.
     """
     candidates: list[tuple[str | None, str]] = [(url, "the url argument")]
     if scope == "project":
@@ -187,6 +210,8 @@ def cloud_server(
     for value, source in candidates:
         if value:
             return Server(normalize_url(str(value)), source)
+    if scope == "project" and _project_env("FW_PROJECT_TOKEN", project_dir):
+        raise ProjectServerMissingError(PROJECT_SERVER_MISSING)
 
     saved = _saved_urls()
     if len(saved) == 1 or (saved and scope != "project"):
@@ -729,6 +754,9 @@ def cloud_status(url: str | None = None) -> bool:
     if project_token() is not None:
         try:
             project: Server | None = cloud_server(scope="project")
+        except ProjectServerMissingError as error:
+            inform(str(error))
+            project = None
         except CloudError:
             project = None
         if project is not None and project.url != server.url:
@@ -879,15 +907,20 @@ def _ledger_live() -> bool:
 def ledger_push_quietly(name: str, digest: str, file_path: Path | None = None) -> Any:
     """Send one digest to the project's ledger after ``data_save()``, in live mode only.
 
-    No project token or an unreachable server means "local only", never a
-    failed save. framework.db stays the record either way.
+    No project token, a project that doesn't name its server, or an unreachable
+    server means "local only", never a failed save. framework.db stays the record
+    either way.
     """
     if not _ledger_live():
         return None
     token = project_token()
     if token is None:
         return None
-    url = cloud_server(scope="project").url
+    try:
+        url = cloud_server(scope="project").url
+    except ProjectServerMissingError as error:
+        inform(f"Ledger push skipped: {error}")
+        return None
     body = {
         "name": name,
         "algo": "sha256",
@@ -1279,28 +1312,27 @@ def cloud_publish(
 def write_project_token(project_dir: Path, token: str, url: str) -> list[str]:
     """Add the project's key and server to its ``.env`` (never to the settings).
 
-    Git is made to ignore ``.env`` first, so the token can't be committed.
+    ``FW_PROJECT_TOKEN`` and ``FW_CLOUD_URL`` are written together, so the project
+    always names the server that issued its token. An empty or different
+    ``FW_CLOUD_URL`` is replaced. A project that already has a token keeps it, and
+    its ``.env`` is left as it is. Git is made to ignore ``.env`` first, so the
+    token can't be committed. Returns the keys written.
     """
     from framework.create import keep_env_out_of_git
 
     env = project_dir / ".env"
-    present = dotenv.read(env)
-    missing = {
-        k: v for k, v in (("FW_PROJECT_TOKEN", token), ("FW_CLOUD_URL", url)) if k not in present
-    }
-    if not missing:
+    if dotenv.value(env, "FW_PROJECT_TOKEN"):
         return []
+    server = normalize_url(url)
     keep_env_out_of_git(project_dir)
-    text = env.read_text(encoding="utf-8") if env.exists() else ""
-    if text and not text.endswith("\n"):
-        text += "\n"
-    if text:
-        text += "\n"
-    text += "# Framework Cloud project key and server (created by framework.new)\n"
-    text += "".join(f"{key}={value}\n" for key, value in missing.items())
-    env.write_text(text, encoding="utf-8")
-    inform(f"  Added: {' and '.join(missing)} to .env")
-    return list(missing)
+    written = dotenv.set_values(
+        env,
+        {"FW_PROJECT_TOKEN": token, "FW_CLOUD_URL": server},
+        header="Framework Cloud project key and server (created by framework.new)",
+    )
+    if written:
+        inform(f"  Wrote {' and '.join(written)} to .env")
+    return written
 
 
 def registration_body(
@@ -1508,7 +1540,8 @@ def cloud_register(
        tools, and none of your defaults. An adopted project is marked as
        adopted.
     2. Writes the project token and server to ``.env`` (``FW_PROJECT_TOKEN``,
-       ``FW_CLOUD_URL``), making sure git ignores ``.env`` first.
+       ``FW_CLOUD_URL``), making sure git ignores ``.env`` first. An empty or
+       different ``FW_CLOUD_URL`` is replaced with the server that issued the token.
 
     A project that already has a token in ``.env`` is left as it is. When you
     already have a project with the slug, an interactive session offers to

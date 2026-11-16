@@ -88,13 +88,38 @@ def test_value_and_missing_file(tmp_path: Path) -> None:
     assert dotenv.value(env, "MISSING") is None
 
 
-def test_add_missing_keeps_existing_lines(tmp_path: Path) -> None:
+def test_set_values_replaces_lines_in_place(tmp_path: Path) -> None:
     env = tmp_path / ".env"
-    env.write_text("FW_PROJECT_TOKEN=keep", encoding="utf-8")
-    added = dotenv.add_missing(
-        env, {"FW_PROJECT_TOKEN": "new", "FW_CLOUD_URL": "https://framework.pub"}
+    env.write_text("A=1\nFW_PROJECT_TOKEN=\nB=2\nFW_CLOUD_URL=https://old.example.org\n")
+    written = dotenv.set_values(
+        env, {"FW_PROJECT_TOKEN": "new", "FW_CLOUD_URL": "https://cloud.example.edu"}
     )
-    assert added == ["FW_CLOUD_URL"]
+    assert written == ["FW_PROJECT_TOKEN", "FW_CLOUD_URL"]
     assert env.read_text(encoding="utf-8") == (
-        "FW_PROJECT_TOKEN=keep\nFW_CLOUD_URL=https://framework.pub\n"
+        "A=1\nFW_PROJECT_TOKEN=new\nB=2\nFW_CLOUD_URL=https://cloud.example.edu\n"
     )
+    assert dotenv.set_values(env, {"FW_CLOUD_URL": "https://cloud.example.edu"}) == []
+
+
+def test_set_values_fills_placeholders_or_goes_next_to_the_last_key(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("# FW_CLOUD_URL=\nFW_PROJECT_TOKEN=\nB=2\n", encoding="utf-8")
+    dotenv.set_values(env, {"FW_PROJECT_TOKEN": "t", "FW_CLOUD_URL": "https://x.org"})
+    assert (
+        env.read_text(encoding="utf-8") == "FW_CLOUD_URL=https://x.org\nFW_PROJECT_TOKEN=t\nB=2\n"
+    )
+    env.write_text("FW_PROJECT_TOKEN=\nB=2", encoding="utf-8")
+    dotenv.set_values(env, {"FW_PROJECT_TOKEN": "t", "FW_CLOUD_URL": "https://x.org"})
+    assert (
+        env.read_text(encoding="utf-8") == "FW_PROJECT_TOKEN=t\nFW_CLOUD_URL=https://x.org\nB=2\n"
+    )
+
+
+def test_set_values_appends_new_keys_under_a_header(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("A=1", encoding="utf-8")
+    dotenv.set_values(env, {"K": "v", "L": "w"}, header="Added")
+    assert env.read_text(encoding="utf-8") == "A=1\n\n# Added\nK=v\nL=w\n"
+    missing = tmp_path / "new.env"
+    dotenv.set_values(missing, {"K": "v"})
+    assert missing.read_text(encoding="utf-8") == "K=v\n"

@@ -89,6 +89,8 @@ Project-level calls (`publish()`, `ledger_push()`, `data_verify()`) check:
 3. Process `FW_CLOUD_URL`.
 4. Saved server in `cloud.yml`. When saved logins name different servers, the call raises `AmbiguousServerError` and asks for `FW_CLOUD_URL` in `.env`.
 
+A token is valid only on the server that issued it. A project whose `.env` has `FW_PROJECT_TOKEN` but no `FW_CLOUD_URL` skips step 4: without a `url` argument or a process `FW_CLOUD_URL`, project-level calls raise `ProjectServerMissingError`. Add `FW_CLOUD_URL=<server>` to `.env` to fix it.
+
 With none set, calls raise `NoServerError`. Framework never falls back to `https://framework.pub`. `cloud_login()` without `url`, `FW_CLOUD_URL`, or a saved server names `https://framework.pub` in its notice before connecting. Non-loopback URLs require `https://`.
 
 ## Cloud project tokens
@@ -100,7 +102,7 @@ fw.new_project(key="fw_...")
 fw.new(key="fw_...", url="https://cloud.example.edu")
 ```
 
-`new_project()` writes `FW_PROJECT_TOKEN` and `FW_CLOUD_URL` into the project's `.env`. When signed in, `new_project()` also registers newly created non-`bare` projects automatically.
+`new_project()` writes `FW_PROJECT_TOKEN` and `FW_CLOUD_URL` into the project's `.env`. Every call that writes a new project token also writes the server that issued it, replacing an empty or different `FW_CLOUD_URL`. A project that already has a token keeps its `.env` unchanged. When signed in, `new_project()` also registers newly created non-`bare` projects automatically.
 
 ## Account settings sync
 

@@ -144,7 +144,7 @@ def test_server_resolution(project: Path) -> None:
     _yaml.write(fw.config_dir() / "cloud.yml", {"server": "https://saved.example.org"})
     assert cloud.cloud_server().source == "your cloud_login() default"
     assert cloud.cloud_server(scope="login").url == "https://saved.example.org"
-    # A project whose .env has no FW_CLOUD_URL uses the saved login
+    # A project with no FW_CLOUD_URL and no token uses the saved login
     assert cloud.cloud_server(scope="project").url == "https://saved.example.org"
 
     os.environ["FW_CLOUD_URL"] = "https://env.example.org"
@@ -163,7 +163,8 @@ def test_project_calls_stop_when_logins_disagree(project: Path) -> None:
     _yaml.write(r_file, {"server": "https://framework.pub"})
     now = time.time()
     os.utime(r_file, (now - 3600, now - 3600))
-    (project / ".env").write_text("FW_PROJECT_TOKEN=fwp_project0123\n", encoding="utf-8")
+    # A project without a token: the logins disagree
+    (project / ".env").write_text("OTHER=1\n", encoding="utf-8")
 
     both = r"framework\.example\.edu and framework\.pub"
     with pytest.raises(cloud.AmbiguousServerError, match=both):
