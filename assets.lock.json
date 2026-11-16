@@ -1,5 +1,5 @@
 {
-  "commit": "d6f87d6fbb4feb76e2551e12d49843bb62505899",
+  "commit": "0f12d4155e03966a019b7edb24ab4dd49ed6573c",
   "files": {
     "docs/docs-site.md": {
       "sha256": "c3a40ae3f22e6a7b9c9237d778a17de707af166d8c86a04877a89e9a2ab4b14f",
@@ -382,6 +382,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "v2.0.9",
+  "ref": "v2.0.10",
   "source": "framework (R package)"
 }
