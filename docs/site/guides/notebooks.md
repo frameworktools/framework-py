@@ -1,14 +1,14 @@
 ---
 id: notebooks
 title: Notebooks and scripts
-description: Notebooks, scripts, and presentations from stubs and templates
+description: Quarto notebooks, Jupyter notebooks, Python scripts, presentations, stubs, and placeholders
 section: features
 position: 5
 ---
 
 ## Overview
 
-Framework creates new notebooks and scripts from stubs. A stub is a template file that already contains the front matter, the `scaffold()` call, and a starting outline. Each new file is named from the title you give and placed in the project's folder for its kind.
+Framework scaffolds notebooks, scripts, and presentations from stub templates preloaded with front matter, `fw.scaffold()`, and section headings:
 
 ```python
 import framework as fw
@@ -16,11 +16,11 @@ import framework as fw
 fw.make_notebook("Data Cleaning")
 ```
 
-This call creates `notebooks/data-cleaning.qmd`.
+This creates `notebooks/data-cleaning.qmd` (or `.ipynb` when the project's `notebook_format` is `jupyter`).
 
 ## Notebooks
 
-[make_notebook()](ref:make_notebook) creates a Quarto notebook with Python code chunks by default.
+[make_notebook()](ref:make_notebook) creates a notebook in `directories.notebooks`:
 
 ```python
 fw.make_notebook("exploration")
@@ -28,23 +28,21 @@ fw.make_notebook("eda", subdir="exploration")
 fw.make_notebook("explore", type="jupyter")
 ```
 
-The arguments control the file.
+Key arguments:
 
-- `type` is `"quarto"`, `"jupyter"`, or `"script"`. Without it, `notebook_format` in the `scaffold` settings decides, and the default is `quarto`. An extension in the name, such as `"explore.ipynb"`, also sets the type.
-- `dir` names the folder. The default is `directories.notebooks`, resolved from the project root. An explicit `dir` is relative to the project root too, unless it is absolute.
-- `subdir` adds a subfolder of that folder.
-- `stub` names the stub to start from. The default is `"default"`.
-- `overwrite=True` replaces an existing file. Without it, an existing file is an error.
+- `type`: `"quarto"`, `"jupyter"`, or `"script"`. Defaults to `scaffold.notebook_format` (`"quarto"` when unset), or follows an explicit file extension such as `"explore.ipynb"`.
+- `dir`: target directory relative to the project root (defaults to `directories.notebooks`).
+- `subdir`: optional subdirectory under `dir`.
+- `stub`: template name (defaults to `"default"`).
+- `overwrite`: set `True` to replace an existing file; defaults to `False`.
 
-The title is turned into a file name with lowercase letters, digits, and hyphens. The front matter gets a readable title: a name with spaces or capitals stays as typed, and a file-style name has its hyphens and underscores turned into spaces and its first letter capitalized, in sentence case, so `"setup-and-settings"` gets the title "Setup and settings". Capitals are never lowered, so `"BP for LDL"` keeps its acronyms. A lowercase file name can't say which words are acronyms, so pass the title yourself:
+Framework converts the filename to lowercase kebab-case. For document front matter, names containing spaces or uppercase letters stay as typed (preserving acronyms like `"BP for LDL"`), while slug-style inputs such as `"setup-and-settings"` convert to sentence case (`"Setup and settings"`). Pass `title=` to set exact front-matter casing alongside a slug filename:
 
 ```python
 fw.make_notebook("bp-for-ldl-and-hba1c", title="BP for LDL and HbA1c")
 ```
 
-`title` is used exactly as given. [make_qmd()](ref:make_qmd), [make_presentation()](ref:make_presentation), [make_revealjs()](ref:make_revealjs), and [make_script()](ref:make_script) take it too.
-
-[make_qmd()](ref:make_qmd) is `make_notebook()` with the type fixed to Quarto.
+[make_qmd()](ref:make_qmd) always creates a Quarto `.qmd` document regardless of `notebook_format`:
 
 ```python
 fw.make_qmd("summary", stub="minimal")
@@ -52,16 +50,14 @@ fw.make_qmd("summary", stub="minimal")
 
 ## Scripts
 
-[make_script()](ref:make_script) creates a Python script in `directories.scripts`.
+[make_script()](ref:make_script) creates a Python script in `directories.scripts` with a docstring, `fw.scaffold()`, and a `main()` entry point:
 
 ```python
 fw.make_script("process-data")
 ```
 
-The script stub has a docstring, the `scaffold()` call, and a `main()` function guarded by `if __name__ == "__main__":`.
-
 ```python
-"""process-data
+"""Process data
 
 Author: Ada Lovelace
 Date: 2026-10-31
@@ -83,27 +79,27 @@ if __name__ == "__main__":
 
 ## Presentations
 
-[make_presentation()](ref:make_presentation) creates a Quarto reveal.js presentation in the notebooks folder. [make_revealjs()](ref:make_revealjs) is the same function under another name.
+[make_presentation()](ref:make_presentation) (and its alias [make_revealjs()](ref:make_revealjs)) creates a Quarto RevealJS presentation in `directories.notebooks`:
 
 ```python
 fw.make_presentation("Quarterly Review")
 ```
 
-Presentation projects start with their own `presentation.qmd`. The [Quarto](guide:quarto) guide covers rendering.
+`presentation` projects include a root `presentation.qmd` at creation time. See [Quarto](guide:quarto) for rendering options.
 
-## Stubs
+## Built-in stubs
 
-framework-py ships five stubs.
+`framework-py` ships five built-in stubs:
 
-| Name | Type | Contents |
-|------|------|----------|
-| `default` | Quarto | HTML format with a table of contents, a hidden setup chunk, and Introduction, Analysis, and Results sections |
-| `minimal` | Quarto | Front matter and the setup chunk only |
-| `revealjs` | Quarto | A reveal.js presentation with a hidden setup chunk |
-| `default` | Jupyter | A title cell, a setup cell, and an Analysis section |
-| `default` | script | A docstring, the setup lines, and a `main()` function |
+| Name | Format | Contents |
+|------|--------|----------|
+| `default` | Quarto | HTML front matter with TOC, hidden setup chunk, and Introduction, Analysis, and Results sections |
+| `minimal` | Quarto | YAML front matter and hidden setup chunk |
+| `revealjs` | Quarto | RevealJS slide deck with hidden setup chunk |
+| `default` | Jupyter | Markdown title cell, `scaffold()` code cell, and Analysis section |
+| `default` | Script | Module docstring, `scaffold()` call, and `main()` guard |
 
-Every Quarto stub sets `jupyter: python3` and runs this setup chunk.
+Every Quarto stub sets `jupyter: python3` and includes the hidden setup chunk:
 
 ````markdown
 ```{python}
@@ -116,16 +112,16 @@ fw.scaffold()
 ```
 ````
 
-[stubs_list()](ref:stubs_list) returns the available stubs with their type and source.
+[stubs_list()](ref:stubs_list) inspects available stubs and their active source:
 
 ```python
 fw.stubs_list()
 fw.stubs_list("quarto")
 ```
 
-## Custom stubs
+## Project stubs
 
-A project can keep its own stubs in a `stubs/` folder in the root. Stub files are named `notebook-<name>.qmd`, `notebook-<name>.ipynb`, or `script-<name>.py`. [stubs_publish()](ref:stubs_publish) copies Framework's stubs into that folder so you can edit them.
+Place project-specific templates in `stubs/` at the project root using `notebook-<name>.qmd`, `notebook-<name>.ipynb`, or `script-<name>.py`. [stubs_publish()](ref:stubs_publish) copies built-in stubs into `stubs/` for customization:
 
 ```python
 fw.stubs_publish()
@@ -133,30 +129,26 @@ fw.stubs_publish("scripts")
 fw.stubs_publish(stubs=["default"])
 ```
 
-Existing files in `stubs/` are kept unless you pass `overwrite=True`. [stubs_path()](ref:stubs_path) returns the folder stubs are read from. It returns the project's `stubs/` folder when one exists.
+Existing files in `stubs/` remain untouched unless `overwrite=True` is passed. [stubs_path()](ref:stubs_path) returns the active stub directory. Any new file such as `stubs/notebook-model.qmd` becomes immediately usable via `fw.make_notebook("logistic", stub="model")`.
 
-A new stub name becomes available as soon as its file exists. A file named `stubs/notebook-model.qmd` is used by `fw.make_notebook("logistic", stub="model")`.
+Stub lookup precedence:
 
-Framework looks for a stub in three places, in this order.
+1. Project `stubs/` directory.
+2. Personal templates in the global configuration directory ([write_framework_template()](ref:write_framework_template); see [Setup](guide:setup)).
+3. Built-in `framework-py` stubs.
 
-1. The project's `stubs/` folder.
-2. Your personal templates in the config folder, saved with [write_framework_template()](ref:write_framework_template). The [Setup](guide:setup) guide describes them.
-3. The stubs that ship with framework-py.
-
-## Placeholders
-
-Stubs can use these placeholders, which are filled when the file is created.
+## Template placeholders
 
 | Placeholder | Value |
 |-------------|-------|
-| `{{ title }}` | The readable title ("Setup and settings" for `"setup-and-settings"`) |
-| `{{ filename }}` | The name you passed, without an extension |
-| `{{ date }}` | Today's date, as `YYYY-MM-DD` |
-| `{{ author }}` | The author's name, or `Your Name` when none is set |
-| `{{ email }}` | The author's email |
-| `{{ affiliation }}` | The author's affiliation |
+| `{{ title }}` | Resolved readable title |
+| `{{ filename }}` | Input stem without extension |
+| `{{ date }}` | Current date (`YYYY-MM-DD`) |
+| `{{ author }}` | Author name from project or global settings (`Your Name` when unset) |
+| `{{ email }}` | Author email |
+| `{{ affiliation }}` | Author affiliation |
 
-The author comes from the project's `author` settings, with your global `author` filling empty fields. In a Quarto stub, the line `author: "{{ author }}"` becomes a full Quarto author block when the author has an ORCID, a URL, or a list of affiliations.
+In Quarto stubs, `author: "{{ author }}"` expands automatically into a structured Quarto `author:` list when `orcid`, `url`, or `affiliations` metadata is configured:
 
 ```yaml
 author:

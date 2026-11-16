@@ -13,14 +13,14 @@
 
 - id: data
   title: Data
-  description: Data files and the data catalog
+  description: Data files and data catalog entries
   common: [data_read, data_save, data_add, data_list]
   names: [data_read, data_save, data_add, data_list, data_info, pull_data_registry,
           push_data_registry]
 
 - id: packages
   title: Packages
-  description: Package management with uv
+  description: Dependency management with uv and project sync
   common: [package_add, packages_status, pull_all]
   names: [package_add, package_set_add, package_sets_list, packages_list, packages_install,
           packages_restore, packages_snapshot, packages_update, packages_status, pull_all,
@@ -28,7 +28,7 @@
 
 - id: saving-work
   title: Saving work
-  description: Tables, figures, models, reports, notebooks, and the results registry
+  description: Tables, figures, models, reports, notebooks, and results registry
   common: [save_table, save_figure]
   names: [save_table, save_figure, save_model, load_model, save_report, save_notebook, result_list]
 
@@ -42,7 +42,7 @@
 
 - id: project-management
   title: Project management
-  description: Project creation, adoption, and the project registry
+  description: Project creation, adoption, upgrades, and registry management
   common: [new_project, project_create]
   names: [new_project, new, project_create, project_create_from_layers, project_add_directory, project_root, project_path, path,
           project_list, project_register, project_unregister, tools_available, adopt,
@@ -50,46 +50,46 @@
 
 - id: publishing
   title: Publishing
-  description: Output publishing and storage buckets
+  description: Artifact publishing and storage buckets
   common: [publish, publish_notebook]
   names: [publish, publish_notebook, publish_data, publish_dir, publish_list, storage_test]
 
 - id: cloud
   title: Cloud
-  description: Framework Cloud login, settings sync, and the integrity ledger
+  description: Framework Cloud authentication, settings sync, and integrity ledger
   common: [cloud_login, cloud_status]
   names: [cloud_login, cloud_logout, cloud_status, cloud_settings, cloud_sync, ledger_push,
           ledger_list, data_verify, skills_sync]
 
 - id: git
   title: Git
-  description: Git hooks and the security audit
+  description: Git hooks and security audits
   common: [git_security_audit, git_hooks_install]
   names: [git_security_audit, git_hooks_install, git_hooks_uninstall, git_hooks_enable,
           git_hooks_disable, git_hooks_list]
 
 - id: caching
   title: Caching
-  description: Cached values and their expiry
+  description: Value caching and expiration controls
   common: [cache_remember, cache_get]
   names: [cache, cache_remember, cache_get, cache_list, cache_forget, cache_flush]
 
 - id: database
   title: Database
-  description: Database connections and queries
+  description: Database connections, queries, and transactions
   common: [db_query, db_execute]
   names: [db_query, db_execute, db_connect, db_transaction, db_execute_file, db_copy_from, db_list, connections_list,
           db_drivers_status]
 
 - id: ai
   title: AI
-  description: AI assistant skills
+  description: AI assistant skill installation and sync
   common: [pull_skills, push_skills]
   names: [pull_skills, push_skills, ai_skills_update]
 
 - id: types
   title: Errors and types
-  description: Exceptions, warnings, and the result types functions return
+  description: Exceptions, warnings, and return types
   names: [FrameworkError, SettingsError, SpecError, DataNotFoundError, ProjectNotFoundError,
           UnsupportedFormatError, IntegrityError, CloudError, FrameworkWarning, CacheWarning,
           DataChangedWarning, AuditResult, BootstrapResult, UpgradeResult, CapturedOutput, Connection, DataInfo,

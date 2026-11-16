@@ -1,18 +1,18 @@
 ---
 id: environment
 title: Environment
-description: The .env file, secret handling, Framework's environment variables, and scratch helpers
+description: .env files, secret validation, Framework environment variables, scratch captures, and output capture
 section: features
 position: 14
 ---
 
 ## Overview
 
-Framework keeps credentials and machine-specific values in a `.env` file that git ignores, and keeps them out of the settings files that git tracks. This guide covers the `.env` file, the environment variables Framework reads, and the helpers for quick, throwaway output.
+Framework stores credentials and machine-specific configuration in a gitignored `.env` file while keeping shareable connection and project definitions in `settings.yml`.
 
-## The .env file
+## .env files
 
-Every new project except a bare one has a `.env` file in its root. It starts with empty placeholders for a PostgreSQL connection and S3 storage.
+Every non-`bare` project includes a root `.env` file pre-populated with PostgreSQL and S3 placeholders:
 
 ```sh
 POSTGRES_HOST=
@@ -29,34 +29,23 @@ S3_ENDPOINT=
 S3_SESSION_TOKEN=
 ```
 
-Fill in the values the project uses and add any others it needs.
+`framework-py` and the R package parse `.env` identically:
 
-Framework reads `.env` with the same rules in Python and R.
+- Existing process environment variables take precedence over `.env`.
+- Empty assignments (`S3_ACCESS_KEY=`) are skipped rather than overwriting variables with `""`.
+- [settings_read()](ref:settings_read) applies `.env` values only while evaluating `env()` expressions without mutating `os.environ`.
+- [scaffold()](ref:scaffold) loads `.env` into `os.environ` for the active session, clearing values loaded by any previously scaffolded project first.
+- Blank lines and `#` comment lines are skipped; inline `#` characters remain part of the value; optional `export ` prefixes and matching outer single or double quotes are stripped without unescaping inner text.
 
-- A variable already set in your shell wins over the file.
-- An empty value, such as `S3_ACCESS_KEY=`, is skipped. It never blanks a variable.
-- [settings_read()](ref:settings_read) uses the values only while it resolves `env()` expressions. It leaves `os.environ` as it found it, so one project's values never carry over into the next.
-- [scaffold()](ref:scaffold) loads the values into `os.environ` for the session. Scaffolding another project first removes the values the last one loaded.
-- Storage credentials, the project token, and the cloud server are read from the file when the environment does not set them.
+Set `dotenv_location` in `settings.yml` to load `.env` from an alternate file or directory.
 
-The `dotenv_location` key in the settings points at a different file, or at a folder that holds one.
+### Git exclusion and .env.example
 
-The file follows the rules of R's dotenv package.
+Every project `.gitignore` excludes `.env`, [new_project()](ref:new_project) aborts if git would track `.env`, and [git_security_audit()](ref:git_security_audit) fails if `.env` is tracked. Commit a `.env.example` file with empty keys to document required variables; [bootstrap()](ref:bootstrap) copies `.env.example` to `.env` on clone and lists unset keys referenced by `env()` in `settings.yml`.
 
-- Blank lines and lines that start with `#` are skipped. A `#` later in a line is part of the value.
-- Every other line is `KEY=VALUE`, optionally preceded by `export`.
-- A value wrapped in matching single or double quotes loses the quotes. Nothing inside the quotes is unescaped.
-- A line that does not match this form is an error.
+## Referencing variables in settings
 
-### Keeping .env out of Git
-
-Every project type's `.gitignore` excludes `.env`. Project creation and [bootstrap()](ref:bootstrap) add a rule when the file is missing one, and creation stops with an error when git would still track `.env`. [git_security_audit()](ref:git_security_audit) fails when git tracks a `.env` file.
-
-To tell collaborators which variables a project needs, commit a `.env.example` with empty values. `bootstrap()` copies it to `.env` in a fresh clone and lists the variables that are still empty and that the settings read with `env()`. Unused placeholders, such as the S3 entries in a project without a bucket, are not listed.
-
-## Environment variables in settings
-
-Settings refer to environment variables with `env("VAR")`, or `env("VAR", "default")` for a fallback.
+Reference environment variables in `settings.yml` with `env("VAR")` or `env("VAR", "default")`:
 
 ```yaml
 connections:
@@ -70,15 +59,14 @@ connections:
       password: env("POSTGRES_PASSWORD")
 ```
 
-The settings file can be committed and shared, and each person's credentials stay in their own `.env`. The [settings.yml](guide:settings-yml) guide describes expressions.
+See [settings.yml](guide:settings-yml) for expression rules.
 
-## Secret values
+## Secret validation
 
-Framework refuses to store secret-looking values in settings. A variable counts as secret when its name contains `PASSWORD`, `SECRET`, `TOKEN`, `ACCESS_KEY`, `API_KEY`, `PRIVATE_KEY`, or `CREDENTIAL`.
+Framework rejects literal values for variables whose names contain `PASSWORD`, `SECRET`, `TOKEN`, `ACCESS_KEY`, `API_KEY`, `PRIVATE_KEY`, or `CREDENTIAL`:
 
-- [spec_check()](ref:spec_check) rejects a project spec whose `env` section gives such a variable a value, so blueprints carry only empty placeholders.
-- [configure_global()](ref:configure_global) refuses such a value in `defaults.env` of your global settings.
-- Framework Cloud project tokens are written to the project's `.env`, and personal tokens to the system keyring.
+- [spec_check()](ref:spec_check) rejects non-empty secret values in project specs and blueprints.
+- [configure_global()](ref:configure_global) rejects secret values in `defaults.env`:
 
 ```python
 import framework as fw
@@ -91,50 +79,43 @@ SettingsError: defaults.env: secrets must not be stored in settings (DB_PASSWORD
 Leave the values empty and put them in each project's .env file.
 ```
 
-When a secret has been committed by mistake, remove the file from git, commit, and rotate the secret, because it remains in the repository's history.
+If a credential is ever committed to git, remove the file, commit, and rotate the credential immediately because it remains in commit history.
 
 ## Framework environment variables
 
-| Variable | Effect |
-|----------|--------|
-| `FW_CONFIG_HOME` | The global config folder. See [Setup](guide:setup). |
-| `FW_CONFIG_ACTIVE` | The settings environment, such as `production`. `R_CONFIG_ACTIVE` and `R_CONFIG_NAME` are read after it. |
-| `FW_SEED` | Turns on seeding in `scaffold()` when the settings do not decide. |
-| `FW_CACHE_DIR` | The cache folder. See [Caching](guide:caching). |
-| `FW_LEDGER` | `live`, `on`, or `true` sends data hashes to the cloud ledger. `off` turns it off. |
-| `FW_CLOUD_URL` | The Framework Cloud server. |
-| `FW_CLOUD_TOKEN` | A personal cloud token, used before the keyring. |
-| `FW_TOKEN_FILE` | A file that holds the personal cloud token. |
-| `FW_PROJECT_TOKEN` | The project's cloud token, usually set in `.env`. |
-| `S3_*` and `AWS_*` | Storage bucket credentials and locations. See [Publishing](guide:publishing). |
+| Variable | Purpose |
+|----------|---------|
+| `FW_CONFIG_HOME` | Global configuration directory override. See [Setup](guide:setup). |
+| `FW_CONFIG_ACTIVE` | Active `settings.yml` environment (`R_CONFIG_ACTIVE` and `R_CONFIG_NAME` checked next). |
+| `FW_SEED` | Enables seeding in `scaffold()` when `seed_on_scaffold` is unset. |
+| `FW_CACHE_DIR` | Cache directory override. See [Caching](guide:caching). |
+| `FW_LEDGER` | `live`/`on`/`true` enables live Cloud ledger pushes; `off` disables them. |
+| `FW_CLOUD_URL` | Framework Cloud server URL. |
+| `FW_CLOUD_TOKEN` | Personal Cloud token override (checked before keyring). |
+| `FW_TOKEN_FILE` | File path storing the personal Cloud token. |
+| `FW_PROJECT_TOKEN` | Project Cloud token (typically stored in `.env`). |
+| `S3_*`, `AWS_*` | S3-compatible bucket credentials and endpoints. See [Publishing](guide:publishing). |
 
-## Scratch files
+## Scratch captures
 
-The scratch folder holds throwaway output that does not belong in the project's results. Every project type's `.gitignore` excludes `scratch/` folders. The folder is `directories.scratch`, which is `scratch/` in standard and privacy-sensitive projects.
-
-[scratch_capture()](ref:scratch_capture) writes an object to the scratch folder and returns it unchanged, so it can sit in the middle of a pipeline. DataFrames are written as TSV and other objects as text.
+`directories.scratch` (`scratch/`, gitignored across all project types) holds temporary inspection files. [scratch_capture()](ref:scratch_capture) writes an object to `scratch/` (TSV for DataFrames, plain text otherwise) and returns the original object unchanged for pipeline chaining:
 
 ```python
 survey = fw.scratch_capture(fw.data_read("inputs.raw.survey"), "survey_peek", n=100)
 fw.scratch_capture({"sites": ["north", "south"]}, "sites")
 ```
 
-The arguments choose the output.
+Options: `name` (filename; `.txt`, `.csv`, `.tsv`, or `.pkl` sets format; defaults to `capture_<timestamp>`), `to` (`"text"`, `"csv"`, `"tsv"`, or `"pickle"`), `n` (row limit for DataFrames), and `location` (alternate folder).
 
-- `name` is the file name. An extension (`.txt`, `.csv`, `.tsv`, or `.pkl`) sets the format. Without a name, the file is named `capture_<timestamp>`.
-- `to` is `"text"`, `"csv"`, `"tsv"`, or `"pickle"`.
-- `n` writes only the first `n` rows of a DataFrame.
-- `location` writes to another folder.
-
-[scratch_clean()](ref:scratch_clean) deletes the files in the scratch folder and leaves its subfolders alone.
+[scratch_clean()](ref:scratch_clean) deletes top-level files in `scratch/` while preserving subdirectories:
 
 ```python
 fw.scratch_clean()
 ```
 
-## Capturing printed output
+## Standard output capture
 
-[capture_output()](ref:capture_output) is a context manager that captures everything printed to standard output and standard error inside its block.
+[capture_output()](ref:capture_output) captures `stdout` and `stderr` printed inside a `with` block without swallowing exceptions:
 
 ```python
 with fw.capture_output() as captured:
@@ -143,5 +124,3 @@ with fw.capture_output() as captured:
 captured.output
 captured.lines
 ```
-
-An exception inside the block is not caught. The output printed before it remains available in `captured.output`.

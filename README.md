@@ -1,18 +1,12 @@
 # framework-py
 
-Framework for Python: structured data science projects with a data catalog,
-data integrity tracking, caching, saved outputs, and guardrails for AI coding
-assistants.
+Framework for Python provides structured data science projects with a data catalog, integrity tracking, caching, saved outputs, and AI coding assistant guardrails.
 
-framework-py is the Python implementation of
-[Framework](https://framework.table1.org). It reads and writes the same
-project files as the R package (`settings.yml`, the data catalog, and
-`framework.db`), so either language can work with a project's data. It works
-without Framework Cloud and without the `fw` command-line tool.
+`framework-py` is the Python implementation of [Framework](https://framework.pub) ([documentation](https://py.framework.pub)). It reads and writes the same project files as the R package (`settings.yml`, the data catalog, and `framework.db`), so either language can read and verify a project's data. It runs standalone without Framework Cloud or the `fw` CLI.
 
-Status: in development. The plan is in [docs/plan.md](docs/plan.md).
+Status: in development. See [docs/plan.md](docs/plan.md) for the implementation plan.
 
-## Install
+## Installation
 
 ```sh
 uv add framework-py
@@ -20,22 +14,19 @@ uv add framework-py
 pip install framework-py
 ```
 
-Optional extras add database drivers, S3 storage, and more file formats:
-`postgres`, `mysql`, `duckdb`, `sqlserver`, `s3`, `excel`, `spss`, `sas`
-(version 8 SAS transport files), and `rds` (R's `.rds` data frames).
+Optional extras install database drivers, S3 storage, and additional file formats: `postgres`, `mysql`, `duckdb`, `sqlserver`, `s3`, `excel`, `spss`, `sas` (version 8 SAS transport files), and `rds` (R `.rds` data frames).
 
 ```sh
 uv add "framework-py[postgres,s3]"
 ```
 
-Releases are published from GitHub Actions with signed build provenance. To
-check that a downloaded wheel or sdist was built from this repository:
+GitHub Actions builds releases with signed build provenance. Verify that a wheel or sdist came from this repository:
 
 ```sh
 gh attestation verify framework_py-<version>-py3-none-any.whl --repo frameworktools/framework-py
 ```
 
-## Use
+## Quick start
 
 ```python
 import framework as fw
@@ -45,17 +36,15 @@ info = fw.data_info("inputs.raw.survey")
 fw.data_list()
 ```
 
-After cloning a project, prepare it with:
+Prepare a cloned project:
 
 ```sh
 uv run python -m framework bootstrap
 ```
 
-## Sync with Framework Cloud
+## Framework Cloud sync
 
-Pull or push everything that syncs with the project on Framework Cloud: its
-packages, skills, and data registry. Each call lists the changes by part and
-asks once.
+Pull or push packages, skills, and the data registry for a linked Framework Cloud project. Each call lists changes by section and asks once before applying them.
 
 ```python
 fw.pull_all(dry_run=True)
@@ -63,8 +52,7 @@ fw.pull_all()
 fw.push_all()
 ```
 
-`pull_skills()` / `push_skills()` and `pull_data_registry()` /
-`push_data_registry()` sync one part.
+`pull_skills()`, `push_skills()`, `pull_data_registry()`, and `push_data_registry()` sync individual sections.
 
 ## Skill sync
 
@@ -75,9 +63,7 @@ fw.skills_sync(".agents/skills/my-skill", dry_run=True)
 fw.skills_sync(".agents/skills/my-skill")
 ```
 
-Local edits create account versions. Edited Framework skills become private
-forks with an exact source version. Concurrent edits stop for reconciliation.
-[Skill sync guide](https://framework.pub/docs/skill-sync).
+Local edits create account versions. Edited Framework skills become private forks pinned to an exact source version. Concurrent edits stop for reconciliation. See the [Skill sync guide](https://framework.pub/docs/skill-sync).
 
 ## Development
 
@@ -90,10 +76,6 @@ uv run python scripts/check_parity.py
 uv run python scripts/sync_assets.py --check
 ```
 
-Shared files (JSON Schemas, the `framework.db` schema, conformance fixtures,
-and the R export list) are copied from the R package with
-`scripts/sync_assets.py`. Change them in the R repository, then copy them
-again.
+`scripts/sync_assets.py` copies shared files (JSON Schemas, the `framework.db` schema, conformance fixtures, and the R export list) from the R package. Edit shared assets in the R repository, then run `scripts/sync_assets.py` here.
 
-`parity.toml` maps every function the R package exports to its Python
-equivalent, or gives the reason there is none.
+`parity.toml` maps every exported R function to its Python equivalent or records why none exists.

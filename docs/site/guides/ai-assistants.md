@@ -1,85 +1,79 @@
 ---
 id: ai-assistants
 title: AI assistants
-description: AGENTS.md, assistant stubs, Framework skills, and the guards for privacy-sensitive projects
+description: AGENTS.md instructions, assistant pointer files, Framework skills, Cloud skill sync, and Claude Code sandbox guards
 section: features
 position: 13
 ---
 
 ## Overview
 
-Framework prepares each project for AI coding assistants. It writes `AGENTS.md` as the canonical instruction file, installs skills that teach assistants the Framework functions, and adds a small pointer file for assistants that look for their own file name. In privacy-sensitive projects, it also tells assistants which folders they must not read and, for Claude Code, enforces that rule in the assistant's settings.
+Framework configures projects for AI coding assistants by writing `AGENTS.md` as the single instruction file, installing task-specific skills, adding assistant pointer files where needed, and enforcing filesystem read guards in privacy-sensitive projects.
 
-## Supported assistants
+## Assistant configuration
 
-The `ai` section of the settings lists the assistants a project supports.
+Configure supported assistants under `ai` in `settings.yml` (or `settings/ai.yml`):
 
 ```yaml
 ai:
   enabled: true
   canonical_file: AGENTS.md
   assistants:
-  - claude
+    - claude
 ```
 
-Each assistant gets a skills folder and, for some, a stub file.
-
-| Assistant | Skills folder | Stub file |
-|-----------|---------------|-----------|
-| `claude` (Claude Code) | `.claude/skills/` | `CLAUDE.md` |
-| `codex` (OpenAI Codex) | `.agents/skills/` | none, because Codex reads `AGENTS.md` |
+| Assistant | Skills directory | Pointer file |
+|-----------|------------------|--------------|
+| `claude` (Claude Code) | `.claude/skills/` | `CLAUDE.md` (`@AGENTS.md`) |
+| `codex` (OpenAI Codex) | `.agents/skills/` | None (reads `AGENTS.md` natively) |
 | `copilot` (GitHub Copilot) | `.agents/skills/` | `.github/copilot-instructions.md` |
 
-Claude Code is selected by default. A list under `defaults.ai.assistants` in your global settings replaces that selection, so Claude Code is selected only when the list names `claude`. `defaults.ai.enabled: false` creates projects without AI files. When `ai.enabled` is on and no assistant is selected, the skills go to `.agents/skills/` only. The [Setup](guide:setup) guide covers the global settings.
+`claude` is enabled by default. Setting `defaults.ai.assistants` in global settings replaces that list, and `defaults.ai.enabled: false` omits AI files entirely. When `ai.enabled: true` with an empty `assistants` list, skills install to `.agents/skills/`. See [Setup](guide:setup).
 
 ## AGENTS.md
 
-`AGENTS.md` is the single source of project instructions. When Framework creates a project, it writes a guide generated from the project's settings, with these sections.
+`new_project()` generates `AGENTS.md` from project settings with six sections:
 
-- **Skills.** A table of the installed skills, what each covers, and the path to its `SKILL.md` in the first assistant's skills folder.
-- **Framework Environment.** What [scaffold()](ref:scaffold) does, and the rules that follow from it, such as adding packages with [package_add()](ref:package_add) instead of `pip install`.
-- **Installed Packages.** The project's dependencies. [package_add()](ref:package_add) and [package_set_add()](ref:package_set_add) rewrite this section when they add a package.
-- **Data Management.** The rule to read and save data with [data_read()](ref:data_read) and [data_save()](ref:data_save), and a table of the project's data folders.
-- **Workflow, course, presentation, or privacy notes**, depending on the project. A privacy-sensitive project also gets a line right after the title that names the private folders and tells assistants not to read or print files in them.
-- **Project Notes.** Space for your own instructions.
+- **Skills:** table of installed skills, descriptions, and `SKILL.md` paths.
+- **Framework Environment:** `fw.scaffold()` startup behavior and package rules.
+- **Installed Packages:** `pyproject.toml` dependencies, refreshed automatically by [package_add()](ref:package_add) and [package_set_add()](ref:package_set_add) while the `<!-- @framework:regenerate -->` marker remains.
+- **Data Management:** `data_read()` and `data_save()` conventions and configured data directories.
+- **Project-type notes:** workflow, course, presentation, or sensitive-data rules (sensitive projects place a restricted-folder notice directly beneath the title).
+- **Project Notes:** open section for study design, domain conventions, and caveats.
 
-Add your own instructions under **Project Notes**: the study design, naming habits, data caveats, and anything else an assistant should know. You can edit any section. Apart from the package list, Framework does not rewrite `AGENTS.md` after creation. The R package writes the same sections, with R's functions.
+Keep all project instructions in `AGENTS.md` so every assistant reads one source. `CLAUDE.md` contains only `@AGENTS.md`, and `.github/copilot-instructions.md` directs Copilot to `AGENTS.md`.
 
-The stub files point back to it. `CLAUDE.md` is written only when Claude Code is selected, and it contains one line, which tells Claude Code to read `AGENTS.md`.
+## Built-in skills
 
-```markdown
-@AGENTS.md
-```
+`framework-py` bundles eight skills:
 
-`.github/copilot-instructions.md` asks Copilot to read `AGENTS.md` and not to duplicate its content. Keep instructions in `AGENTS.md`, so every assistant reads the same text.
+| Skill | Scope |
+|-------|-------|
+| `framework-workflow` | `fw.scaffold()`, project conventions, `make_notebook()`, and `make_script()` |
+| `framework-data` | `data_read()`, `data_save()`, catalog keys, and SHA-256 integrity checks |
+| `framework-packages` | Managing dependencies via `package_add()` and `uv add` rather than `pip install` |
+| `framework-outputs` | `save_table()`, `save_figure()`, `save_model()`, `save_notebook()`, and `result_list()` |
+| `framework-cache` | `cache_remember()`, `cache()`, `cache_get()`, and `cache_forget()` |
+| `framework-databases` | `db_query()`, `db_execute()`, and `db_connect()` |
+| `framework-publishing` | Publishing destinations and private-file checks |
+| `framework-sensitive-data` | Private/public directory boundaries and working from schemas or synthetic data |
 
-## Skills
-
-Skills are instruction files that an assistant loads when a task matches the skill's description. framework-py ships five.
-
-| Skill | Teaches |
-|-------|---------|
-| `framework-workflow` | Starting notebooks and scripts with `fw.scaffold()`, the analysis workflow, and `make_notebook()` and `make_script()` |
-| `framework-data` | Reading and writing data with `data_read()` and `data_save()`, and the integrity hashes |
-| `framework-packages` | Adding packages with `package_add()` or `uv add` instead of a bare `pip install` |
-| `framework-outputs` | `save_table()`, `save_figure()`, `save_model()`, `cache_remember()`, `db_query()`, and `publish()` |
-| `framework-sensitive-data` | Private and public folders and the handling of identifiable data |
-
-Every project except a bare one gets the first four. Privacy-sensitive projects also get `framework-sensitive-data`. Each skill is a folder with a `SKILL.md` file, copied into each selected assistant's skills folder.
+Every non-`bare` project installs the first seven skills; privacy-sensitive projects also install `framework-sensitive-data`:
 
 ```text
 .claude/skills/
+├── framework-cache/SKILL.md
 ├── framework-data/SKILL.md
+├── framework-databases/SKILL.md
 ├── framework-outputs/SKILL.md
 ├── framework-packages/SKILL.md
+├── framework-publishing/SKILL.md
 └── framework-workflow/SKILL.md
 ```
 
-Projects created from a framework.pub blueprint can carry additional skills. You can also add your own skill folders beside Framework's.
+### Skill updates
 
-### Updating skills
-
-A project's skills come from its setup on Framework Cloud: its blueprint, skill sets, and single skills. [pull_skills()](ref:pull_skills) brings the project's skills up to date with that setup.
+[pull_skills()](ref:pull_skills) (and its alias [ai_skills_update()](ref:ai_skills_update)) reconciles installed skills with the project's Framework Cloud setup (or local `framework-py` release when offline):
 
 ```python
 import framework as fw
@@ -87,50 +81,26 @@ import framework as fw
 fw.pull_skills()
 ```
 
-It reads the project's current skill list with the project's token, then:
+`pull_skills()` installs missing skills, updates unmodified skills (using [cloud_login()](ref:cloud_login) for latest personal Cloud versions when available), preserves locally edited skills, leaves removed setup skills on disk with a note, and refreshes the **Skills** table in `AGENTS.md`. Pass `overwrite=True` to replace locally edited skills after backing them up to `.framework/skills-backups/`, or `dry_run=True` to preview changes.
 
-- adds skills the project is missing,
-- updates unedited skills to their latest versions: Framework's from the installed framework-py, and your Cloud skills from Cloud,
-- keeps skills you edited and lists them,
-- lists skills that are no longer in the project's setup, without deleting them,
-- refreshes the Skills table in `AGENTS.md`.
+### Pushing edited skills
 
-It prints a summary:
-
-```text
-Skills: 2 added, 3 updated, 5 up to date, 1 locally edited (kept)
-  Kept (locally edited): framework-data — pull_skills(overwrite=True) replaces it
-```
-
-`overwrite=True` replaces edited skills too. The old copies go to `.framework/skills-backups/`. `dry_run=True` shows what would change and writes nothing. The latest versions of your Cloud skills need [cloud_login()](ref:cloud_login); without it, the versions in the project's setup are used.
-
-Offline, or without a project token, it uses the Framework skills in the project's settings and says so. [ai_skills_update()](ref:ai_skills_update) does the same as `pull_skills()`.
-
-### Sending edited skills to Cloud
-
-[push_skills()](ref:push_skills) sends skills you edited in the project to Framework Cloud as new versions of your own skills. It needs [cloud_login()](ref:cloud_login).
+[push_skills()](ref:push_skills) publishes locally modified project skills to your Framework Cloud account (requires [cloud_login()](ref:cloud_login)):
 
 ```python
 fw.push_skills()
 ```
 
-Before pushing, it names what each new version affects and asks to continue. Without a console, pass `confirm=True`. A skill that changed on Cloud since the project pulled it is refused with "Pull first". `force=True` pushes it anyway; the Cloud changes stay in its history. A built-in Framework skill never changes: an edited one is saved as your own copy. `dry_run=True` lists what would be pushed.
+Edited built-in Framework skills save as private forks in your account rather than modifying built-in defaults. Concurrent Cloud edits stop with `Pull first` unless `force=True` is passed; non-interactive calls require `confirm=True`. To sync a standalone custom skill directory outside project setup, call [skills_sync()](ref:skills_sync).
 
-Only skills Framework installed are pushed. [skills_sync()](ref:skills_sync) syncs one skill folder, including one you wrote.
+[pull_all()](ref:pull_all) and [push_all()](ref:push_all) sync skills alongside packages and the data registry. See [Packages](guide:packages#sync-with-framework-cloud).
 
-[pull_all()](ref:pull_all) and [push_all()](ref:push_all) sync skills together with packages and the data registry. See [Packages](guide:packages#sync-with-framework-cloud).
+## Privacy-sensitive guardrails
 
-## Privacy-sensitive projects
+Privacy-sensitive projects layer prose instructions with enforced tool permissions:
 
-Privacy-sensitive projects add two protections for restricted data.
-
-`AGENTS.md` names the private folders and tells assistants not to read or print files in them.
-
-```markdown
-This project holds restricted data. Do not read or print files in `inputs/private/`, `outputs/private/`. Work from the data dictionary and simulated data instead.
-```
-
-When Claude Code is selected, Framework also writes `.claude/settings.json` with rules that Claude Code enforces.
+1. `AGENTS.md` and `framework-sensitive-data` instruct assistants never to read or print files under `private/` directories and to inspect schemas via `data_info(..., columns=True)` or synthetic data instead.
+2. When Claude Code is enabled (or whenever [upgrade()](ref:upgrade) runs on a sensitive project), Framework writes `.claude/settings.json` denying both built-in file tools and sandboxed shell commands (`python`, `cat`, etc.) access to private directories and `.env`, with `failIfUnavailable: true` so execution fails closed if sandboxing is unavailable:
 
 ```json
 {
@@ -156,13 +126,3 @@ When Claude Code is selected, Framework also writes `.claude/settings.json` with
   }
 }
 ```
-
-The deny rules block Claude Code's own file tools. The sandbox's `denyRead` list also blocks commands it runs, such as `python`, from reading those paths. `failIfUnavailable` stops Claude Code from running commands when the sandbox cannot start, so the rules fail closed.
-
-The private folders are computed from the project's `directories`, `extra_directories`, and `render_dirs`: each path with a segment named `private` or ending in `_private`, up to and including that segment, and each `directories` entry whose key marks it private (`inputs_private_raw: inputs/raw`), as configured. A folder inside another one on the list is left out. The rules match the ones the R package writes. Existing entries in `.claude/settings.json` are kept. [upgrade()](ref:upgrade) writes these rules in every sensitive project, whatever the AI settings say, since anyone can open the project in Claude Code, and says when git ignores `.claude/`, which would keep the rules on one computer.
-
-The `framework-sensitive-data` skill gives assistants the same rules in prose, together with guidance for working from data dictionaries and simulated data.
-
-## Differences from R
-
-The R package once kept its context files in sync with a git hook. framework-py writes `AGENTS.md` once, when the project is created, and relies on skills for detailed instructions, so it has no context regeneration and no `ai_sync` hook.

@@ -8,7 +8,7 @@ position: 1
 
 ## Overview
 
-[scaffold()](ref:scaffold) is the entry point for work in a Framework project. Call it at the top of every notebook and script.
+[scaffold()](ref:scaffold) initializes a Python session inside a Framework project. Call it at the top of every notebook and script:
 
 ```python
 import framework as fw
@@ -16,41 +16,41 @@ import framework as fw
 fw.scaffold()
 ```
 
-It returns the project root as a `pathlib.Path`, which is useful when code needs an absolute path.
+It returns the project root as a `pathlib.Path`:
 
 ```python
 root = fw.scaffold()
 ```
 
-## Steps
+## Startup sequence
 
-Each call runs these steps in order.
+Each `scaffold()` call runs six steps in order:
 
-1. **Finds the project.** It looks for `settings.yml`, or the older `config.yml`, in the current folder and up to ten parent folders.
-2. **Loads the settings and the environment.** It reads the project's `.env` file into `os.environ` and resolves the settings, including split files and `env()` expressions. Variables already set in your shell win, and empty values are skipped.
-3. **Prepares the database.** It creates `framework.db` if it is missing and records the first and latest scaffold times in its `meta` table.
-4. **Sets the random seed**, when the settings turn seeding on.
-5. **Extends the import path.** It puts the project's functions folder at the front of `sys.path`.
-6. **Runs `scaffold.py`**, when the project root has one.
+1. **Project discovery.** Searches the current directory and up to ten parent directories for `settings.yml` (or legacy `config.yml`).
+2. **Environment and settings loading.** Loads `.env` into `os.environ` (existing process variables win; empty values are skipped) and resolves `settings.yml`, split files, and `env()` expressions.
+3. **Database setup.** Creates `framework.db` if missing, creates missing private directories, and records first and latest scaffold timestamps in the `meta` table.
+4. **Random seeding and plot style.** Seeds Python's `random` module and NumPy when seeding is enabled, and applies `matplotlib_style` when `set_theme_on_scaffold` is on.
+5. **Import path setup.** Prepends `directories.functions` to `sys.path`.
+6. **Custom hook execution.** Executes `scaffold.py` in the project root when present.
 
-The working directory is not changed. Framework resolves catalog paths, output folders, and the cache folder from the project root, so code behaves the same from `notebooks/`, from `scripts/`, and from the root.
+`scaffold()` leaves the working directory unchanged. Framework resolves catalog paths, output directories, and cache paths from the project root, so code runs identically from `notebooks/`, `scripts/`, or the root directory.
 
 ## Project discovery
 
-Because `scaffold()` searches parent folders, it works from any subfolder of the project.
+Because `scaffold()` searches parent directories, notebooks and scripts in subdirectories find the project automatically:
 
 ```text
 vaccine-study/
 ├── settings.yml
 ├── notebooks/
-│   └── exploration.qmd   # scaffold() works here
+│   └── exploration.qmd   # scaffold() resolves vaccine-study/
 ├── scripts/
-│   └── load.py           # and here
+│   └── load.py           # scaffold() resolves vaccine-study/
 └── functions/
     └── cleaning.py
 ```
 
-Outside a project, it raises `ProjectNotFoundError`. To use a specific settings file, pass its path.
+Outside a project, `scaffold()` raises `ProjectNotFoundError`. Pass an explicit `settings.yml` path to target a specific project:
 
 ```python
 from pathlib import Path
@@ -58,11 +58,11 @@ from pathlib import Path
 fw.scaffold(Path.home() / "code" / "vaccine-study" / "settings.yml")
 ```
 
-[project_root()](ref:project_root) returns the root without the other steps, and [project_path()](ref:project_path) builds a path under it: `fw.project_path("outputs", "tables", "x.csv")`.
+[project_root()](ref:project_root) locates the root directory without running setup steps, and [project_path()](ref:project_path) resolves paths relative to the root (`fw.project_path("outputs", "tables", "x.csv")`).
 
-## The functions folder
+## Functions directory
 
-`scaffold()` adds the folder named by `directories.functions` to `sys.path`. Modules in that folder can then be imported by name.
+`scaffold()` prepends `directories.functions` to `sys.path` so notebooks and scripts can import project modules directly:
 
 ```python
 # functions/cleaning.py
@@ -81,9 +81,9 @@ fw.scaffold()
 from cleaning import standardize_names
 ```
 
-The folder goes first on the path, so a module there takes the place of any standard or installed module with the same name. `scaffold()` warns when that happens, for example when `functions/statistics.py` would hide Python's `statistics` module. Rename the file to fix it.
+Because `functions/` sits at the front of `sys.path`, a local module with the same name as a standard library or installed package shadows it. `scaffold()` emits a warning when shadowing occurs (for example, `functions/statistics.py` shadowing Python's `statistics` module).
 
-The value can be a list, which adds several folders.
+`directories.functions` also accepts a list of directories:
 
 ```yaml
 directories:
@@ -92,7 +92,7 @@ directories:
     - helpers
 ```
 
-To leave the functions folder off the import path, set `source_all_functions: false` in the `scaffold` section, where new projects write it. The `options` section is also read, for older projects.
+Set `source_all_functions: false` under `scaffold` (or `options` in older projects) to leave `sys.path` unchanged:
 
 ```yaml
 scaffold:
@@ -101,7 +101,7 @@ scaffold:
 
 ## Random seeds
 
-Seeding is off by default. When it is on, `scaffold()` seeds Python's `random` module and NumPy's global generator.
+Seeding is off by default. When enabled, `scaffold()` seeds Python's `random` module and NumPy's global generator:
 
 ```yaml
 scaffold:
@@ -109,11 +109,11 @@ scaffold:
   seed: '123'
 ```
 
-When the settings do not set `seed_on_scaffold`, the `FW_SEED` environment variable turns seeding on. The project's `seed` takes precedence over the value of `FW_SEED`, and the fallback seed is 123.
+When `seed_on_scaffold` is omitted, setting `FW_SEED` in the environment enables seeding; `scaffold.seed` still overrides `FW_SEED`'s value, and the fallback seed is `123`.
 
 ## Plot style
 
-With `set_theme_on_scaffold: true`, `scaffold()` applies the matplotlib style in `matplotlib_style`, as R's `scaffold()` sets a ggplot2 theme. Every figure then starts from the same style.
+With `set_theme_on_scaffold: true`, `scaffold()` applies `matplotlib_style` so every figure starts from the same style:
 
 ```yaml
 scaffold:
@@ -121,11 +121,11 @@ scaffold:
   matplotlib_style: seaborn-v0_8-whitegrid
 ```
 
-`matplotlib.style.available` lists the styles. An unknown style, or a missing matplotlib, gives a warning and leaves the style alone.
+Check `matplotlib.style.available` for installed style names. Missing `matplotlib` or an unknown style emits a warning without failing.
 
 ## scaffold.py
 
-New projects have a `scaffold.py` file in the root. `scaffold()` runs it after the other steps. Use it for setup that every notebook and script shares, such as pandas display options.
+New projects include a root `scaffold.py` file that `scaffold()` executes after its built-in steps. Use it for shared session configuration such as pandas display options:
 
 ```python
 # scaffold.py
@@ -134,28 +134,28 @@ import pandas as pd
 pd.set_option("display.max_columns", 50)
 ```
 
-The file runs in its own namespace. Changes to shared state, such as matplotlib styles and pandas options, carry over to the notebook. Variables it defines do not. Put shared functions and values in the functions folder and import them instead.
+`scaffold.py` runs in an isolated namespace: global library settings (such as pandas options or matplotlib styles) persist in the session, whereas local variables defined in `scaffold.py` do not leak into notebooks. Place reusable functions and constants in `functions/` and import them explicitly.
 
-## Project status
+## Project inspection
 
-Two functions describe a project without changing it.
+Two read-only helpers inspect project state:
 
-[status()](ref:status) prints an overview: the Framework version, the project type and author, the git branch and uncommitted changes, the AI instruction files, the package lock state, and whether each configured folder exists.
+[status()](ref:status) prints the Framework version, project type and author, git branch and working tree state, AI instruction files, package lock status, and directory existence:
 
 ```python
 fw.status()
 ```
 
-[project_info()](ref:project_info) returns the configured folders as a DataFrame with the columns `key`, `path`, and `exists`. Folders that do not exist yet are created the first time something is saved there.
+[project_info()](ref:project_info) returns configured directories as a DataFrame with `key`, `path`, and `exists` columns:
 
 ```python
 info = fw.project_info()
 info.attrs["type"]
 ```
 
-## Messages
+## Session messages
 
-`scaffold()` turns on Framework's progress messages for the rest of the session. They go to standard error through the `framework` logger.
+`scaffold()` enables progress messages on the `framework` logger (`stderr`) for the remainder of the Python session:
 
 ```text
 Random seed set to 123.

@@ -1,24 +1,24 @@
 ---
 id: project-types
 title: Project types
-description: Standard, privacy-sensitive, course, and presentation projects, the Framework Cloud app types, and their folders, .gitignore rules, and uses
+description: Directory layouts, .gitignore rules, and workflows for standard, privacy-sensitive, course, presentation, bare, Shiny, and FastAPI projects
 section: project_types
 position: 10
 ---
 
 ## Overview
 
-Framework creates four kinds of project, plus a bare project with no structure. Each type sets the folders, the `.gitignore`, the render folders for Quarto, and the skills installed for AI assistants.
+Framework provides five local project types plus two web application blueprints on Framework Cloud. Each type configures directory paths, `.gitignore` rules, Quarto render directories, and AI assistant skills.
 
-| Type | `type` value | Uses |
-|------|--------------|------------|
-| Standard project | `project` | Data analysis, research projects, pipelines, and reports |
-| Privacy-sensitive project | `project_sensitive` | Research with restricted data that must stay separate from shareable results |
-| Course | `course` | Teaching materials: slides, assignments, readings, and course documents |
-| Presentation | `presentation` | A single talk or slide deck |
-| Bare | `bare` | A settings file and `pyproject.toml` only, for building your own structure |
+| Project type | `type` argument | Typical workload |
+|--------------|-----------------|------------------|
+| Standard project | `project` | Data analysis, research pipelines, and recurring reports |
+| Privacy-sensitive project | `project_sensitive` | Research with restricted or identifiable data separated from public outputs |
+| Course | `course` | Lectures, slides, assignments, readings, and course modules |
+| Presentation | `presentation` | Standalone Quarto RevealJS talk or slide deck |
+| Bare | `bare` | Minimal `settings.yml` and `pyproject.toml` for custom layouts |
 
-Pass the type to [new_project()](ref:new_project) or to the command line.
+Pass `type` to [new_project()](ref:new_project) or `python -m framework create`:
 
 ```python
 import framework as fw
@@ -33,16 +33,14 @@ fw.new_project("Q4 Report", "~/talks/q4-report", type="presentation")
 python -m framework create --name "Sales Analysis" --path ~/code/sales-analysis --type project
 ```
 
-Without a type, an interactive session asks for one and suggests `project`. A script creates a Standard Project. Pass `type="bare"` for a bare project.
+### Framework Cloud app blueprints
 
-### Framework Cloud types
+Two additional application types resolve as built-in Framework Cloud blueprints after signing in with [cloud_login()](ref:cloud_login):
 
-Framework Cloud adds two app types as built-in blueprints. They need a Framework Cloud sign-in with [cloud_login()](ref:cloud_login). Each `type` value equals its `blueprint` value.
-
-| Type | `type` value | `blueprint` value | Uses |
-|------|--------------|-------------------|------|
-| [Shiny for Python](guide:shiny-app) | `shiny` or `shiny_python` | `framework/shiny_python` | An interactive web app |
-| [FastAPI app](guide:fastapi-app) | `fastapi` | `framework/fastapi` | A web API |
+| Project type | `type` argument | Blueprint handle | Typical workload |
+|--------------|-----------------|------------------|------------------|
+| [Shiny for Python](guide:shiny-app) | `shiny` or `shiny_python` | `framework/shiny_python` | Interactive web application |
+| [FastAPI app](guide:fastapi-app) | `fastapi` | `framework/fastapi` | HTTP JSON API service |
 
 ```python
 fw.cloud_login()
@@ -50,73 +48,64 @@ fw.new_project("My App", "~/code/my-app", type="shiny")
 fw.new_project("My API", "~/code/my-api", type="fastapi")
 ```
 
-In Python, `type="shiny"` is Shiny for Python, not R Shiny. Plumber is R only; use `type="fastapi"` instead. Signed out, these types stop and say to run `cloud_login()`.
+In Python, `type="shiny"` creates a Shiny for Python app; R's `plumber` type is R-only (`type="fastapi"` is the Python API blueprint).
 
-## Shared files
+## Shared project files
 
-Every type except bare includes these files.
+Every non-`bare` project includes:
 
-- `settings.yml`, with `language: python`.
-- `pyproject.toml`, which depends on `framework-py` and on what Quarto and Jupyter need to render and open notebooks.
-- `scaffold.py`, which [scaffold()](ref:scaffold) runs.
-- `.env` with empty credential placeholders, ignored by git.
-- `framework.db`, ignored by git.
-- A root `_quarto.yml` for rendering.
-- `AGENTS.md`, the Framework skills, and `CLAUDE.md` when Claude Code is selected.
-- A `.code-workspace` file for VS Code and Positron.
+- `settings.yml` (`language: python`)
+- `pyproject.toml` with `framework-py` and active tool dependencies
+- `scaffold.py` startup hook
+- `.env` credential placeholders (gitignored)
+- `framework.db` SQLite database (gitignored)
+- Root `_quarto.yml` (when the `quarto` tool is enabled)
+- `AGENTS.md`, Framework skills, and `CLAUDE.md` (when `claude` is enabled)
+- `<slug>.code-workspace` for VS Code and Positron
 
-All four `.gitignore` templates ignore folders named `private` anywhere in the project, `.env` files, `cache/`, `scratch/`, and `logs/` folders, `framework.db`, Quarto's working files, and Python environments. The [Git](guide:git) guide lists the rules.
-
-Folder names come from the package defaults and can be changed per type in your global settings, or per project in `settings.yml`.
+All `.gitignore` templates exclude `private` directories, `.env` files, `cache/`, `scratch/`, `logs/`, `framework.db`, Quarto intermediates, and `.venv/`. See [Git](guide:git).
 
 ## Standard project
 
-The standard project is the default for data analysis. It separates inputs by stage, keeps outputs by kind, and has folders for notebooks, scripts, and reusable functions.
+`project` is the default layout for data analysis, separating staged inputs from typed outputs:
 
 ```text
 sales-analysis/
-├── docs/                  # project documentation (renders to outputs/docs/)
-├── functions/             # reusable modules, on the import path after scaffold()
+├── docs/                  # renders to outputs/docs/
+├── functions/             # reusable Python modules added to sys.path
 ├── inputs/
-│   ├── raw/               # data as received
-│   ├── intermediate/      # cleaned and joined data
+│   ├── raw/               # unmodified source files
+│   ├── intermediate/      # cleaned and joined intermediates
 │   └── final/             # analysis-ready datasets
 ├── logs/
-├── notebooks/             # Quarto and Jupyter notebooks
+├── notebooks/             # Jupyter and Quarto notebooks
 ├── outputs/
-│   └── notebooks/         # rendered notebooks
+│   └── notebooks/         # rendered notebook HTML
 ├── scratch/
 ├── scripts/
-├── settings/              # split settings files
+├── settings/              # split YAML configuration files
 ├── framework.db
 ├── pyproject.toml
 ├── scaffold.py
 └── settings.yml
 ```
 
-These folders are created the first time something is saved in them.
-
-- `outputs/tables/`, `outputs/figures/`, `outputs/models/`, and `outputs/reports/`, by the `save_*()` functions.
-- `outputs/cache/`, by the cache.
-
-The standard `.gitignore` does not ignore `inputs/` or `outputs/`. Decide which data and results may be committed, and add rules for the rest. When a project holds data that must never be committed, use the privacy-sensitive type.
-
-Use a standard project for most analysis work: research projects, data pipelines, exploratory analysis, and recurring reports.
+`outputs/tables/`, `outputs/figures/`, `outputs/models/`, `outputs/reports/`, and `outputs/cache/` are created on first save. The standard `.gitignore` does not ignore `inputs/` or `outputs/`; add ignore rules for large files, or choose `project_sensitive` whenever restricted records are involved.
 
 ## Privacy-sensitive project
 
-The privacy-sensitive project is for research with restricted data, such as protected health information. It splits every input stage and every kind of output into private and public folders.
+`project_sensitive` isolates restricted records (such as PHI or PII) from shareable outputs by splitting every input and output directory into `private/` and `public/` trees:
 
 ```text
 patient-outcomes/
 ├── docs/
 ├── functions/
 ├── inputs/
-│   ├── private/           # restricted data, never committed
+│   ├── private/           # restricted data, gitignored
 │   │   ├── raw/
 │   │   ├── intermediate/
 │   │   └── final/
-│   └── public/            # de-identified or aggregated data
+│   └── public/            # de-identified or public reference data
 │       ├── raw/
 │       ├── intermediate/
 │       └── final/
@@ -124,7 +113,7 @@ patient-outcomes/
 ├── notebooks/
 ├── outputs/
 │   └── private/
-│       └── notebooks/     # rendered notebooks, which can show restricted data
+│       └── notebooks/     # rendered notebooks (gitignored)
 ├── scratch/
 ├── scripts/
 ├── settings/
@@ -134,65 +123,53 @@ patient-outcomes/
 └── settings.yml
 ```
 
-The output folders follow the same pattern. `outputs/private/tables/` and `outputs/public/tables/`, with matching pairs for figures, models, reports, and notebooks, are created when something is first saved there. The cache lives in `outputs/private/cache/`.
+`outputs/private/<kind>/` and `outputs/public/<kind>/` create on first save, and caches live in `outputs/private/cache/`.
 
-### Protections
+### Built-in safeguards
 
-Several parts of Framework treat the private folders as restricted.
+- **Git:** `.gitignore` excludes `/inputs/private/`, `/outputs/private/`, and all `private` or `sensitive` folders while preserving `README.md` and `.gitkeep`.
+- **Pre-commit audit:** `data_security` and `check_sensitive_dirs` hooks start enabled and install automatically at repository creation (or via [bootstrap()](ref:bootstrap) / [git_hooks_install()](ref:git_hooks_install)).
+- **Outputs:** `save_*()` functions default to `private/` unless `public=True` is passed, warning if the session previously read private data.
+- **Publishing:** all `publish*()` functions warn and require confirmation before uploading from `private/` or sensitive projects.
+- **AI assistants:** `AGENTS.md` and `framework-sensitive-data` forbid reading restricted paths, and `.claude/settings.json` enforces tool and sandbox read blocks on `private/` and `.env`.
 
-- **Git.** The `.gitignore` ignores `/inputs/private/`, `/outputs/private/`, and every folder named `private` or `sensitive`. It keeps `README.md` and `.gitkeep` files, so the folder structure can be documented.
-- **Outputs.** The `save_*()` functions save to private folders unless you pass `public=True`.
-- **Publishing.** Every publishing function warns about files in private folders and asks before it uploads them.
-- **AI assistants.** `AGENTS.md` tells assistants not to read the private folders. When Claude Code is selected, `.claude/settings.json` denies it access to them and to `.env`. The `framework-sensitive-data` skill is installed.
-- **Settings.** `security: sensitive: true` marks the project.
-- **Audit.** [git_security_audit()](ref:git_security_audit) passes on a new privacy-sensitive project. The project starts with the `data_security` and `check_sensitive_dirs` hook checks on, and the pre-commit hook is installed when the project gets its repository, so the audit runs before every commit. A project created without git gets the hook from [git_hooks_install()](ref:git_hooks_install) after `git init`, or from [bootstrap()](ref:bootstrap) in a clone.
+### Restricted-data workflow
 
-```python
-fw.git_hooks_install()
-```
-
-### Private and public data
-
-Restricted data goes into the private folders, and only aggregated or de-identified results move to the public ones. Register private files under four-part names with [data_add()](ref:data_add). The entries are locked by default, so a changed source file is caught.
+Register raw files under `inputs.private.raw.*` with `locked=True` and pass `public=True` only after aggregating and suppressing small cells:
 
 ```python
 import framework as fw
 
 fw.scaffold()
-fw.data_add("inputs/private/raw/patients.csv", name="inputs.private.raw.patients")
+fw.data_add("inputs/private/raw/patients.csv", name="inputs.private.raw.patients", locked=True)
 
 patients = fw.data_read("inputs.private.raw.patients")
-
 by_region = patients.groupby(["age_group", "region"]).size().reset_index(name="n")
 by_region = by_region[by_region["n"] >= 11]
 
 fw.save_table(by_region, "patients_by_region", public=True)
 ```
 
-Check `git status` before each commit, and review any file before it moves from a private folder to a public one.
-
 ## Course
 
-The course type organizes teaching materials. It has folders for slides, assignments, readings, course documents, modules, and shared data.
+`course` organizes teaching materials with inline `settings.yml` and Quarto output routed to gitignored `rendered/`:
 
 ```text
 data-science-101/
 ├── assignments/           # renders to rendered/assignments/
 ├── cache/
-├── course_docs/           # syllabus and schedules, render to rendered/course_docs/
-├── data/                  # datasets shared across the course
-├── modules/               # notebooks, render to rendered/modules/
+├── course_docs/           # renders to rendered/course_docs/
+├── data/                  # shared course datasets
+├── modules/               # default make_notebook() target; renders to rendered/modules/
 ├── readings/
-├── slides/                # reveal.js lectures, render to rendered/slides/
+├── slides/                # RevealJS lectures; renders to rendered/slides/
 ├── framework.db
 ├── pyproject.toml
 ├── scaffold.py
 └── settings.yml
 ```
 
-In a course, `directories.notebooks` points at `modules/`, so [make_notebook()](ref:make_notebook) creates files there by default. Slides render as reveal.js presentations and the other folders as HTML. Course settings are kept inline in `settings.yml`, without split files.
-
-Create materials with the `dir` and `subdir` arguments. An explicit `dir` is relative to the project root, wherever Python runs.
+Create lectures and assignments with `dir` and `subdir`:
 
 ```python
 fw.make_presentation("Introduction to Python", dir="slides", subdir="week-01")
@@ -200,46 +177,33 @@ fw.make_notebook("assignment-01", dir="assignments")
 fw.make_notebook("syllabus", dir="course_docs")
 ```
 
-Quarto renders a course into `rendered/`, and the course `.gitignore` ignores it. Publish rendered files with `publish()`, or remove that line to commit them. Student data belongs in a folder named `private`, which every template ignores.
-
 ## Presentation
 
-The presentation type is the smallest structure, for a single talk or slide deck.
+`presentation` provides a lightweight single-deck layout with inline `settings.yml` and a RevealJS `presentation.qmd` at the root:
 
 ```text
 q4-report/
 ├── cache/
 ├── data/
-├── presentation.qmd       # the slides, in reveal.js format
+├── presentation.qmd
 ├── framework.db
 ├── pyproject.toml
 ├── scaffold.py
 └── settings.yml
 ```
 
-`presentation.qmd` starts with the reveal.js stub, titled with the project name. The root `_quarto.yml` renders it as reveal.js, and the output is written next to the source.
+Render in place with Quarto:
 
 ```sh
 uv run quarto render presentation.qmd
 ```
 
-Change the `format` in the front matter to produce another kind of document, such as `html`, `pdf`, or `docx`. Presentation settings are kept inline in `settings.yml`.
-
-Use a presentation project for conference talks, committee presentations, and one-time briefings. For ongoing work with several deliverables, use a standard project.
-
 ## Bare project
 
-A bare project has only `settings.yml`, `pyproject.toml`, `.gitignore`, and `.framework/spec.json`. It has no folders, no `.env`, no AI files, and no `framework.db` until [scaffold()](ref:scaffold) creates one. Use it as a starting point when none of the other types fits, and add folders with [project_add_directory()](ref:project_add_directory).
+`bare` creates only `settings.yml`, `pyproject.toml`, `.gitignore`, and `.framework/spec.json`. Add custom directories incrementally with [project_add_directory()](ref:project_add_directory):
 
 ```python
 fw.project_add_directory(".", "interviews", "Interview transcripts", "inputs/interviews")
 ```
 
-## Type selection
-
-- Choose a **standard project** for analysis work whose data may be committed or kept out of git with ordinary rules.
-- Choose a **privacy-sensitive project** when any data must never leave the machine or the secure environment, or when a reviewer needs to see a clear boundary between restricted and shareable material.
-- Choose a **course** for a set of lectures, assignments, and readings.
-- Choose a **presentation** for one deck.
-
-A standard project can also be marked sensitive with `security: sensitive: true` in a framework.pub blueprint, which gives it the privacy-sensitive `.gitignore` and the `framework-sensitive-data` skill. The type of an existing project is recorded in `project_type` and is not converted automatically, so choose the type when you create the project.
+To migrate an existing standard project to the privacy-sensitive layout later, run `fw.upgrade(path, type="project_sensitive", dry_run=False)`.

@@ -1,34 +1,34 @@
 ---
 id: framework-db
 title: framework.db
-description: The project database that records data hashes, cached values, and saved outputs
+description: SQLite tracking database for data hashes, cached values, and saved outputs
 section: features
 position: 2
 ---
 
 ## Overview
 
-Every Framework project has a SQLite database named `framework.db` in its root folder. Framework uses it to record what it knows about the project: the hash of each data file, the cached values and their expiry, and the outputs you have saved.
+Every Framework project maintains a SQLite database named `framework.db` in its root directory. Framework uses it to record SHA-256 hashes for cataloged datasets, cache metadata and expiration timestamps, and saved output records.
 
-You rarely work with the database directly. [data_read()](ref:data_read), [cache_remember()](ref:cache_remember), [save_table()](ref:save_table), and the other functions update it as they run. [scaffold()](ref:scaffold), [new_project()](ref:new_project), and [bootstrap()](ref:bootstrap) create it when it is missing.
+Framework functions such as [data_read()](ref:data_read), [cache_remember()](ref:cache_remember), and [save_table()](ref:save_table) update `framework.db` automatically. [scaffold()](ref:scaffold), [new_project()](ref:new_project), and [bootstrap()](ref:bootstrap) create or migrate it when missing.
 
-The schema comes from the R package, so R and Python read and write the same tables. A file one language saved verifies in the other.
+`framework-py` and the R package share the exact SQLite schema, so data hashes recorded in one language verify in the other.
 
-## Tables
+## Schema tables
 
 | Table | Contents |
 |-------|----------|
-| `data` | Catalog name, path, type, delimiter, locked flag, and SHA-256 hash of each data file |
-| `cache` | Name, file, hash, and expiry of each cached value |
-| `results` | Name, type, public flag, and hash of each saved output |
-| `connections` | Database connection metadata, part of the shared schema |
-| `meta` | Key-value records, such as scaffold times and the last security audit |
+| `data` | Catalog key, relative path, format, delimiter, `locked` flag, and SHA-256 hash per dataset |
+| `cache` | Cache key, backing file path, SHA-256 hash, and expiration timestamp |
+| `results` | Relative output path, output type, `public` flag, and SHA-256 hash |
+| `connections` | Database connection metadata in the shared schema |
+| `meta` | Key-value state such as scaffold timestamps, cache dependency manifests, and audit history |
 
-Paths are stored relative to the project root, so a project still works after it is moved or cloned.
+All stored file paths are relative to the project root, keeping `framework.db` portable across directory moves.
 
-## Data integrity
+## Data integrity tracking
 
-The `data` table holds the hash Framework compares each data file against. The first [data_read()](ref:data_read) of a catalog name records the file's SHA-256 hash. Later reads compare the file with that record.
+The `data` table stores the reference SHA-256 digest for each cataloged file. Calling [data_read()](ref:data_read) on a catalog name records the hash on first read and compares the current file against it on later reads:
 
 ```python
 import framework as fw
@@ -37,15 +37,15 @@ fw.scaffold()
 survey = fw.data_read("inputs.raw.survey")
 ```
 
-A changed file raises a `DataChangedWarning` and the new hash is recorded. When the catalog entry has `locked: true`, a changed file raises an `IntegrityError` instead and the data is not read. [data_add()](ref:data_add) and [data_save()](ref:data_save) record a file's hash when they register it. The [Data management](guide:data-management) guide covers locking.
+Modified unlocked files emit `DataChangedWarning` and update the stored hash. Modified files marked `locked: true` raise `IntegrityError` before reading any rows. [data_add()](ref:data_add) and [data_save()](ref:data_save) record hashes immediately upon registration. See [Data management](guide:data-management).
 
-## Cache records
+## Cache metadata
 
-The `cache` table records each cached value's file, hash, and expiry time. [cache_get()](ref:cache_get) and [cache_remember()](ref:cache_remember) use it to decide whether a cached value exists, has expired, or no longer matches its file. The [Caching](guide:caching) guide describes the cache.
+The `cache` table tracks each cached file, its SHA-256 digest, and its expiration time. [cache_get()](ref:cache_get) and [cache_remember()](ref:cache_remember) check those records to detect missing, expired, or modified cache entries. See [Caching](guide:caching).
 
-## The results registry
+## Results registry
 
-Each `save_*()` function records its file in the `results` table with the output type, whether it is public, and the file's hash. [result_list()](ref:result_list) returns the records, newest first.
+Each `save_*()` call inserts or updates a row in `results` keyed by project-relative path (such as `outputs/tables/summary.csv`), recording output type, `public` flag, and SHA-256 digest. [result_list()](ref:result_list) returns rows newest first:
 
 ```python
 fw.result_list()
@@ -53,11 +53,11 @@ fw.result_list(type="figure")
 fw.result_list(type="table", public=True)
 ```
 
-Results are recorded by their path from the project root, such as `outputs/tables/summary.csv`, in both packages. A row from an older save, named by the file name alone, takes the path the next time the file is saved. The [Saving work](guide:saving-work) guide covers the output functions.
+Legacy entries keyed by bare filename upgrade to project-relative paths on their next save. See [Saving work](guide:saving-work).
 
-## Querying the database
+## Direct SQL queries
 
-Every new project defines a connection named `framework` that points at `framework.db`. [db_query()](ref:db_query) runs SQL against it like any other connection.
+Every project defines a `framework` database connection pointing to `framework.db`. Query it with [db_query()](ref:db_query):
 
 ```python
 fw.db_query("SELECT name, expire_at FROM cache", "framework")
@@ -65,20 +65,10 @@ fw.db_query("SELECT name, path, hash, locked FROM data", "framework")
 fw.db_query("SELECT name, type, created_at FROM results", "framework")
 ```
 
-Timestamps in the `data`, `cache`, and `meta` tables are seconds since the Unix epoch, which is how the R package stores them. The `results` table holds local date strings. The listing functions, such as [cache_list()](ref:cache_list) and [result_list()](ref:result_list), convert both forms for you.
+Framework stores timestamps in `data`, `cache`, `meta`, and `results` as Unix epoch seconds (matching R); rows written by older versions may hold date strings. Listing helpers such as [cache_list()](ref:cache_list) and [result_list()](ref:result_list) normalize both formats.
 
-## Location and Git
+## Git and multi-machine verification
 
-The database lives in the project root.
+Every project type's `.gitignore` excludes `framework.db`, `framework.db-wal`, and `framework.db-shm` because read timestamps and local caches vary across collaborators. Fresh clones initialize their own `framework.db` via [bootstrap()](ref:bootstrap) or [scaffold()](ref:scaffold).
 
-```text
-vaccine-study/
-├── framework.db
-├── settings.yml
-├── notebooks/
-└── ...
-```
-
-Every project type's `.gitignore` excludes `framework.db` and its `-wal` and `-shm` files. The database holds local state, such as when you last read each file, which differs between collaborators. A clone gets a fresh database from [bootstrap()](ref:bootstrap) or the first [scaffold()](ref:scaffold).
-
-To compare hashes across machines, use the Framework Cloud integrity ledger. [ledger_push()](ref:ledger_push) sends the hashes in `framework.db` to the ledger, and [data_verify()](ref:data_verify) checks a file against both records. The [Framework Cloud](guide:cloud) guide describes the ledger.
+To verify dataset hashes across machines, push local digests to the Framework Cloud integrity ledger with [ledger_push()](ref:ledger_push) and verify files against both local and Cloud records with [data_verify()](ref:data_verify). See [Framework Cloud](guide:cloud).

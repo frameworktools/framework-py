@@ -8,75 +8,75 @@ position: 1
 
 ## Requirements
 
-framework-py needs Python 3.11 or later. It runs on macOS, Linux, and Windows.
+`framework-py` requires Python 3.11 or later on macOS, Linux, or Windows.
 
-Three companion tools are optional. Each one enables a group of features.
+Three optional companion tools unlock additional features:
 
-- [uv](https://docs.astral.sh/uv/) manages each project's packages. The package functions, such as [package_add()](ref:package_add), call uv, and [bootstrap()](ref:bootstrap) uses it to install a cloned project's packages.
-- [Quarto](https://quarto.org) renders notebooks and presentations. [save_notebook()](ref:save_notebook) and [publish_notebook()](ref:publish_notebook) call the `quarto` command.
-- Git versions the project. New projects are initialized as git repositories when git is installed.
+- [uv](https://docs.astral.sh/uv/) manages project dependencies. Package functions such as [package_add()](ref:package_add) call `uv`, and [bootstrap()](ref:bootstrap) runs `uv sync` to install a cloned project's environment.
+- [Quarto](https://quarto.org) renders notebooks and presentations. [save_notebook()](ref:save_notebook) and [publish_notebook()](ref:publish_notebook) invoke the `quarto` CLI.
+- Git tracks version history. New projects initialize a git repository when `git` is installed.
 
-Any editor works. Framework creates a VS Code workspace file by default, which Positron also opens.
+Any editor works. Framework writes a VS Code `.code-workspace` file by default, which Positron also opens.
 
 ## Package installation
 
-The distribution is named `framework-py`, and the module it installs is named `framework`. Inside a uv project, add it as a dependency.
+The PyPI distribution is `framework-py`, and the Python module name is `framework`. Add it to a `uv` project:
 
 ```sh
 uv add framework-py
 ```
 
-With pip, install it into the active environment.
+Or install it into an active environment with `pip`:
 
 ```sh
 pip install framework-py
 ```
 
-Code imports the module under the short name `fw`.
+Import the module as `fw`:
 
 ```python
 import framework as fw
 ```
 
-Projects created by Framework already list `framework-py` in their `pyproject.toml`, so a project only needs `uv sync` after it is created or cloned.
+Projects created by Framework already declare `framework-py` in `pyproject.toml`. Run `uv sync` after creating or cloning a project.
 
 ## Optional extras
 
-The core package reads CSV, Parquet, Stata, and SAS files, writes CSV and Parquet files, and connects to SQLite. Extras add database drivers, S3 storage, and further file formats. Each extra installs one well-known package.
+The core package reads CSV, Parquet, Stata, and SAS files, writes CSV and Parquet files, and connects to SQLite. Optional extras install database drivers, S3 storage, and additional file formats.
 
-| Extra | Package | Used for |
-|-------|---------|----------|
-| `postgres` | psycopg | PostgreSQL connections |
-| `mysql` | PyMySQL | MySQL and MariaDB connections |
-| `duckdb` | duckdb | DuckDB connections |
-| `sqlserver` | pyodbc | SQL Server connections |
-| `s3` | boto3 | Publishing to S3-compatible storage |
-| `excel` | openpyxl | Reading and writing `.xlsx` files |
-| `spss` | pyreadstat | Reading SPSS files |
-| `sas` | pyreadstat | Reading version 8 SAS transport files |
-| `rds` | pyreadr | Reading R's `.rds` files that hold a data frame |
+| Extra | Package | Purpose |
+|-------|---------|---------|
+| `postgres` | `psycopg` | PostgreSQL connections |
+| `mysql` | `PyMySQL` | MySQL and MariaDB connections |
+| `duckdb` | `duckdb` | DuckDB connections |
+| `sqlserver` | `pyodbc` | SQL Server connections |
+| `s3` | `boto3` | S3-compatible object storage and publishing |
+| `excel` | `openpyxl` | `.xlsx` reads and writes |
+| `spss` | `pyreadstat` | SPSS reads |
+| `sas` | `pyreadstat` | Version 8 SAS transport reads |
+| `rds` | `pyreadr` | R `.rds` data frame reads |
 
-Name the extras in brackets when you add the package.
+List extras in brackets when installing the package:
 
 ```sh
 uv add "framework-py[postgres,s3]"
 ```
 
-A function that needs a missing extra raises an error that names the install command. [db_drivers_status()](ref:db_drivers_status) lists the database drivers that are installed.
+Functions that require an uninstalled extra raise an error naming the install command. [db_drivers_status()](ref:db_drivers_status) reports installed database drivers.
 
 ## Installation check
 
-Print the installed version to confirm that Python can import the package.
+Print the installed version to confirm the import succeeds:
 
 ```sh
 python -c "import framework as fw; print(fw.__version__)"
 ```
 
-In a uv project, prefix the command with `uv run`.
+Prefix the command with `uv run` inside a `uv` project.
 
 ## Release verification
 
-Releases are built by GitHub Actions with signed build provenance. The GitHub CLI checks that a downloaded wheel or source archive was built from the framework-py repository.
+GitHub Actions builds releases with signed build provenance. Verify that a wheel or source archive came from the `framework-py` repository with the GitHub CLI:
 
 ```sh
 gh attestation verify framework_py-<version>-py3-none-any.whl --repo frameworktools/framework-py
@@ -84,23 +84,23 @@ gh attestation verify framework_py-<version>-py3-none-any.whl --repo frameworkto
 
 ## Updates
 
-In a uv project, upgrade the locked version and install it.
+Upgrade the locked version in a `uv` project and sync the environment:
 
 ```sh
 uv lock --upgrade-package framework-py
 uv sync
 ```
 
-[packages_update()](ref:packages_update) runs the same two commands from Python.
+[packages_update()](ref:packages_update) runs both commands from Python:
 
 ```python
 fw.packages_update("framework-py")
 ```
 
-With pip, upgrade the package in place.
+With `pip`, upgrade in place:
 
 ```sh
 pip install --upgrade framework-py
 ```
 
-After an update, [ai_skills_update()](ref:ai_skills_update) replaces a project's AI assistant skills with the versions in the new release. The [AI assistants](guide:ai-assistants) guide describes the skills.
+After updating, run [ai_skills_update()](ref:ai_skills_update) to refresh a project's AI assistant skills from the installed release. See [AI assistants](guide:ai-assistants).

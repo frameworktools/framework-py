@@ -1,20 +1,20 @@
 ---
 id: settings-yml
 title: settings.yml
-description: The project settings file, split settings files, environments, and expressions
+description: Project settings, split files, environments, expressions, and read/write helpers
 section: getting_started
 position: 4
 ---
 
 ## Overview
 
-Every Framework project has a `settings.yml` file in its root folder. It records the project's name, type, language, folders, data catalog, connections, and options. Framework finds the project by looking for this file in the current folder and up to ten parent folders. An older project may use `config.yml` instead, which Framework also reads.
+Every Framework project has a `settings.yml` file in its root directory. It defines the project name, type, language, directory layout, data catalog, connections, and runtime options. Framework locates the project root by searching the current directory and up to ten parent directories for `settings.yml` (or legacy `config.yml`).
 
-The settings use the same format as the R package, so either language reads a project's settings to the same values.
+`framework-py` and the R package share the same YAML schema.
 
 ## Environments
 
-The file's top level holds environment sections. Every file has a `default:` section, and the other sections hold overrides.
+Top-level environment blocks let one project define environment-specific overrides over `default`:
 
 ```yaml
 default:
@@ -34,27 +34,27 @@ production:
         database: analytics
 ```
 
-Framework reads environment sections when the top level contains `default`, `production`, `development`, `test`, `testing`, or `staging`. A file with environment sections must have a `default` section.
+Framework enables environment mode when the top level contains `default`, `production`, `development`, `test`, `testing`, or `staging`. A file in environment mode must include `default`.
 
-The active environment comes from the first of these environment variables that is set: `FW_CONFIG_ACTIVE`, `R_CONFIG_ACTIVE`, and `R_CONFIG_NAME`. Without any of them, the active environment is `default`.
+Framework selects the active environment from the first set variable among `FW_CONFIG_ACTIVE`, `R_CONFIG_ACTIVE`, and `R_CONFIG_NAME`, defaulting to `default`:
 
 ```sh
 FW_CONFIG_ACTIVE=production uv run python scripts/load.py
 ```
 
-The active section is merged over `default`. Mappings merge key by key, a `null` value removes a key, and any other value, including a list, replaces the default value whole. An environment name that the file does not define falls back to `default` with a warning.
+Framework merges the active block over `default`. Mappings merge recursively by key, `null` deletes a key, and scalars or lists replace the default value as a whole. Requesting an undefined environment falls back to `default` with a warning.
 
-In a file with environment sections, a top-level key that is not an environment is never read. Framework warns once per session and names the keys:
+In environment mode, Framework ignores top-level keys that are not environment blocks and warns once per session:
 
 ```text
 SettingsWarning: Settings file '.../settings.yml' has keys outside its environment sections, which are ignored: ehr_source, person. Move them under default: to use them.
 ```
 
-A top-level mapping counts as an environment, and is not warned about, when it is the active environment, has an `inherits:` key, or shares a key with `default`.
+A custom top-level mapping is recognized as an environment without warning when it matches the active environment name, contains `inherits:`, or shares a key with `default`.
 
 ## Split files
 
-Standard and privacy-sensitive projects keep most sections in separate files under `settings/`. The main file names each split file in place of the section's content.
+Standard and privacy-sensitive projects split major sections into files under `settings/` and reference them from `settings.yml`:
 
 ```yaml
 default:
@@ -75,7 +75,7 @@ default:
     sensitive: false
 ```
 
-Each split file wraps its content in the section's own key.
+Each split file wraps its contents in the section key:
 
 ```yaml
 # settings/author.yml
@@ -85,20 +85,20 @@ author:
   affiliation: Analytical Engines
 ```
 
-Course and presentation projects keep every section inline in `settings.yml`. Any project can use split files, because Framework treats any top-level value ending in `.yml` or `.yaml` as a file reference.
+Course and presentation projects inline all sections in `settings.yml` by default, though any project can reference `.yml` or `.yaml` split files.
 
-These rules govern split files.
+Split-file resolution rules:
 
-- Paths are relative to the project root.
-- A split file may name further split files. A circular reference is an error.
-- A split file may have its own environment sections.
-- When the main file and a split file both define a key, the main file's value is used and Framework issues a warning. The `options` section is the exception, and its values merge.
+- Paths resolve relative to the project root.
+- Split files can reference additional split files; circular references raise an error.
+- Split files can define their own environment blocks.
+- When both `settings.yml` and a split file define the same key, `settings.yml` wins and emits a warning, except `options`, which merges keys across both files.
 
 ## Expressions
 
-Settings can read environment variables, so credentials stay in the project's `.env` file. Framework reads `.env` before it reads split files. A variable set in your shell wins, and empty values are skipped.
+Settings files interpolate environment variables so secrets remain in `.env`. Framework loads `.env` before resolving split files; existing process environment variables take precedence, and empty `.env` assignments are skipped.
 
-`env("VAR")` is replaced with the variable's value, or with an empty string when it is not set. `env("VAR", "default")` supplies a fallback. Both forms need double quotes.
+Use double-quoted `env("VAR")` to read a variable (or `""` when unset), and `env("VAR", "default")` to supply a fallback:
 
 ```yaml
 connections:
@@ -111,32 +111,30 @@ connections:
       password: env("POSTGRES_PASSWORD")
 ```
 
-The R package also accepts `!expr`, which runs arbitrary R code. Python cannot run R code, so framework-py supports a single form, `!expr Sys.getenv("VAR")`, which works like `env("VAR")`. Any other `!expr` value raises a `SettingsError` when the settings are read. Settings shared between R and Python should use `env()`.
+For compatibility with R projects, `framework-py` also evaluates `!expr Sys.getenv("VAR")` identically to `env("VAR")`. Any other `!expr` tag raises `SettingsError` because Python does not evaluate arbitrary R expressions. Prefer `env()` in shared configurations.
 
-## Sections
-
-A Python project's settings contain these sections.
+## Configuration sections
 
 | Section | Contents |
 |---------|----------|
-| `project_name`, `project_type`, `language` | The project's name, its type (`project`, `project_sensitive`, `course`, `presentation`, or `bare`), and `python`. |
-| `directories` | Folder keys and their paths, relative to the project root. |
-| `render_dirs` | Where Quarto writes rendered output for each source folder. See [Quarto](guide:quarto). |
-| `extra_directories` | Folders added with [project_add_directory()](ref:project_add_directory). |
-| `author` | `name`, `email`, and `affiliation`, used in notebook front matter. |
-| `git` | `enabled` and the pre-commit `hooks`. See [Git](guide:git). |
+| `project_name`, `project_type`, `language` | Display name, project type (`project`, `project_sensitive`, `course`, `presentation`, or `bare`), and `python`. |
+| `directories` | Directory keys mapped to paths relative to the project root. |
+| `render_dirs` | Quarto output directories per source folder. See [Quarto](guide:quarto). |
+| `extra_directories` | Custom folders added via [project_add_directory()](ref:project_add_directory). |
+| `author` | `name`, `email`, and `affiliation` for notebook metadata. |
+| `git` | `enabled` and pre-commit `hooks`. See [Git](guide:git). |
 | `ai` | `enabled`, `canonical_file` (`AGENTS.md`), and `assistants`. See [AI assistants](guide:ai-assistants). |
-| `scaffold` | `seed_on_scaffold`, `seed`, `set_theme_on_scaffold`, `matplotlib_style`, `source_all_functions`, and `notebook_format` (`quarto` or `jupyter`). |
-| `quarto` | HTML and reveal.js rendering options. |
-| `connections` | Databases and storage buckets. See [Connections](guide:connections). |
-| `data` | The data catalog. See [Data management](guide:data-management). |
-| `security` | `sensitive: true` in privacy-sensitive projects. |
+| `scaffold` | `seed_on_scaffold`, `seed`, `set_theme_on_scaffold`, `matplotlib_style`, `source_all_functions`, `workflow`, and `notebook_format` (`quarto`, `jupyter`, or `script`). |
+| `quarto` | HTML and RevealJS rendering options. |
+| `connections` | Database and S3 storage definitions. See [Connections](guide:connections). |
+| `data` | Data catalog entries. See [Data management](guide:data-management). |
+| `security` | `sensitive: true` for privacy-sensitive projects. |
 
-Python packages are listed in `pyproject.toml`. The R package's `packages` section has no effect on a Python project. See [Packages](guide:packages).
+Python dependencies live in `pyproject.toml`; the R package's `packages` section does not apply to Python projects. See [Packages](guide:packages).
 
 ### Directories
 
-The `directories` section maps keys to folders. These are the defaults of a standard project.
+`directories` maps logical keys to project-relative paths. Default paths for a standard project:
 
 ```yaml
 directories:
@@ -157,11 +155,11 @@ directories:
   logs: logs
 ```
 
-The `save_*()` functions find their folder through these keys, and `data_save()` uses the `inputs_*` keys. The [Project types](guide:project-types) guide lists the defaults of each type.
+`save_*()` functions resolve target folders through `outputs_*` keys, and `data_save()` resolves `inputs_*` keys. See [Project types](guide:project-types) for each type's defaults.
 
-### The data catalog
+### Data catalog
 
-The catalog maps dot-notation names to files. Each part of a name is one level of nesting, and an entry is either a path or a mapping with a `path`.
+`data` maps dot-notation names to file paths or metadata mappings:
 
 ```yaml
 data:
@@ -174,11 +172,11 @@ data:
       sites: inputs/raw/sites.csv
 ```
 
-This catalog defines `inputs.raw.survey` and `inputs.raw.sites`. [data_add()](ref:data_add) and [data_save()](ref:data_save) write every level as nested YAML. A key may also contain dots, such as `raw.survey:` under `inputs:`, and the name resolves the same way.
+This configuration defines `inputs.raw.survey` and `inputs.raw.sites`. [data_add()](ref:data_add) and [data_save()](ref:data_save) write nested YAML keys, and dotted keys such as `raw.survey:` under `inputs:` resolve identically.
 
 ### Random seeds
 
-Seeding is off by default. With `seed_on_scaffold: true`, [scaffold()](ref:scaffold) seeds Python's `random` module and NumPy with `seed`.
+Seeding is disabled by default. With `seed_on_scaffold: true`, [scaffold()](ref:scaffold) seeds Python's `random` module and NumPy using `seed`:
 
 ```yaml
 scaffold:
@@ -186,24 +184,24 @@ scaffold:
   seed: '123'
 ```
 
-When the settings do not set `seed_on_scaffold`, the `FW_SEED` environment variable turns seeding on. The project's `seed` takes precedence over the value of `FW_SEED`. New projects set `seed_on_scaffold: false`, and an explicit `false` turns seeding off even when `FW_SEED` is set.
+When `seed_on_scaffold` is omitted, setting `FW_SEED` in the environment enables seeding; `scaffold.seed` still overrides `FW_SEED`'s value when present. An explicit `seed_on_scaffold: false` disables seeding even when `FW_SEED` is set.
 
 ### Options
 
-The `options` section holds less common settings.
+`options` holds additional runtime flags:
 
 | Option | Effect |
 |--------|--------|
-| `source_all_functions: false` | `scaffold()` leaves the functions folder off the import path. |
-| `functions_dir` | One folder, or a list of folders, to add to the import path instead of `directories.functions`. |
-| `data.cache_default_expire` | The expiry for cached values that do not set one, such as `"7 days"`. |
-| `cloud_ledger: live` | Sends each `data_save()` digest to the Framework Cloud ledger. See [Framework Cloud](guide:cloud). |
+| `source_all_functions: false` | Keeps `directories.functions` off `sys.path` during `scaffold()`. |
+| `functions_dir` | Single path or list of paths added to `sys.path` instead of `directories.functions`. |
+| `data.cache_default_expire` | Default expiration window for cached values, such as `"7 days"`. |
+| `cloud_ledger: live` | Pushes each `data_save()` digest to the Framework Cloud ledger. See [Framework Cloud](guide:cloud). |
 
-The top-level `dotenv_location` key points `scaffold()` and the settings reader at a different `.env` file or at a folder that holds one.
+Top-level `dotenv_location` points `scaffold()` and settings loading at an alternate `.env` file or directory.
 
-## Reading settings
+## Settings lookup
 
-[settings()](ref:settings) returns one value by its dot-notation key. A missing key returns `default`, which is `None` unless you pass one.
+[settings()](ref:settings) reads one value by dot-notation key and returns `default` (`None` unless specified) when missing:
 
 ```python
 import framework as fw
@@ -213,17 +211,17 @@ fw.settings("directories.notebooks")
 fw.settings("missing.key", default="fallback")
 ```
 
-A key with a single part is looked up in `directories` first, so `fw.settings("notebooks")` returns the notebooks folder. Called with no key, `settings()` returns the whole dictionary.
+Single-segment keys check `directories` first, so `fw.settings("notebooks")` returns `directories.notebooks`. Calling `settings()` with no key returns the entire merged dictionary.
 
-[settings_read()](ref:settings_read) returns the merged settings of one environment, with split files read and expressions replaced. The `data`, `connections`, `git`, `security`, `packages`, `directories`, and `options` sections are always present, as empty dictionaries when the file does not define them.
+[settings_read()](ref:settings_read) loads one environment with split files merged and `env()` expressions resolved. It always includes `data`, `connections`, `git`, `security`, `packages`, `directories`, and `options` keys, defaulting unset sections to `{}`:
 
 ```python
 config = fw.settings_read(environment="production")
 config["connections"]
 ```
 
-## Writing settings
+## Settings updates
 
-The settings files are plain YAML, and editing them by hand is the usual way to change them. Framework's own functions update the parts they manage: `data_add()` and `data_save()` write catalog entries, the `git_hooks_*()` functions write the `hooks` section, and `project_add_directory()` writes `extra_directories`. They edit the file in place, so its comments and the rest of its layout are kept, sequences stay sequences, and booleans are written `true` and `false` (a `yes` or `no` elsewhere in the file is rewritten as `true` or `false`, which means the same).
+Edit YAML settings files directly or let Framework helpers update their managed sections (`data_add()` and `data_save()` for `data`, `git_hooks_*()` for `git.hooks`, and `project_add_directory()` for `extra_directories`). In-place edits preserve comments, formatting, and list styles, normalizing YAML booleans to `true` and `false`.
 
-[settings_write()](ref:settings_write) with `section=` replaces one section in the same way. Without `section`, it replaces the whole settings file with a dictionary, wrapped in a `default:` section when the dictionary has none, and the file's comments go with it.
+[settings_write()](ref:settings_write) with `section=` updates a single section in place while preserving comments. Without `section=`, it overwrites `settings.yml` with the given dictionary (wrapping it under `default:` when needed) and removes existing comments.

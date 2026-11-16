@@ -6,13 +6,13 @@ section: getting_started
 position: 3
 ---
 
-## Philosophy
+## Overview
 
-Framework favors convention over configuration. Every project of a given type has the same folders, the same settings file, and the same entry point, so a person or an AI assistant who knows one project can navigate another. Nearly every convention can be changed in the project's settings or in your global defaults.
+Framework uses consistent defaults across projects. Every project of a given type uses the same directory layout, settings file, and session entry point, while allowing overrides in project `settings.yml` or global defaults.
 
-## Entry point
+## Session entry point
 
-Every notebook and script starts with two lines.
+Start every notebook and script with two lines:
 
 ```python
 import framework as fw
@@ -20,20 +20,20 @@ import framework as fw
 fw.scaffold()
 ```
 
-[scaffold()](ref:scaffold) finds the project root, loads the settings and the `.env` file, sets the random seed when that is turned on, and puts the `functions/` folder on the import path. The [scaffold()](guide:scaffold) guide describes each step.
+[scaffold()](ref:scaffold) locates the project root, loads `settings.yml` and `.env`, sets the random seed when configured, and adds `functions/` to `sys.path`. See [scaffold()](guide:scaffold) for the full startup sequence.
 
-Framework resolves project paths from the project root. The working directory is not changed, so a notebook in `notebooks/` and a script in `scripts/` refer to the same data by the same name.
+Framework resolves project paths from the project root without changing the working directory, so a notebook in `notebooks/` and a script in `scripts/` address the same dataset by the same catalog name.
 
-Your own path code should do the same. `Path("outputs/tables/x.csv")` in a notebook points under `notebooks/`; [project_path()](ref:project_path) builds the absolute path from the project root, as R's `project_path()` and `here::here()` do. `fw.path()` is an alias for it:
+Use [project_path()](ref:project_path) (or its alias [path()](ref:path)) for explicit file paths instead of relative `Path(...)` calls, which resolve from a notebook's own folder:
 
 ```python
 if not fw.project_path("outputs/tables/incidence.csv").exists():
     raise RuntimeError("Run notebook 3 first")
 ```
 
-## Functions
+## Reusable modules
 
-Reusable code lives in the `functions/` folder as ordinary Python modules. `scaffold()` adds the folder to `sys.path`, so notebooks and scripts import from it directly.
+Place shared Python modules in `functions/`. Because `scaffold()` adds `functions/` to `sys.path`, notebooks and scripts import those modules directly:
 
 ```text
 functions/
@@ -49,26 +49,26 @@ fw.scaffold()
 from cleaning import standardize_names
 ```
 
-Python imports run a module's top-level code once per session. Keep these modules to definitions, so that importing them has no side effects.
+Python runs top-level module code once per session on import. Keep files in `functions/` limited to definitions without side effects.
 
 ## Inputs and outputs
 
-Framework separates the data a project reads from the files it produces.
+Framework separates input datasets from generated artifacts.
 
 ### Inputs
 
-Data the project reads lives in `inputs/`, organized by stage.
+Input datasets live in `inputs/` by pipeline stage:
 
 ```text
 inputs/
-├── raw/           # data from outside sources, never modified
-├── intermediate/  # cleaned or transformed data, mid-pipeline
+├── raw/           # unmodified source files
+├── intermediate/  # cleaned or transformed pipeline outputs
 └── final/         # analysis-ready datasets
 ```
 
 ### Outputs
 
-Files the project produces live in `outputs/`, organized by kind. Apart from `outputs/notebooks/`, which is created with the project, each folder is created the first time something is saved there.
+Generated artifacts live in `outputs/` by type. Project creation initializes `outputs/notebooks/`, and Framework creates the remaining subdirectories on first save:
 
 ```text
 outputs/
@@ -76,32 +76,32 @@ outputs/
 ├── figures/    # save_figure()
 ├── models/     # save_model()
 ├── reports/    # save_report()
-├── notebooks/  # rendered notebooks, from Quarto and save_notebook()
+├── notebooks/  # rendered notebooks from Quarto and save_notebook()
 └── cache/      # cached values
 ```
 
-The [Saving work](guide:saving-work) guide describes the `save_*()` functions.
+See [Saving work](guide:saving-work) for the `save_*()` functions.
 
-### Work folders
+### Work directories
 
-- `notebooks/` holds Quarto (`.qmd`) and Jupyter (`.ipynb`) notebooks.
-- `scripts/` holds standalone Python scripts.
-- `functions/` holds reusable modules.
-- `scratch/` holds throwaway files and quick captures.
-- `docs/` holds project documentation.
-- `logs/` holds run logs.
+- `notebooks/` stores Quarto (`.qmd`) and Jupyter (`.ipynb`) notebooks.
+- `scripts/` stores standalone Python scripts.
+- `functions/` stores reusable Python modules.
+- `scratch/` stores temporary explorations and captures.
+- `docs/` stores project documentation.
+- `logs/` stores execution logs.
 
-The standard `.gitignore` excludes `scratch/`, `logs/`, and every `cache/` folder.
+The standard `.gitignore` excludes `scratch/`, `logs/`, and every `cache/` directory.
 
 ## Dot notation
 
-Framework names data files with dot notation. A name such as `inputs.raw.survey` stands for a catalog entry, which records the file's path, type, and integrity settings. Code refers to the name, and the catalog maps it to a file.
+Framework addresses datasets through dot-separated catalog keys such as `inputs.raw.survey`. Each entry records the file path, format, and integrity settings so analysis code references a stable name:
 
 ```python
 survey = fw.data_read("inputs.raw.survey")
 ```
 
-The catalog is the `data` section of the settings. Each part of a dot-notation name is usually one level of nesting, and a key may also contain dots, such as `raw.survey:` under `inputs:`.
+Catalog entries live under `data` in `settings.yml` (or `settings/data.yml`). Each dot usually steps down one YAML mapping level, though dotted YAML keys such as `raw.survey:` under `inputs:` resolve identically:
 
 ```yaml
 data:
@@ -113,23 +113,21 @@ data:
         locked: true
 ```
 
-[data_add()](ref:data_add) and [data_save()](ref:data_save) write these entries for you. The [Data management](guide:data-management) guide covers the catalog.
+[data_add()](ref:data_add) and [data_save()](ref:data_save) manage catalog entries automatically. See [Data management](guide:data-management).
 
-Settings keys use the same notation. `fw.settings("directories.notebooks")` returns the `notebooks` entry of the `directories` section.
+[settings()](ref:settings) uses the same dot notation: `fw.settings("directories.notebooks")` returns the configured `notebooks` path.
 
-## Naming
+## Naming rules
 
-Framework applies a few naming rules consistently.
-
-- **Catalog names** follow the folder they describe, so a file in `inputs/raw/` is named `inputs.raw.<file>`. When `data_save()` receives a name, its leading parts select the folder, using the longest run that names a directory key, and the rest becomes the file name.
-- **Directory keys** in the settings join the parts of a folder with underscores, such as `inputs_raw` for `inputs/raw` and `outputs_tables` for `outputs/tables`.
-- **Notebook and script files** are named from the title you give. `make_notebook("Data Cleaning")` creates `data-cleaning.qmd`.
-- **Saved outputs** are named by the name you pass plus the format's extension, such as `summary.csv`. The results table in `framework.db` records them by their path from the project root.
-- **Projects** have a display name in `settings.yml`. The `pyproject.toml` name and the workspace file use its kebab-case form.
+- **Catalog names** mirror directory structure: a file in `inputs/raw/` uses `inputs.raw.<name>`. In `data_save()`, the longest matching prefix selects a directory key and the remainder becomes the filename stem.
+- **Directory keys** join path segments with underscores, such as `inputs_raw` for `inputs/raw` and `outputs_tables` for `outputs/tables`.
+- **Notebooks and scripts** slugify titles to kebab-case: `make_notebook("Data Cleaning")` creates `data-cleaning.qmd` (or `data-cleaning.ipynb`).
+- **Saved outputs** combine the given stem with the format extension, such as `summary.csv`, and record paths relative to the project root in `framework.db`.
+- **Projects** store a display name in `settings.yml` and derive kebab-case names for `pyproject.toml` and `.code-workspace`.
 
 ## Privacy-sensitive projects
 
-Projects that hold restricted data split inputs and outputs into private and public folders.
+Privacy-sensitive projects split `inputs/` and `outputs/` into `private/` and `public/` trees:
 
 ```text
 inputs/
@@ -143,11 +141,11 @@ inputs/
     └── final/
 ```
 
-Everything under a `private/` folder is ignored by git, and the publishing functions ask before they upload it. When Claude Code is one of the project's assistants, its settings deny it access to these folders. The [Project types](guide:project-types) guide compares the types.
+Git ignores every `private/` path, publishing functions require confirmation before uploading from `private/`, and Claude Code settings deny read access to `private/` directories. See [Project types](guide:project-types).
 
 ## Data integrity
 
-Framework records a SHA-256 hash of each catalog file in `framework.db`. A later read compares the file with the recorded hash. A changed file raises a warning, and a changed locked file raises an error.
+Framework stores a SHA-256 hash for each cataloged file in `framework.db` and verifies it on subsequent reads. Modified unlocked files emit a `DataChangedWarning`; modified locked files raise an `IntegrityError`:
 
 ```text
 IntegrityError: Hash mismatch for locked data 'inputs.raw.survey'
@@ -155,12 +153,12 @@ Expected hash: 71da0ff755e5
 Current hash:  ddaa40dcf34b
 ```
 
-The hashes match the ones the R package records, so a file saved in one language verifies in the other.
+R and Python compute identical SHA-256 digests, so files saved in one language verify in the other.
 
 ## Project language
 
-Each project has a single `language`, recorded in `settings.yml`. framework-py creates and works with Python projects. R projects are created by the R package, and the two kinds of project never mix. They share data through formats both languages read: CSV and Parquet files, the data catalog, and `framework.db`.
+Each project records a single `language` in `settings.yml`. `framework-py` creates and operates on Python projects, while the R package manages R projects. Cross-language workflows share data through CSV and Parquet files, the YAML data catalog, and `framework.db`.
 
-## Messages
+## Logging
 
-Framework reports progress through the `framework` logger. [scaffold()](ref:scaffold), project creation, and other interactive functions print these messages to standard error. In library use the logger stays quiet unless you configure it with the `logging` module.
+Framework emits status messages through Python's `framework` logger. Interactive calls such as [scaffold()](ref:scaffold) and [new_project()](ref:new_project) print messages to `stderr`; library calls stay silent unless configured via the standard `logging` module.

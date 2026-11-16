@@ -1,43 +1,41 @@
 ---
 id: caching
 title: Caching
-description: Cached results of expensive computations, reused between sessions
+description: Persistent computation caching with dependency hashing, expiration windows, and integrity checks
 section: features
 position: 8
 ---
 
 ## Overview
 
-Framework's cache saves the result of an expensive computation so later sessions can reuse it. A cached value is stored as a file in the project's cache folder and recorded in the `cache` table of `framework.db` with its hash and an optional expiry time.
-
-DataFrames are stored as Parquet. Other values are stored with pickle.
+Framework caches expensive computations on disk so subsequent sessions reuse results without recomputing them. DataFrames serialize as Parquet, and other Python objects serialize with `pickle`, with SHA-256 digests and optional expiration times tracked in `framework.db`.
 
 > [!WARNING]
-> Loading a pickle can run arbitrary code. Load caches only from projects you trust.
+> Unpickling executes arbitrary code. Load cached objects only from trusted projects.
 
-## The cache folder
+## Cache directory resolution
 
-The cache folder is chosen in this order.
+Framework resolves the cache directory in priority order:
 
-1. The `FW_CACHE_DIR` environment variable, relative to the project root unless absolute.
-2. `directories.cache` in the settings.
-3. `options.data.cache_dir` in the settings.
+1. `FW_CACHE_DIR` environment variable (project-relative unless absolute).
+2. `directories.cache` in `settings.yml`.
+3. `options.data.cache_dir` in `settings.yml`.
 4. `outputs/cache`.
 
-The project types set these defaults.
+Default cache directories by project type:
 
-| Project type | Cache folder |
-|--------------|--------------|
+| Project type | Cache directory |
+|--------------|-----------------|
 | Standard | `outputs/cache/` |
 | Privacy-sensitive | `outputs/private/cache/` |
 | Course | `cache/` |
 | Presentation | `cache/` |
 
-The folder is created the first time a value is cached. Every project type's `.gitignore` excludes `cache/` folders.
+Framework creates the directory on first write, and `.gitignore` excludes all `cache/` directories.
 
-## Remembering a result
+## Compute-once caching
 
-[cache_remember()](ref:cache_remember) returns the cached value when one exists. Otherwise it calls a function, caches the result, and returns it. The function takes no arguments.
+[cache_remember()](ref:cache_remember) returns an existing valid cache entry or executes a zero-argument callable, caches the return value, and returns it:
 
 ```python
 import framework as fw
@@ -53,13 +51,13 @@ def fit_model():
 model = fw.cache_remember("survey_model", fit_model)
 ```
 
-A lambda works for short expressions.
+Short computations can pass a `lambda`:
 
 ```python
 counts = fw.cache_remember("site_counts", lambda: survey.groupby("site").size().reset_index())
 ```
 
-`cache_remember()` also works as a decorator. The decorated function takes no arguments, and calling it returns the cached value when one exists.
+`cache_remember()` also works as a decorator on zero-argument functions:
 
 ```python
 @fw.cache_remember("survey_clean", expire_after="1 week")
@@ -70,9 +68,9 @@ def survey_clean():
 clean = survey_clean()
 ```
 
-## Dependencies
+## Dependency invalidation
 
-A cached value goes stale when the data or code it came from changes, and nothing else tells the cache. `depends_on` names what the value is computed from. Their hashes become part of the entry's key, so `cache_remember()` computes the value again when any of them changes.
+Pass `depends_on` to invalidate a cached entry automatically whenever upstream datasets, source files, or parameter values change:
 
 ```python
 fit = fw.cache_remember(
@@ -82,22 +80,22 @@ fit = fw.cache_remember(
 )
 ```
 
-`depends_on` takes one item or a list:
+`depends_on` accepts a single item or a list (order-independent):
 
-| Item | Hashed as |
-|------|-----------|
-| A catalog name, such as `"inputs.final.cohort"` | Its file's SHA-256, as data integrity hashes it |
-| A file path from the project root, such as `"functions/lpa.py"` | The file's SHA-256 |
-| A folder path, such as `"functions"` | Every file's path and hash. Hidden files and `__pycache__` are skipped |
-| Any other value, such as `{"k": 4}`, a number, or a DataFrame | The value itself |
+| Input | Hash source |
+|-------|-------------|
+| Catalog key (`"inputs.final.cohort"`) | Target dataset's SHA-256 digest |
+| Project-relative file (`"functions/lpa.py"`) | File SHA-256 digest |
+| Project-relative directory (`"functions"`) | Path and SHA-256 of every non-hidden file (excluding `__pycache__`) |
+| Arbitrary Python object (`{"k": 4}`, scalar, DataFrame) | Value digest |
 
-A string always names a catalog entry, file, or folder, and one that names nothing is an error, so a typo cannot quietly turn into a value. To make a string value part of the key, wrap it: `{"rule": ">= 0"}`. The order of the list does not matter.
+Bare strings always resolve as catalog keys, files, or directories and raise an error when unmatched, preventing typos from silently hashing as literal strings. Wrap literal string parameters in a dictionary such as `{"rule": ">= 0"}`.
 
-An entry stored with dependencies remembers them. When it is read without them, by [cache_get()](ref:cache_get) or a `cache_remember()` call that leaves `depends_on` out, its files and catalog entries are hashed again. If any changed, the entry is older than its dependencies: the lookup issues a `CacheWarning` naming them and treats the value as missing, and `cache_remember()` computes it again with the same dependencies. [cache()](ref:cache) takes `depends_on` too.
+Stored file and catalog dependencies are also recorded in `framework.db` (`meta` key `cache_depends:<name>`). Even if a later [cache_get()](ref:cache_get) or `cache_remember()` call omits `depends_on`, Framework rechecks the recorded files and emits `CacheWarning` on mismatch; `cache_get()` then returns `default`, and `cache_remember()` recomputes. [cache()](ref:cache) also accepts `depends_on`.
 
 ## Expiration
 
-`expire_after` sets how long a value stays valid. It takes a number of hours or a string with a unit.
+Pass `expire_after` as hours (numeric) or a duration string:
 
 ```python
 fw.cache_remember("exchange_rates", fetch_rates, expire_after=1)
@@ -106,23 +104,16 @@ fw.cache_remember("daily_extract", run_extract, expire_after="1 day")
 fw.cache_remember("weekly_model", fit_model, expire_after="2 weeks")
 ```
 
-The units are `second`, `seconds`, `sec`, `secs`, and `s`; `minute`, `minutes`, `min`, and `mins`; `hour`, `hours`, `hr`, `hrs`, and `h`; `day`, `days`, and `d`; and `week`, `weeks`, and `w`. A value without an expiry stays valid until it is removed. `options.data.cache_default_expire` in the settings sets an expiry for values that do not give one.
+Supported units: `second`/`seconds`/`sec`/`secs`/`s`, `minute`/`minutes`/`min`/`mins`, `hour`/`hours`/`hr`/`hrs`/`h`, `day`/`days`/`d`, and `week`/`weeks`/`w`. Entries without `expire_after` use `options.data.cache_default_expire` when configured or persist until removed. Expired entries delete automatically on next lookup.
 
-An expired value is removed when it is next looked up, and `cache_remember()` computes it again.
+## Forced refresh
 
-## Refreshing
-
-`refresh=True` removes the cached value and computes it again.
-
-```python
-model = fw.cache_remember("survey_model", fit_model, refresh=True)
-```
-
-`refresh` can also be a function that returns `True` or `False`, which decides at call time.
+Pass `refresh=True` (or a zero-argument predicate returning `bool`) to discard an existing entry and recompute:
 
 ```python
 import os
 
+model = fw.cache_remember("survey_model", fit_model, refresh=True)
 model = fw.cache_remember(
     "survey_model",
     fit_model,
@@ -130,44 +121,24 @@ model = fw.cache_remember(
 )
 ```
 
-## Storing and retrieving values
+## Direct read, write, and eviction
 
-[cache()](ref:cache) stores a value and returns it. [cache_get()](ref:cache_get) returns a stored value, or `default` when the value is missing, expired, or unreadable.
+- [cache()](ref:cache) writes a value directly and returns it.
+- [cache_get()](ref:cache_get) reads a cached value or returns `default` (`None`) when missing, expired, or modified. Pass `file=` to target a custom path outside the cache directory.
+- [cache_forget()](ref:cache_forget) deletes one entry and its database row.
+- [cache_flush()](ref:cache_flush) deletes all cached files and records.
+- [cache_list()](ref:cache_list) returns a DataFrame of cache entries with timestamps and `status` (`active` or `expired`).
 
 ```python
 fw.cache("site_lookup", lookup, expire_after=24)
-
-lookup = fw.cache_get("site_lookup")
 lookup = fw.cache_get("site_lookup", default={})
-```
-
-The `file` argument of these functions stores the value in a specific file instead of the cache folder.
-
-## Removing values
-
-[cache_forget()](ref:cache_forget) removes one value and its record. [cache_flush()](ref:cache_flush) removes every cached file in the cache folder and every record.
-
-```python
+fw.cache_list()
 fw.cache_forget("site_lookup")
 fw.cache_flush()
 ```
 
-## Listing the cache
+## Integrity and R interoperability
 
-[cache_list()](ref:cache_list) returns every cache record with its expiry, creation, update, and last-read times, and a `status` of `active` or `expired`.
+Framework verifies each cache file's SHA-256 digest on read; modified files emit `CacheWarning` and trigger recomputation.
 
-```python
-fw.cache_list()
-```
-
-## Integrity
-
-Framework records each cached file's SHA-256 hash. When a file no longer matches its hash, the lookup issues a `CacheWarning` and treats the value as missing, so `cache_remember()` computes it again.
-
-## Caches shared with R
-
-R and Python share the `cache` table, and record dependencies in the same place (the `meta` table, under `cache_depends:<name>`). R stores values as `.rds` files, which Python cannot read. A name that R cached is a miss in Python, with a `CacheWarning`, and R's file is left in place. `cache_forget()` and `cache_flush()` in Python remove entries from either language.
-
-## Caching guidance
-
-Cache computations that take long enough to slow down iteration, such as model fits, large joins, and database or API queries. Use descriptive names, such as `sales_2024_by_region`, so that `cache_list()` shows what each entry holds. Give values that come from outside sources an expiry, so they are fetched again.
+R and Python share the `cache` table and `cache_depends:<name>` metadata, while R serializes cache files as `.rds`. Looking up an R `.rds` entry from Python emits `CacheWarning` and treats it as a miss without deleting R's file. `cache_forget()` and `cache_flush()` remove entries written by either language.

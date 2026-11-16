@@ -1,18 +1,18 @@
 ---
 id: connections
 title: Database connections
-description: Database connections in the settings, queries, transactions, SQL files, and CSV loading
+description: Named database connections, parameterized queries, transactions, SQL scripts, and bulk CSV loading
 section: features
 position: 9
 ---
 
 ## Overview
 
-Framework defines database connections once, in the project settings, and opens them by name. The query functions open a connection, run the statement, and close the connection again, so analysis code does not manage connections by hand. Credentials come from the project's `.env` file and never sit in the settings.
+Framework defines database connections once in `settings.yml` (or `settings/connections.yml`) and opens them by name. Query helpers open a connection, execute the statement, and close the connection automatically, pulling credentials from `.env` via `env()`.
 
-## Configuring connections
+## Connection configuration
 
-Connections live in the `connections` section, which standard and privacy-sensitive projects keep in `settings/connections.yml`. Each database is an entry under `databases`.
+Define database entries under `connections.databases`:
 
 ```yaml
 connections:
@@ -35,12 +35,10 @@ connections:
   storage_buckets: {}
 ```
 
-Every new project defines the `framework` connection, which points at the project's own `framework.db`.
-
-`env()` reads a value from the environment, which Framework loads from `.env` before it reads the settings. New projects have empty `POSTGRES_*` entries in `.env` to fill in.
+Every new project includes the `framework` SQLite connection pointing to `framework.db`, plus empty `POSTGRES_*` placeholders in `.env`:
 
 ```sh
-# .env (ignored by git)
+# .env (gitignored)
 POSTGRES_HOST=db.example.org
 POSTGRES_PORT=5432
 POSTGRES_DB=analytics
@@ -49,25 +47,25 @@ POSTGRES_USER=analyst
 POSTGRES_PASSWORD=change-me
 ```
 
-Framework also finds connections written directly under `connections` with a `driver` key, and in a top-level `databases` section, which older R projects use.
+Framework also reads legacy entries placed directly under `connections` (with a `driver` key) or under a top-level `databases` key.
 
-## Drivers
+## Supported drivers
 
-SQLite is built into Python. The other drivers come from optional extras of framework-py.
+SQLite uses Python's standard library; other engines install via optional extras:
 
-| Driver names | Python package | Extra | Required fields |
-|--------------|----------------|-------|-----------------|
-| `sqlite` | sqlite3 (built in) | | `database` |
-| `postgres`, `postgresql` | psycopg | `postgres` | `host`, `port`, `database`, `user`, `password` |
-| `mysql`, `mariadb` | PyMySQL | `mysql` | `host`, `port`, `database`, `user`, `password` |
-| `duckdb` | duckdb | `duckdb` | `database` |
-| `sqlserver`, `mssql` | pyodbc | `sqlserver` | `host`, `database`, `user`, `password` |
+| Driver names | Package | Extra | Required fields |
+|--------------|---------|-------|-----------------|
+| `sqlite` | `sqlite3` (built-in) | | `database` |
+| `postgres`, `postgresql` | `psycopg` | `postgres` | `host`, `port`, `database`, `user`, `password` |
+| `mysql`, `mariadb` | `PyMySQL` | `mysql` | `host`, `port`, `database`, `user`, `password` |
+| `duckdb` | `duckdb` | `duckdb` | `database` |
+| `sqlserver`, `mssql` | `pyodbc` | `sqlserver` | `host`, `database`, `user`, `password` |
 
 ```sh
 uv add "framework-py[postgres]"
 ```
 
-A connection whose package is missing raises an error that names the install command. [db_drivers_status()](ref:db_drivers_status) reports which drivers are installed.
+Missing driver packages raise an error with the install command. Check installed drivers with [db_drivers_status()](ref:db_drivers_status):
 
 ```python
 import framework as fw
@@ -75,41 +73,41 @@ import framework as fw
 fw.db_drivers_status()
 ```
 
-Each driver accepts a few more fields.
+Driver-specific options:
 
-- **SQLite and DuckDB.** `database` is a file path, relative to the project root. Its folder must exist. Both take `read_only: true`, which opens an existing file read-only: writes fail, a file without write permission still opens, and `db_execute()` and `db_transaction()` refuse the connection. Read-only can't create a file, so a missing one is an error that says to create it first with a writable connection: connect to it once without `read_only`, or run its schema with `db_execute_file()`. Without it, a file you can't write is an error that suggests `read_only: true`. DuckDB also takes `memory_limit` and `threads`.
-- **PostgreSQL.** `schema` sets the search path and defaults to `public`.
-- **SQL Server.** `port` defaults to 1433. `odbc_driver` names the ODBC driver and defaults to `ODBC Driver 17 for SQL Server`. `trust_server_certificate` defaults to `true`, which accepts self-signed certificates. The ODBC driver itself is installed separately.
+- **SQLite and DuckDB:** `database` resolves relative to the project root (its parent directory must exist). Setting `read_only: true` opens existing files read-only and blocks `db_execute()` and `db_transaction()`; missing files raise an error instructing you to initialize the database with a writable connection first. DuckDB also accepts `memory_limit` and `threads`.
+- **PostgreSQL:** `schema` sets `search_path` (defaults to `public`).
+- **SQL Server:** `port` defaults to `1433`, `odbc_driver` defaults to `ODBC Driver 17 for SQL Server`, and `trust_server_certificate` defaults to `true`. Install the system ODBC driver separately.
 
-PostgreSQL, MySQL, and SQL Server connections time out after ten seconds when the server does not answer.
+Network connections (`postgres`, `mysql`, `sqlserver`) use a 10-second connection timeout.
 
-## Running queries
+## Queries and statements
 
-[db_query()](ref:db_query) runs a query and returns the rows as a DataFrame. It takes the SQL and the connection name.
+[db_query()](ref:db_query) executes a `SELECT` query and returns a DataFrame:
 
 ```python
 visits = fw.db_query("SELECT * FROM visits WHERE active", "warehouse")
 ```
 
-Pass values in `params`, never by formatting them into the SQL string. The placeholder style is the driver's: `?` for SQLite, DuckDB, and SQL Server, and `%s` for PostgreSQL and MySQL.
+Always pass dynamic values via `params` using the driver's parameter marker (`?` for SQLite, DuckDB, and SQL Server; `%s` for PostgreSQL and MySQL):
 
 ```python
 fw.db_query("SELECT * FROM visits WHERE site = ?", "local", params=["north"])
 fw.db_query("SELECT * FROM visits WHERE site = %s", "warehouse", params=["north"])
 ```
 
-[db_execute()](ref:db_execute) runs a statement, commits it, and returns the number of rows affected. It returns -1 when the driver does not report a count.
+[db_execute()](ref:db_execute) executes a write or DDL statement, commits it, and returns the affected row count (`-1` when not reported by the driver):
 
 ```python
 fw.db_execute("CREATE TABLE IF NOT EXISTS visits (id INTEGER, site TEXT)", "local")
 fw.db_execute("INSERT INTO visits VALUES (?, ?)", "local", params=[1, "north"])
 ```
 
-A failed query raises `FrameworkError` with the driver's message.
+Driver errors raise `FrameworkError`.
 
-## Open connections
+## Managed connections
 
-[db_connect()](ref:db_connect) opens a connection and returns a `Connection`. It behaves like the driver's own connection object, with `cursor()`, `commit()`, and the rest of the DB-API, and it closes when a `with` block ends.
+[db_connect()](ref:db_connect) returns a DB-API `Connection` context manager (`cursor()`, `commit()`, and `conn.raw` for driver-native methods):
 
 ```python
 with fw.db_connect("warehouse") as conn:
@@ -118,11 +116,9 @@ with fw.db_connect("warehouse") as conn:
     print(cursor.fetchone())
 ```
 
-The driver's object is available as `conn.raw` for features outside the DB-API.
+### Per-call read-only mode
 
-### Read-only for one call
-
-`read_only=True` on [db_connect()](ref:db_connect) and [db_query()](ref:db_query) opens a SQLite or DuckDB connection read-only for that call, whatever its setting. A call can add read-only but never remove it: `read_only=False` on a connection with `read_only: true` in its settings raises an error, so the settings decide what may write. A job that rebuilds a database that notebooks share read-only gets its own connection entry for the same file:
+Pass `read_only=True` to [db_connect()](ref:db_connect) or [db_query()](ref:db_query) on SQLite or DuckDB to restrict that call to read-only access (allowing concurrent multi-process DuckDB reads). Calls cannot downgrade a `read_only: true` setting via `read_only=False`; define a separate writable connection entry for build scripts instead:
 
 ```yaml
 connections:
@@ -138,11 +134,11 @@ with fw.db_connect("vizient_build") as conn:
 fw.db_query("SELECT count(*) AS n FROM encounters", "vizient")
 ```
 
-Server databases control writes with the database user's permissions, so `read_only=True` on a PostgreSQL, MySQL, or SQL Server connection is an error, and `read_only=False` changes nothing. A DuckDB file opened read-only can be open in several processes at once; one opened writable locks it until the connection closes.
+Passing `read_only=True` on server databases (`postgres`, `mysql`, `sqlserver`) raises an error because server roles govern write permissions.
 
 ## Transactions
 
-[db_transaction()](ref:db_transaction) groups statements so that they are committed together. When the block raises an exception, every statement in it is rolled back, and Framework raises `FrameworkError` with the original exception as its cause.
+[db_transaction()](ref:db_transaction) commits a block atomically or rolls back all statements on exception (nested blocks join the outer transaction):
 
 ```python
 with fw.db_connect("local") as conn, fw.db_transaction(conn):
@@ -151,13 +147,11 @@ with fw.db_connect("local") as conn, fw.db_transaction(conn):
     cursor.execute("INSERT INTO visits VALUES (3, 'east')")
 ```
 
-A transaction inside another transaction on the same connection joins the outer one.
+SQLite, DuckDB, PostgreSQL, and SQL Server roll back DDL statements inside transactions; MySQL and MariaDB implicitly commit DDL immediately.
 
-On SQLite, DuckDB, PostgreSQL, and SQL Server, a rollback also undoes `CREATE TABLE` and other schema changes. MySQL and MariaDB commit schema changes at once, so a rollback cannot undo them.
+## SQL script execution
 
-## SQL files
-
-[db_execute_file()](ref:db_execute_file) runs every statement in a `.sql` file, in order, in one transaction, and returns the number of statements. It takes an open connection or a connection name. A relative path starts at the project root.
+[db_execute_file()](ref:db_execute_file) executes all statements in a project-relative `.sql` file inside one transaction and returns the executed statement count:
 
 ```python
 fw.db_execute_file("omop", "sql/omop_cdm_ddl.sql")
@@ -166,38 +160,25 @@ with fw.db_connect("omop") as conn:
     fw.db_execute_file(conn, "sql/constraints.sql")
 ```
 
-Statements end at a `;` outside quotes, comments, and PostgreSQL `$$` quotes. A SQLite trigger's `BEGIN ... END` body stays whole. SQL Server files are split at lines holding only `GO`, as sqlcmd splits them, and each batch runs whole. MySQL's `DELIMITER` command is a feature of the mysql client, not SQL, and is not supported.
+The splitter respects quoted strings, comments, PostgreSQL `$$` blocks, SQLite `BEGIN ... END` triggers, and SQL Server `GO` batch separators (MySQL client `DELIMITER` directives are unsupported). Failures roll back the file and report the statement index and line number. Pass `transaction=False` for statements such as PostgreSQL `CREATE INDEX CONCURRENTLY`.
 
-When a statement fails, the file is rolled back and the error names the statement's number and line. `transaction=False` commits each statement as it runs, for statements that cannot run in a transaction, such as PostgreSQL's `CREATE INDEX CONCURRENTLY`.
+## Bulk CSV loading
 
-## Loading CSV files
-
-[db_copy_from()](ref:db_copy_from) loads a CSV file into an existing table and returns the number of rows. The header names the columns; columns the file leaves out get their defaults. Values reach the database as text, and the database converts them to the columns' types. Empty fields and `NA` load as NULL, as [data_read()](ref:data_read) reads them; `na=` changes that.
+[db_copy_from()](ref:db_copy_from) streams a delimited file into an existing table inside a single transaction and returns the inserted row count. Header names map to target columns, and empty fields plus `"NA"` load as `NULL` (override via `na=`):
 
 ```python
 fw.db_copy_from("omop", "cdm.concept", "inputs/raw/vocabulary/CONCEPT.csv", delim="tab")
 ```
 
-PostgreSQL loads with `COPY ... FROM STDIN`, DuckDB inserts each parsed chunk in one statement, SQL Server uses pyodbc's fast `executemany`, and SQLite and MySQL use `executemany`. The file is read in chunks, and the whole load is one transaction, so a failure loads nothing. A `schema.table` name is quoted part by part, so names keep their case.
+PostgreSQL uses `COPY ... FROM STDIN`, DuckDB inserts parsed chunks per statement, SQL Server enables `fast_executemany`, and SQLite/MySQL use chunked `executemany`.
 
-## Listing connections
+## Connection inspection and credentials
 
-[db_list()](ref:db_list) returns the configured databases with their driver, host, port, and database. [connections_list()](ref:connections_list) returns databases and storage buckets together and marks the defaults.
+[db_list()](ref:db_list) lists configured databases, and [connections_list()](ref:connections_list) lists both databases and S3 storage buckets (see [Publishing](guide:publishing)):
 
 ```python
 fw.db_list()
 fw.connections_list()
 ```
 
-Storage buckets are defined in the same section and used for publishing. The [Publishing](guide:publishing) guide covers them.
-
-## Credentials
-
-Keep every credential in `.env` and refer to it with `env()`. Settings files are committed to git, and `.env` is not.
-
-```yaml
-# Settings: a reference to the environment
-password: env("POSTGRES_PASSWORD")
-```
-
-Framework refuses secret-looking values in project specs and in your global defaults, and it makes sure every project's `.gitignore` excludes `.env`. The [Environment](guide:environment) guide covers `.env` files.
+Keep passwords in `.env` and reference them with `env("...")`. See [Environment](guide:environment).

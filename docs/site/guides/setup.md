@@ -8,17 +8,17 @@ position: 2
 
 ## Overview
 
-Framework keeps your personal defaults in a global config folder. New projects start from these defaults, and each project can override them in its own settings. framework-py has no graphical setup screen. You set defaults with [configure_global()](ref:configure_global) or by editing the files in the config folder.
+Framework stores personal defaults in a global configuration directory. New projects start from those defaults, and each project can override any setting in `settings.yml`. Set defaults with [configure_global()](ref:configure_global) or edit the YAML files directly.
 
-## The config folder
+## Configuration directory
 
-[config_dir()](ref:config_dir) returns the folder. It is chosen in this order.
+[config_dir()](ref:config_dir) resolves the configuration directory in priority order:
 
-1. `FW_CONFIG_HOME`, when that environment variable is set.
+1. `FW_CONFIG_HOME`, when set.
 2. `$XDG_CONFIG_HOME/framework`, when `XDG_CONFIG_HOME` is set.
-3. `~/.config/framework`, on every platform, including Windows.
+3. `~/.config/framework` on macOS, Linux, and Windows.
 
-Python and the `fw` command-line tool share this folder. The R package keeps a separate folder, as the [Copying settings from R](#copying-settings-from-r) section explains. The folder is created the first time Framework writes to it.
+`framework-py` and the `fw` CLI share this directory. The R package uses a separate directory by default; see [R settings sync](#r-settings-sync). Framework creates the directory on first write.
 
 ```python
 import framework as fw
@@ -26,23 +26,23 @@ import framework as fw
 fw.config_dir()
 ```
 
-The folder can hold these files.
+Directory layout:
 
 ```text
 ~/.config/framework/
-├── settings.yml          # your defaults and the project registry
-├── templates/            # your versions of the notebook, script, and presentation templates
-├── cloud.yml             # the Framework Cloud server you logged in to
-├── cloud-token           # a saved cloud token, only when no system keyring is available
-├── cloud-settings.yml    # the local mirror of your cloud settings document
-└── sync-state.yml        # the revision of the last cloud settings sync
+├── settings.yml          # global defaults and local project registry
+├── templates/            # personal notebook, script, and presentation templates
+├── cloud.yml             # active Framework Cloud server URL
+├── cloud-token           # fallback cloud token when no system keyring is available
+├── cloud-settings.yml    # local mirror of your Framework Cloud settings document
+└── sync-state.yml        # revision metadata from the last cloud settings sync
 ```
 
-The cloud files appear only after you use Framework Cloud. The [Framework Cloud](guide:cloud) guide describes them.
+The cloud files appear after signing in to Framework Cloud. See [Framework Cloud](guide:cloud).
 
 ## Global settings
 
-[configure_global()](ref:configure_global) merges new values into `settings.yml` and returns the result. Called without arguments, it returns the current settings and changes nothing.
+[configure_global()](ref:configure_global) merges values into `settings.yml` and returns the updated configuration. Calling it with no arguments returns the current settings without writing to disk.
 
 ```python
 fw.configure_global(
@@ -56,25 +56,25 @@ fw.configure_global(
 )
 ```
 
-Nested mappings merge by key. Each project type's `directories` are replaced whole, and so are `defaults.packages`, `defaults.connections`, and `defaults.env`. The function checks the values before it saves them. It refuses any secret-looking variable with a value in `defaults.env`, because secrets belong in each project's `.env` file.
+Nested mappings merge by key. Project type `directories`, `defaults.packages`, `defaults.connections`, and `defaults.env` replace their prior values as a whole. `configure_global()` validates settings before saving and rejects secret-looking variables with values in `defaults.env`; store credentials in each project's `.env` file instead.
 
-[global_settings()](ref:global_settings) reads the file without changing it.
+[global_settings()](ref:global_settings) reads `settings.yml` without modifying it.
 
-### Settings for new projects
+### New-project defaults
 
-[new_project()](ref:new_project) reads these keys from the global settings.
+[new_project()](ref:new_project) reads these global keys:
 
 | Key | Effect on new projects |
 |-----|------------------------|
-| `author` | `name`, `email`, `affiliation`, `orcid`, `url`, and `affiliations` fill the project's author section and notebook front matter. |
-| `defaults.scaffold` | `seed_on_scaffold`, `seed`, `source_all_functions`, and `ide`. An `ide` of `vscode`, `positron`, or `both` adds a `.code-workspace` file. |
-| `defaults.ai` | `enabled` turns AI assistant files on or off. `assistants` lists assistants (`claude`, `codex`, or `copilot`). |
-| `defaults.git` | `initialize` decides whether the project becomes a git repository. `hooks` turns on pre-commit checks. |
-| `project_types.<type>.directories` | Folder names for one project type, such as `notebooks: analysis`. |
+| `author` | Populates `name`, `email`, `affiliation`, `orcid`, `url`, and `affiliations` in project settings and notebook front matter. |
+| `defaults.scaffold` | Sets `seed_on_scaffold`, `seed`, `source_all_functions`, and `ide`. Setting `ide` to `vscode`, `positron`, or `both` writes a `.code-workspace` file. |
+| `defaults.ai` | `enabled` controls AI assistant files. `assistants` selects `claude`, `codex`, or `copilot`. |
+| `defaults.git` | `initialize` controls git repository initialization. `hooks` enables pre-commit checks. |
+| `project_types.<type>.directories` | Overrides directory paths for a project type, such as `notebooks: analysis`. |
 
-The assistants you list replace the default selection, which is Claude Code alone. Include `claude` in the list to keep it. Set `enabled: false` to create projects without AI assistant files. The [AI assistants](guide:ai-assistants) guide describes the files each assistant gets.
+The `assistants` list replaces the default selection (`claude`). Include `claude` to retain Claude Code alongside other assistants, or set `enabled: false` to omit AI assistant files. See [AI assistants](guide:ai-assistants).
 
-The example below sets a seed, turns on the sensitive-folder hook check, and renames the notebooks folder of standard projects.
+Set a default random seed, enable the sensitive-directory hook check, and rename the notebooks folder for standard projects:
 
 ```python
 fw.configure_global(
@@ -90,7 +90,7 @@ fw.configure_global(
 )
 ```
 
-The resulting `settings.yml` is plain YAML and can be edited by hand.
+The resulting `settings.yml` is plain YAML:
 
 ```yaml
 author:
@@ -112,57 +112,57 @@ project_types:
 
 ### Package defaults
 
-Values you do not set come from the package defaults that ship with framework-py. [load_settings_catalog()](ref:load_settings_catalog) returns them, together with the `.gitignore` text of each project type.
+Unset keys fall back to the built-in catalog shipped with `framework-py`. [load_settings_catalog()](ref:load_settings_catalog) returns those defaults along with each project type's `.gitignore` template.
 
-A `settings-catalog.yml` file in the config folder overrides the package defaults. [new_project()](ref:new_project) reads the same keys from it as from the global settings, and the global settings win where both set a value. `load_settings_catalog()` merges the file over the package defaults it returns. The R package's `new()` reads its own `settings-catalog.yml` in the same way.
+Placing a `settings-catalog.yml` file in the configuration directory overrides the built-in catalog. [new_project()](ref:new_project) reads `settings-catalog.yml` before `settings.yml`, and `settings.yml` takes precedence when both set a key. `load_settings_catalog()` merges `settings-catalog.yml` over the built-in defaults.
 
 ```python
 catalog = fw.load_settings_catalog()
 catalog["defaults"]["scaffold"]
 ```
 
-## The project registry
+## Project registry
 
-Framework records each project it creates in the `projects` list of the global `settings.yml`. Projects created inside the system's temporary folder are not recorded.
+Framework records each created project under `projects` in global `settings.yml`, except projects created inside the system temporary directory.
 
-- [project_list()](ref:project_list) returns the registered projects as a DataFrame with the columns `id`, `path`, `created`, and `exists`. A project whose folder is gone has `exists` False, and a message names it so you can remove it with `project_unregister()`. Projects created in a temporary folder are not registered.
-- [project_register()](ref:project_register) adds a folder and returns its id.
-- [project_unregister()](ref:project_unregister) removes a project by id or path.
+- [project_list()](ref:project_list) returns registered projects as a DataFrame with `id`, `path`, `created`, and `exists` columns. Missing directories show `exists: False` and emit a message naming `project_unregister()`.
+- [project_register()](ref:project_register) registers a directory and returns its numeric ID.
+- [project_unregister()](ref:project_unregister) removes an entry by ID or path.
 
 ```python
 fw.project_list()
 fw.project_unregister(3)
 ```
 
-## Copying settings from R
+## R settings sync
 
-The R package keeps its global settings in `tools::R_user_dir("framework", "config")`, because CRAN does not allow a package to write elsewhere. Python never writes to that folder. People who use both languages copy R's settings into Python's folder with [config_sync()](ref:config_sync).
+The R package stores global configuration in `tools::R_user_dir("framework", "config")` to satisfy CRAN policy. `framework-py` never writes to that folder. Copy R settings into Python's configuration directory with [config_sync()](ref:config_sync).
 
-`config_sync()` copies `settings.yml`, `cloud.yml`, and the `cloud-token*` files. A file is copied when Python's folder does not have it or R's copy is newer. Modification times are kept, and token files are made readable only by you. With `dry_run=True`, the function reports what it would copy.
+`config_sync()` copies `settings.yml`, `cloud.yml`, and `cloud-token*` files when missing in Python's directory or newer in R's directory. It preserves modification times and restricts token files to owner-only permissions (`0600`). Pass `dry_run=True` to preview changes without writing files:
 
 ```python
 result = fw.config_sync(dry_run=True)
 print(result)
 ```
 
-The `from_dir` argument names a different source folder. When `FW_CONFIG_HOME` is set, R and Python use the same folder and nothing needs to be copied.
+Pass `from_dir` to read from another source directory. Setting `FW_CONFIG_HOME` points R, Python, and `fw` at the same directory without copying.
 
 ## Personal templates
 
-[make_notebook()](ref:make_notebook), [make_script()](ref:make_script), and [make_presentation()](ref:make_presentation) start from templates. You can keep your own version of three of them in the `templates/` subfolder of the config folder.
+[make_notebook()](ref:make_notebook), [make_script()](ref:make_script), and [make_presentation()](ref:make_presentation) render files from templates. Store custom defaults in the `templates/` subdirectory of your configuration directory:
 
-| Template | File | Used by |
-|----------|------|---------|
-| `notebook` | `notebook-default.qmd` | `make_notebook()` and `make_qmd()` |
+| Template | File | Functions |
+|----------|------|-----------|
+| `notebook` | `notebook-default.qmd` | `make_notebook()`, `make_qmd()` |
 | `script` | `script-default.py` | `make_script()` |
-| `presentation` | `notebook-revealjs.qmd` | `make_presentation()` and `make_revealjs()` |
+| `presentation` | `notebook-revealjs.qmd` | `make_presentation()`, `make_revealjs()` |
 
-These functions manage the files.
+Template helper functions:
 
-- [read_framework_template()](ref:read_framework_template) returns your version when it exists, and Framework's otherwise.
-- [write_framework_template()](ref:write_framework_template) saves your version.
-- [reset_framework_template()](ref:reset_framework_template) deletes your version, so Framework's is used again.
-- [framework_template_path()](ref:framework_template_path) returns the file your version is saved in.
+- [read_framework_template()](ref:read_framework_template) returns your custom template when present or the built-in template otherwise.
+- [write_framework_template()](ref:write_framework_template) writes a custom template.
+- [reset_framework_template()](ref:reset_framework_template) deletes your custom template so the built-in version takes effect again.
+- [framework_template_path()](ref:framework_template_path) returns the file path for a custom template.
 
 ```python
 text = fw.read_framework_template("script")
@@ -173,4 +173,4 @@ fw.write_framework_template(
 fw.reset_framework_template("script")
 ```
 
-A template file in a project's `stubs/` folder takes precedence over your personal template. The [Notebooks and scripts](guide:notebooks) guide describes stubs and the placeholders templates can use.
+Project-level templates in `stubs/` override personal templates. See [Notebooks and scripts](guide:notebooks) for stub files and template placeholders.

@@ -129,6 +129,10 @@ Python raises it as `DataChangedWarning`; R should use `warning()`.
 
 R today: the second save overwrites silently.
 
+Superseded: saving new contents over locked data is now an error in R, Python, and
+Stata, before the file is written. `unlock = TRUE` (`unlock=True`, Stata's `unlock`)
+replaces it on purpose.
+
 ### data_read(): `.rds` data frames in Python [D5]
 
 Python only; R needs no change. `data_read()` reads an `.rds` file through the optional

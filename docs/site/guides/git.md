@@ -1,54 +1,52 @@
 ---
 id: git
 title: Git
-description: The .gitignore templates, the shared pre-commit hook, git_hooks_*(), and git_security_audit()
+description: Repository initialization, .gitignore templates, pre-commit hooks, and git_security_audit()
 section: features
 position: 12
 ---
 
 ## Overview
 
-Framework sets up git for new projects and guards against committing restricted data and secrets. It writes a `.gitignore` for the project type, installs a pre-commit hook when you enable its checks, and audits a repository on request. For everyday version control, use git itself or your editor. framework-py does not wrap git commands such as `status`, `add`, `commit`, or `push`.
+Framework configures git repositories for new projects and guards against committing restricted data, notebook outputs, and credentials. It generates project-type `.gitignore` templates, manages a cross-language pre-commit hook, and runs repository security audits via [git_security_audit()](ref:git_security_audit). Run everyday `git` commands (`status`, `add`, `commit`, `push`) directly in your terminal or editor.
 
-## New repositories
+## Repository initialization
 
-[new_project()](ref:new_project) initializes a git repository when git is installed and `defaults.git.initialize` in your global settings is not `false`. It then takes these steps.
+When `git` is installed and `defaults.git.initialize` is not `false`, [new_project()](ref:new_project):
 
-1. It makes sure `.gitignore` ignores `.env`. If git would still track `.env`, creation stops with an error before anything is committed.
-2. It stages every file and makes the first commit, `Initial commit from Framework`. When git's `user.name` or `user.email` is not set, it skips the commit and prints a note.
-3. It installs the pre-commit hook when a hook check is enabled. The first commit holds only the files Framework wrote, so it is made before the hook exists and does not need a Python environment with framework-py yet.
+1. Verifies that `.gitignore` excludes `.env`, aborting before any commit if git would track `.env`.
+2. Stages generated files and creates `Initial commit from Framework` when git `user.name` and `user.email` are configured (skipping the commit with a note otherwise).
+3. Installs `.git/hooks/pre-commit` when at least one hook check is enabled.
 
-A project created inside an existing git work tree, such as a folder of example projects, is left to that repository: Framework skips `git init` and the first commit, and prints a line naming the enclosing repository.
+Projects created inside an existing parent git worktree skip `git init` and the initial commit.
 
 ## .gitignore templates
 
-Each project type gets its own `.gitignore`. All of them ignore the same core set of files.
+Every project type's `.gitignore` excludes:
 
-- Folders named `private` or ending in `_private`, anywhere in the project.
-- `.env` and its variants, `credentials/` and `secrets/` folders, and key files (`*.key` and `*.pem`).
-- `cache/`, `scratch/`, `tmp/`, `temp/`, and `logs/` folders, anywhere in the project.
-- `framework.db` and its `-wal` and `-shm` files.
-- Quarto's working files (`.quarto/`, `_freeze/`, `*_cache/`, and `*_files/`).
-- Python environments and caches (`.venv/`, `__pycache__/`, `.ipynb_checkpoints/`, and the pytest, mypy, and ruff caches).
-- Personal editor history and operating system files.
+- Any directory named `private` or ending in `_private`
+- `.env` variants, `credentials/`, `secrets/`, `*.key`, and `*.pem`
+- `cache/`, `scratch/`, `tmp/`, `temp/`, and `logs/` directories
+- `framework.db`, `framework.db-wal`, and `framework.db-shm`
+- Quarto working directories (`.quarto/`, `_freeze/`, `*_cache/`, `*_files/`)
+- Python virtual environments and tool caches (`.venv/`, `__pycache__/`, `.ipynb_checkpoints/`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`)
+- OS and editor scratch files
 
-The privacy-sensitive template adds explicit rules for `/inputs/private/`, `/outputs/private/`, and `/reference/private/`, ignores folders named `sensitive`, and also ignores `*.p12` and `*.pfx` files. It re-includes `README.md` and `.gitkeep` files under `inputs/`, `outputs/`, and `reference/`, so a private folder's structure can be documented. A standard project with `security: sensitive: true` uses the same template.
+Privacy-sensitive projects (`project_sensitive` or `security.sensitive: true`) additionally ignore `/inputs/private/`, `/outputs/private/`, `/reference/private/`, directories named `sensitive`, and `*.p12`/`*.pfx` certificates, while re-including `README.md` and `.gitkeep` placeholders under `inputs/`, `outputs/`, and `reference/`.
 
-The `.gitignore` belongs to the project after creation. Edit it as the project needs. [bootstrap()](ref:bootstrap) adds a `.env` rule back when the file no longer ignores `.env`.
+## Pre-commit hook
 
-## The pre-commit hook
+R, Python, and `fw` install the same POSIX shell pre-commit hook. In a Python project (detected via `pyproject.toml`, `uv.lock`, or `.venv`), the hook invokes `python -m framework hook pre-commit` using the first available runtime:
 
-R, Python, and the `fw` tool install the same pre-commit hook. It is a short POSIX shell script that finds a runtime and runs the checks in that language's package. For a Python project, which it recognizes by `pyproject.toml`, `uv.lock`, or `.venv`, it runs `python -m framework hook pre-commit` with the first Python it finds in this order.
+1. `.venv/bin/python` (`.venv/Scripts/python.exe` on Windows).
+2. `uv run --frozen python` when `uv.lock` and `uv` exist.
+3. `python3` on `PATH`.
 
-1. `.venv/bin/python`, or `.venv/Scripts/python.exe` on Windows.
-2. `uv run --frozen python`, when the project has `uv.lock` and uv is installed.
-3. `python3` on the `PATH`.
-
-The chosen Python must be able to import framework-py, so run `uv sync` after cloning. When no runtime is found, the commit fails, because the hook guards against committing restricted data. `git commit --no-verify` skips the hook for a commit you know is safe.
+Run `uv sync` after cloning so `framework-py` is importable. If no runtime is available, the hook fails closed; use `git commit --no-verify` only for verified commits.
 
 ### Hook checks
 
-The checks are turned on in the `git` section of the settings, which standard and privacy-sensitive projects keep in `settings/git.yml`.
+Configure checks under `git.hooks` (in `settings/git.yml` for standard and sensitive projects):
 
 ```yaml
 git:
@@ -58,23 +56,21 @@ git:
     check_notebook_outputs: true
 ```
 
-| Check | Effect |
-|-------|--------|
-| `data_security` | Runs [git_security_audit()](ref:git_security_audit) and fails the commit when a check fails. When it passes with warnings from `published_outputs`, `connection_secrets`, or `identifier_columns`, it prints them and the commit goes ahead. |
-| `check_sensitive_dirs` | Warns about folders whose names contain `private`, `confidential`, `sensitive`, `cache`, or `scratch` and that git does not ignore. At a terminal, it asks before committing. The skills Framework installs, such as `.claude/skills/framework-sensitive-data`, are left out. |
-| `check_notebook_outputs` | Fails the commit when a staged Jupyter notebook (`.ipynb`) has cell outputs or execution counts, since printed tables and previews are saved in the file. The message names each notebook and how to clear its outputs. |
+| Check | Behavior |
+|-------|----------|
+| `data_security` | Runs [git_security_audit()](ref:git_security_audit) and blocks commits on failures (`gitignore_coverage`, `private_data_exposure`, `git_history`, `secrets_exposure`, `connection_secrets`). Prints non-blocking warnings (`published_outputs`, `identifier_columns`, untracked `connection_secrets`) and lets the commit proceed. |
+| `check_sensitive_dirs` | Warns when unignored directories contain `private`, `confidential`, `sensitive`, `cache`, or `scratch` in their name (excluding installed skill folders) and prompts at a terminal before committing. |
+| `check_notebook_outputs` | Blocks staged `.ipynb` files that retain cell outputs or execution counts, printing instructions to clear outputs. |
 
-A privacy-sensitive project (`project_sensitive`) starts with `data_security` and `check_sensitive_dirs` on, so its repository gets the hook as soon as it is created. In other projects all three checks are off by default. The older name `warn_unignored_sensitive` is accepted for `check_sensitive_dirs`. The R package's `ai_sync` check was removed, because projects keep AI instructions in `AGENTS.md` and skills, and an `ai_sync` setting is ignored.
+`project_sensitive` projects enable `data_security` and `check_sensitive_dirs` by default at creation time; other project types start with all three checks disabled.
 
-### Managing the hook
+### Hook management
 
-These functions read and write the `hooks` settings and install or remove the hook.
-
-- [git_hooks_enable()](ref:git_hooks_enable) turns on one check and installs the hook.
-- [git_hooks_disable()](ref:git_hooks_disable) turns off one check, and removes the hook when no check is left.
-- [git_hooks_install()](ref:git_hooks_install) installs the hook when a check is enabled.
+- [git_hooks_enable()](ref:git_hooks_enable) enables a check and installs `.git/hooks/pre-commit`.
+- [git_hooks_disable()](ref:git_hooks_disable) disables a check and removes the hook when none remain enabled.
+- [git_hooks_install()](ref:git_hooks_install) installs the hook (`force=True` replaces third-party hooks; Framework hooks update automatically).
 - [git_hooks_uninstall()](ref:git_hooks_uninstall) removes the hook.
-- [git_hooks_list()](ref:git_hooks_list) returns each check and whether it is enabled. Its `attrs["installed"]` says whether the hook is installed.
+- [git_hooks_list()](ref:git_hooks_list) returns check states (`df.attrs["installed"]` reports hook installation).
 
 ```python
 import framework as fw
@@ -84,32 +80,24 @@ fw.git_hooks_list()
 fw.git_hooks_disable("data_security")
 ```
 
-A pre-commit hook that Framework did not write is kept. `git_hooks_install(force=True)` replaces it. A hook written by R or by an earlier version of Framework is replaced without `force`.
+[bootstrap()](ref:bootstrap) reinstalls enabled hooks automatically after `git clone`.
 
-The hook belongs to a project at the top of its own repository. A project inside another repository, such as a folder of example projects, would get the outer repository's hook, which runs from the outer top folder. `git_hooks_install()` refuses that with an error: run `git init` in the project first. [status()](ref:status) still reports the outer repository there, with commit and change counts for the project's folder only.
+## Security audit
 
-[bootstrap()](ref:bootstrap) installs the hook in a cloned project when a check is enabled, because git does not carry hooks with a clone.
+[git_security_audit()](ref:git_security_audit) runs eight repository checks and returns an `AuditResult`:
 
-## The security audit
+| Check | Severity and condition |
+|-------|------------------------|
+| `gitignore_coverage` | **Fails** when a private directory or data file inside one is not ignored by git (`git check-ignore --no-index`). |
+| `private_data_exposure` | **Fails** when git tracks a file inside a private directory (allowing empty `.gitkeep`/`.keep` or `.gitignore` ≤ 4 KB). |
+| `git_history` | **Fails** when past commits touched data files inside private or inputs directories, or data files whose headers contain identifier-like columns. |
+| `secrets_exposure` | **Fails** when git tracks `.env` or `.env.*` files (excluding `.example`, `.template`, and `.sample`). |
+| `connection_secrets` | **Fails** when a git-tracked settings file contains literal credentials or non-empty `env("VAR", "fallback")` defaults under credential keys (`password`, `secret`, `token`, `access_key`, `api_key`, `private_key`, `credential`); **warns** when untracked. |
+| `orphaned_files` | **Warns** on unignored data files outside configured project directories. |
+| `published_outputs` | **Warns** on unignored files in local folder publishing destinations (exempting `visibility: public` folders in non-sensitive projects). |
+| `identifier_columns` | **Warns** when git-tracked CSV, TSV, Parquet, Stata, or SPSS headers outside private folders match direct identifier names (see [Data management](guide:data-management)). |
 
-[git_security_audit()](ref:git_security_audit) checks that private data and secrets stay out of the repository. It runs eight checks. Each file is reported once, under the deepest folder that holds it, even when several settings keys name the same folder.
-
-| Check | Fails when |
-|-------|------------|
-| `gitignore_coverage` | A private data folder, or a data file in one, is not ignored |
-| `private_data_exposure` | Git tracks a file in a private data folder. Placeholders that keep the folder in git (an empty `.gitkeep` or `.keep`, or a `.gitignore` of at most 4 KB) don't count. |
-| `git_history` | A past commit added, changed, or deleted a data file in a private data folder |
-| `secrets_exposure` | Git tracks a `.env` file or a variant such as `.env.local`. Files ending in `.example`, `.template`, or `.sample` are allowed. |
-| `orphaned_files` | Warns, without failing, about data files outside the configured folders that git does not ignore |
-| `published_outputs` | Warns, without failing, about folder publishing destinations inside the project that hold files git does not ignore, since rendered notebooks there can show private results. In a project that is not privacy-sensitive, a destination with `visibility: public`, such as a GitHub Pages `docs/` folder, is meant to be committed and is left out. |
-| `identifier_columns` | Warns, without failing, about data files git tracks outside private folders whose header has columns that look like direct identifiers, such as a date of birth or ZIP code. Only the header is read. [Data management](guide:data-management) lists the names. |
-| `connection_secrets` | A password, secret, token, or key under `connections` in the settings (the settings file or a split file under `settings/`) is written out instead of read with `env("VARIABLE")`, and git tracks the file. An untracked file only warns. `env("VAR")` and `env("VAR", "")` pass; `env("VAR", "value")` counts as written out, since the default is in the file, and Framework Cloud refuses it in a spec. Credential keys are those matching password, passwd, pwd, secret, token, access_key, api_key, private_key, or credential. The report names the file and key, never the value. |
-
-A new project adds each folder destination the `published_outputs` check covers to its `.gitignore`, such as `/published/`.
-
-In a git repository, git decides what is ignored (`git check-ignore --no-index`), so every `.gitignore` rule counts as git reads it, negations and nested `.gitignore` files included.
-
-Files you have reviewed and may commit, such as public lookup tables, vocabulary files, or synthetic data, can be listed under `security: reviewed:` in the settings, as paths from the project root, folders, or globs (`*` within a folder name, `**` across folders, `?` one character):
+Mark verified public lookup tables or synthetic datasets under `security.reviewed` (paths, folders, or globs) to exempt them from `git_history`, `private_data_exposure`, and `identifier_columns`:
 
 ```yaml
 security:
@@ -119,8 +107,6 @@ security:
     - "**/*_synthetic_*.csv"
 ```
 
-The `git_history`, `private_data_exposure`, and `identifier_columns` checks don't count them. They are listed in `findings["reviewed"]` (`file`, `check`, `pattern`) and on one `REVIEWED` line of the report. The list stays in the settings; `.framework/spec.json` doesn't carry it.
-
 ```python
 result = fw.git_security_audit()
 result.passed
@@ -128,22 +114,8 @@ result.summary
 result.findings["gitignore_coverage"]
 ```
 
-The audit returns an `AuditResult`. `passed` is `False` when any check failed, and warnings still pass. `findings` holds a DataFrame per check, and `recommendations` lists what to do. The result is also recorded in the `meta` table of `framework.db`.
+Audit options: `check_git_history=False` skips commit history, `history_depth="shallow"` scans the last 100 commits (or pass an integer), `auto_fix=True` appends missing `.gitignore` entries, `extensions=[...]` overrides audited file extensions, and `verbose=False` suppresses console output.
 
-The arguments adjust the audit.
+### Private directory rules
 
-- `check_git_history=False` skips the history scan.
-- `history_depth` limits the scan to `"shallow"` (the last 100 commits) or a number of commits. The default is `"all"`.
-- `auto_fix=True` adds unignored private folders to `.gitignore`. Files git already tracks stay tracked until you run `git rm --cached`.
-- `extensions` lists the file extensions that count as data.
-- `verbose=False` skips the printed report.
-
-### Private folders
-
-The audit watches the folders in `directories` whose keys start with `inputs_` or `outputs_`, the `cache`, `scratch`, and `logs` folders, and any folder whose key or path is named like `private`, `confidential`, or `sensitive`, such as `original_private_tables`. Folders outside the project, given as absolute paths, are skipped, since git can't commit them from this repository. The report lists them under "Skipped", and `result.metadata["skipped_directories"]` holds them.
-
-The audit treats a folder in `directories` as private when its key contains `private`, when its path has a segment whose name contains `private`, `confidential`, or `sensitive`, or when its key is `cache`, `scratch`, or `logs`. Folder keys that contain `_public` are exempt. These are the folders every project type's `.gitignore` ignores, so new standard and privacy-sensitive projects pass the audit.
-
-Other input and output folders, such as `inputs/raw` and `outputs/tables` in a standard project, are not private, and git commits their files unless you ignore them. Data that must stay out of the repository belongs in a private folder.
-
-The R package's audit also treats every `inputs_*` and `outputs_*` folder as private, so in R the audit fails for a standard project whose `.gitignore` does not ignore those folders.
+In `framework-py`, the audit treats a configured directory as private when its key contains `private` (excluding `_public`), its path has a segment containing `private`, `confidential`, or `sensitive`, or its key is `cache`, `scratch`, or `logs`. Standard `inputs/raw` and `outputs/tables` directories remain committable unless ignored. (By contrast, the R package's audit treats all `inputs_*` and `outputs_*` directories as private unless exempted.)
