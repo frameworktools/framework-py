@@ -7,6 +7,7 @@ import pytest
 
 import framework as fw
 from framework.cloud import CloudError
+from tests.conftest import save_login
 
 SERVER = "https://cloud.example"
 
@@ -325,6 +326,8 @@ def edited_skill(
     """An edited skill to push, without reaching Cloud."""
     import framework.cloud as module
     import framework.skill_pull as skill_pull
+
+    save_login(SERVER)
 
     monkeypatch.setattr(module, "cloud_token", lambda url: "fw_user" if signed_in else None)
     monkeypatch.setattr(

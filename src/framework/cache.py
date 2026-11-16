@@ -26,7 +26,7 @@ import pandas as pd
 from framework import _depends, db
 from framework._log import inform
 from framework._paths import in_root, relative_to_root
-from framework.errors import CacheWarning, FrameworkError
+from framework.errors import CacheWarning, FrameworkError, IntegrityError
 from framework.integrity import file_hash
 from framework.project import project_root
 from framework.settings import settings_read
@@ -149,6 +149,12 @@ def _store(
     path = (
         Path(file) if file is not None else cache_dir() / f"{name}{_FORMATS[0 if is_frame else 1]}"
     )
+    # A cache file never replaces locked data
+    from framework.data import locked_data_at, locked_message
+
+    held = locked_data_at(path)
+    if held is not None:
+        raise IntegrityError(locked_message("cache()", held, "Store the cache in another file."))
     if not path.parent.is_dir():
         path.parent.mkdir(parents=True, exist_ok=True)
         inform(f"Creating cache directory: {path.parent}")

@@ -461,7 +461,7 @@ def pull_data_registry(
     project's framework.db. Applying writes the new entries into the settings' data section
     (inline, or in its split file such as ``settings/data.yml``), keeping the file's comments.
     Local entries are never removed, and an entry whose local definition differs keeps it
-    unless ``overwrite=True``. Fields Framework Cloud doesn't keep stay as they are. The
+    unless ``overwrite=True``. Fields Framework Cloud does not store remain unchanged. The
     revision pulled is kept in ``.framework/data.lock.json`` for ``push_data_registry()``.
     ``pull_all()`` pulls it with the packages and skills.
 
@@ -544,7 +544,7 @@ def push_data_registry(
 
     Args:
         project_path: The project's root directory. Default: the current directory.
-        remove: Remove entries from Cloud's registry that this project doesn't have.
+        remove: Remove entries from Cloud's registry that this project does not have.
         force: Push even when Cloud's registry changed since the last pull.
         confirm: True pushes without asking; False cancels. None asks in a console.
         dry_run: List the changes and send nothing.

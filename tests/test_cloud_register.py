@@ -13,6 +13,7 @@ import pytest
 import framework as fw
 from framework import cloud
 from framework.__main__ import main
+from tests.conftest import save_login
 from tests.test_cloud import FakeCloud
 
 
@@ -30,6 +31,7 @@ def server(monkeypatch: pytest.MonkeyPatch) -> FakeCloud:
     fake = FakeCloud()
     monkeypatch.setattr(cloud, "_transport", httpx.MockTransport(fake))
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
+    save_login()
     return fake
 
 

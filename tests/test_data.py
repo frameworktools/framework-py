@@ -45,7 +45,6 @@ def test_save_by_name_writes_parquet_and_catalogs_it(data_project: Path) -> None
                     "clean_v2": {
                         "path": "inputs/intermediate/clean_v2.parquet",
                         "type": "parquet",
-                        "locked": True,
                     }
                 }
             }
@@ -167,7 +166,7 @@ def test_save_creates_a_missing_settings_folder(data_project: Path) -> None:
 
 
 def test_locked_file_that_changed_is_an_error(data_project: Path) -> None:
-    fw.data_save(FRAME, "inputs.raw.survey")
+    fw.data_save(FRAME, "inputs.raw.survey", locked=True)
     target = data_project / "inputs/raw/survey.parquet"
     FRAME.head(1).to_parquet(target)
     with pytest.raises(
@@ -177,7 +176,7 @@ def test_locked_file_that_changed_is_an_error(data_project: Path) -> None:
 
 
 def test_unlocked_file_that_changed_warns_and_updates(data_project: Path) -> None:
-    fw.data_save(FRAME, "inputs.raw.survey", locked=False)
+    fw.data_save(FRAME, "inputs.raw.survey")
     target = data_project / "inputs/raw/survey.parquet"
     FRAME.head(1).to_parquet(target)
     with pytest.warns(fw.DataChangedWarning, match="File hash changed"):
@@ -239,7 +238,6 @@ def test_add_names_files_by_folder(data_project: Path) -> None:
         "path": "inputs/raw/survey.csv",
         "type": "csv",
         "delimiter": "comma",
-        "locked": True,
     }
     assert fw.data_info("inputs.raw.survey").path == path.resolve()
 
@@ -340,7 +338,6 @@ def test_add_updates_an_entry_written_with_dotted_keys(data_project: Path) -> No
                 "path": "inputs/raw/survey.csv",
                 "type": "csv",
                 "delimiter": "comma",
-                "locked": True,
             }
         }
     }
@@ -593,21 +590,114 @@ def test_dates_and_times_are_written_as_readr_writes_them() -> None:
     }
 
 
-def test_saving_over_locked_data_warns_when_the_contents_change(data_project: Path) -> None:
+def test_data_is_saved_unlocked_by_default(data_project: Path) -> None:
+    changed = FRAME.assign(score=[1.0, 2.0])
+    # By name: no lock in framework.db or the catalog, and a second save replaces it
+    fw.data_save(FRAME, "inputs.intermediate.cohort")
+    record = db.get_data_record("inputs.intermediate.cohort")
+    assert record is not None and not record.locked
+    assert "locked" not in (data_project / "settings/data.yml").read_text(encoding="utf-8")
+    fw.data_save(changed, "inputs.intermediate.cohort")
+    pd.testing.assert_frame_equal(fw.data_read("inputs.intermediate.cohort"), changed)
+
+    # By path
+    fw.data_save(FRAME, "inputs/intermediate/scratch.csv")
+    fw.data_save(changed, "inputs/intermediate/scratch.csv")
+    record = db.get_data_record("inputs/intermediate/scratch.csv")
+    assert record is not None and not record.locked
+
+    # data_add() registers unlocked too
+    (data_project / "inputs/raw/visits.csv").write_text("id\n1\n", encoding="utf-8")
+    entry = fw.data_add("inputs/raw/visits.csv", name="inputs.raw.visits")
+    assert "locked" not in entry
+
+
+def test_saving_over_locked_data_refuses_new_contents(data_project: Path) -> None:
+    fw.data_save(FRAME, "inputs.intermediate.cohort", locked=True)
+    record = db.get_data_record("inputs.intermediate.cohort")
+    assert record is not None and record.locked
+    target = data_project / "inputs/intermediate/cohort.parquet"
+    before = file_hash(target)
+
+    # The same contents: a rerun of a deterministic pipeline is silent and keeps the lock
     fw.data_save(FRAME, "inputs.intermediate.cohort")
     record = db.get_data_record("inputs.intermediate.cohort")
     assert record is not None and record.locked
 
-    # The same contents: a rerun of a deterministic pipeline is silent
-    fw.data_save(FRAME, "inputs.intermediate.cohort")
-
     changed = FRAME.assign(score=[1.0, 2.0])
-    with pytest.warns(fw.DataChangedWarning, match="replaced locked data 'inputs.intermediate"):
+    with pytest.raises(fw.IntegrityError) as raised:
         fw.data_save(changed, "inputs.intermediate.cohort")
-    pd.testing.assert_frame_equal(fw.data_read("inputs.intermediate.cohort"), changed)
+    assert str(raised.value) == (
+        "data_save() does not overwrite locked data.\n"
+        "  dataset: inputs.intermediate.cohort (locked: true in the data catalog)\n"
+        "  file:    inputs/intermediate/cohort.parquet\n"
+        "Save the data under another name, or pass unlock=True to replace it.\n"
+        "The new file is then unlocked. Add locked=True to keep it locked."
+    )
+    assert file_hash(target) == before
+    assert not list(target.parent.glob(".fw-save-*"))
 
-    fw.data_save(FRAME, "inputs.intermediate.rebuilt", locked=False)
-    fw.data_save(changed, "inputs.intermediate.rebuilt", locked=False)
+    # unlock=True, locked=True replaces it, still locked, and reads pass
+    fw.data_save(changed, "inputs.intermediate.cohort", unlock=True, locked=True)
+    pd.testing.assert_frame_equal(fw.data_read("inputs.intermediate.cohort"), changed)
+    with pytest.raises(fw.IntegrityError):
+        fw.data_save(FRAME, "inputs.intermediate.cohort")
+
+    # unlock=True alone replaces it unlocked; later saves replace it
+    fw.data_save(FRAME, "inputs.intermediate.cohort", unlock=True)
+    record = db.get_data_record("inputs.intermediate.cohort")
+    assert record is not None and not record.locked
+    fw.data_save(changed, "inputs.intermediate.cohort")
+
+
+def test_saving_by_path_over_a_locked_record_is_refused(data_project: Path) -> None:
+    fw.data_save(FRAME, "inputs/intermediate/cohort.csv", locked=True)
+    with pytest.raises(
+        fw.IntegrityError,
+        match=r"dataset: inputs/intermediate/cohort\.csv \(saved with locked=True\)",
+    ):
+        fw.data_save(FRAME.head(1), "inputs/intermediate/cohort.csv")
+
+
+def test_a_locked_catalog_entry_is_refused_by_name_or_path(data_project: Path) -> None:
+    source = data_project / "inputs/raw/survey.csv"
+    source.write_text("id\n1\n2\n", encoding="utf-8")
+    fw.data_add("inputs/raw/survey.csv", name="inputs.raw.survey", locked=True)
+    for target in ("inputs/raw/survey.csv", "inputs.raw.survey.csv", "inputs.raw.survey"):
+        with pytest.raises(
+            fw.IntegrityError,
+            match=r"dataset: inputs\.raw\.survey \(locked: true in the data catalog\)",
+        ):
+            fw.data_save(FRAME, target)
+    assert source.read_text(encoding="utf-8") == "id\n1\n2\n"
+    # The save by name to .parquet did not repoint the entry or write a file
+    assert not (data_project / "inputs/raw/survey.parquet").exists()
+    assert fw.data_info("inputs.raw.survey").path.name == "survey.csv"
+
+    # Registering it again without locked keeps the lock
+    assert fw.data_add("inputs/raw/survey.csv", name="inputs.raw.survey")["locked"] is True
+
+    # locked: false in the settings unlocks it
+    catalog = data_project / "settings/data.yml"
+    catalog.write_text(
+        catalog.read_text(encoding="utf-8").replace("locked: true", "locked: false"),
+        encoding="utf-8",
+    )
+    fw.data_save(FRAME, "inputs/raw/survey.csv")
+
+
+def test_cache_and_outputs_never_write_over_locked_data(data_project: Path) -> None:
+    fw.data_save(FRAME, "inputs.intermediate.cohort", locked=True)
+    target = data_project / "inputs/intermediate/cohort.parquet"
+    before = file_hash(target)
+    with pytest.raises(fw.IntegrityError, match=r"^cache\(\) does not overwrite locked data"):
+        fw.cache("cohort", FRAME.head(1), file="inputs/intermediate/cohort.parquet")
+    assert file_hash(target) == before
+
+    table = fw.save_table(FRAME, "summary")
+    fw.data_add(table, name="outputs.summary", locked=True)
+    with pytest.raises(fw.IntegrityError, match=r"^save_table\(\) does not overwrite"):
+        fw.save_table(FRAME.head(1), "summary")
 
 
 # Made in R: saveRDS(data.frame(id = 1:3, flag = c(TRUE, NA, FALSE),
@@ -620,7 +710,7 @@ def test_reads_an_rds_data_frame_by_name_with_integrity_tracking(data_project: P
     pytest.importorskip("pyreadr")
     target = data_project / "inputs/raw/frame.rds"
     target.write_bytes((RDS_FIXTURES / "frame.rds").read_bytes())
-    fw.data_add(target, name="inputs.raw.frame")
+    fw.data_add(target, name="inputs.raw.frame", locked=True)
 
     frame = fw.data_read("inputs.raw.frame")
     assert frame["id"].tolist() == [1, 2, 3]

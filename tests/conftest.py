@@ -112,3 +112,15 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError(f"Unexpected network request: {request.method} {request.url}")
 
     monkeypatch.setattr(cloud, "_transport", httpx.MockTransport(refuse))
+
+
+def save_login(server: str = "https://framework.pub") -> None:
+    """Record a login to ``server`` in fw's cloud.yml, as cloud_login() does.
+
+    Nothing falls back to framework.pub, so tests against the fake cloud
+    log in to it first.
+    """
+    from framework import _yaml
+    from framework.config_home import ensure_config_dir
+
+    _yaml.write(ensure_config_dir() / "cloud.yml", {"server": server})

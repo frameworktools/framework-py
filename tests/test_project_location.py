@@ -12,6 +12,7 @@ import pytest
 
 import framework as fw
 from framework import cloud, create
+from tests.conftest import save_login
 from tests.test_cloud import FakeCloud
 
 HERE_PROMPT = "Create the project here ({path})? [y/n] "
@@ -22,6 +23,7 @@ WHERE_PROMPT = "Where should the project go? Leave blank to use the current dire
 def server(monkeypatch: pytest.MonkeyPatch) -> FakeCloud:
     fake = FakeCloud()
     monkeypatch.setattr(cloud, "_transport", httpx.MockTransport(fake))
+    save_login()
     return fake
 
 

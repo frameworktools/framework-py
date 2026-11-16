@@ -24,7 +24,12 @@ from framework import _csv, db
 from framework._log import inform
 from framework._paths import output_directory, relative_to_root
 from framework._private import private_read_note, warn_public_save
-from framework.errors import FrameworkError, FrameworkWarning, UnsupportedFormatError
+from framework.errors import (
+    FrameworkError,
+    FrameworkWarning,
+    IntegrityError,
+    UnsupportedFormatError,
+)
 from framework.integrity import file_hash
 from framework.settings import settings_read
 
@@ -62,6 +67,15 @@ def _output_file(kind: str, public: bool, file_name: str) -> Path:
 def _check_overwrite(path: Path, overwrite: bool) -> None:
     if path.exists() and not overwrite:
         raise FrameworkError(f"File already exists: {path}. Use overwrite=True to replace.")
+
+
+def _check_locked(caller: str, path: Path) -> None:
+    """An output never replaces locked data."""
+    from framework.data import locked_data_at, locked_message
+
+    held = locked_data_at(path)
+    if held is not None:
+        raise IntegrityError(locked_message(caller, held, "Save under another name."))
 
 
 def _result_name(path: Path) -> str:
@@ -130,6 +144,7 @@ def save_table(
         raise FrameworkError(f"format must be one of {', '.join(_TABLE_FORMATS)}")
     path = _output_file("tables", public, f"{name}{_TABLE_FORMATS[format]}")
     _check_overwrite(path, overwrite)
+    _check_locked("save_table()", path)
     if format == "csv":
         if kwargs:
             # The same readr form, with the caller's pandas options on top
@@ -300,7 +315,7 @@ def save_figure(
         The saved file, or for a list of formats, the saved files in that order.
 
     Raises:
-        FrameworkError: When a format is unknown, ``plot`` can't be saved, or a file
+        FrameworkError: When a format is unknown, ``plot`` cannot be saved, or a file
             exists and ``overwrite`` is False. Nothing is written then.
         UnsupportedFormatError: When no backend writes a format (emf).
     """
@@ -413,6 +428,7 @@ def save_model(model: Any, name: str, public: bool = False, overwrite: bool = Tr
             rows_warned = True
     path = _output_file("models", public, f"{name}.pkl")
     _check_overwrite(path, overwrite)
+    _check_locked("save_model()", path)
     # Pickle to a temporary file first, so a failed dump leaves any existing model intact
     descriptor, temp = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent)
     try:

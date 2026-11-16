@@ -36,11 +36,12 @@ Prefer `fw.data_save()` to `DataFrame.to_csv()` and `DataFrame.to_parquet()`
 for project data. It writes Parquet or CSV, which R can also read.
 
 ```python
-# Locked by default: a later read raises an error if the file changed
-fw.data_save(final, "inputs/final/analysis_ready.csv")
+# Unlocked by default, so a pipeline can save it again
+fw.data_save(clean, "inputs.intermediate.survey_clean")
 
-# Data a pipeline rebuilds on every run: unlocked, so a rebuild doesn't warn
-fw.data_save(clean, "inputs.intermediate.survey_clean", locked=False)
+# Locked: a later read raises an error if the file changed, and a save with
+# new contents raises unless it passes unlock=True
+fw.data_save(final, "inputs/final/analysis_ready.csv", locked=True)
 ```
 
 ## Folders

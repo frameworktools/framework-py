@@ -774,11 +774,12 @@ def new_project(
         url: With ``key``: the Framework Cloud server that issued the token. No login is
             needed. The server is saved as ``FW_CLOUD_URL`` in the project's ``.env``.
             Default: ``FW_CLOUD_URL``, then the server you last logged in to with
-            [`cloud_login()`](ref:cloud_login), then https://framework.pub.
+            [`cloud_login()`](ref:cloud_login). With neither, ``new()`` raises
+            ``NoServerError`` rather than assume https://framework.pub.
         interactive: Whether to prompt. Default: whether stdin is a terminal.
         offline: Build from Framework's built-in defaults without contacting Framework Cloud.
             When you are logged in and pass no choices, ``new()`` resolves your defaults on
-            the cloud and caches them. If the cloud can't be reached, it builds from that
+            the cloud and caches them. If the cloud cannot be reached, it builds from that
             cache and says so. With no cache it asks first, or, when not interactive, stops
             unless ``offline`` is True. It never falls back silently.
 

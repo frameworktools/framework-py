@@ -75,7 +75,6 @@ def test_r_reads_what_python_saved(r_project: Path) -> None:
     assert seen["catalog"] == {
         "path": "inputs/intermediate/py_clean.parquet",
         "type": "parquet",
-        "locked": True,
     }
     # Both languages now record results by the path from the project root. The
     # fixture's R row predates that and keeps its file name until it is saved again.

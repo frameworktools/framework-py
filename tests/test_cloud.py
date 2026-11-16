@@ -17,6 +17,7 @@ import pytest
 import framework as fw
 from framework import _wincred, _yaml, cloud, dotenv
 from framework.config_home import r_config_dir
+from tests.conftest import save_login
 
 Handler = Callable[[httpx.Request], httpx.Response]
 
@@ -73,6 +74,7 @@ class FakeCloud:
 def server(monkeypatch: pytest.MonkeyPatch) -> FakeCloud:
     fake = FakeCloud()
     monkeypatch.setattr(cloud, "_transport", httpx.MockTransport(fake))
+    save_login()
     return fake
 
 
@@ -130,11 +132,20 @@ def test_hosts_and_token_names() -> None:
 
 
 def test_server_resolution(project: Path) -> None:
-    assert cloud.cloud_server() == cloud.Server("https://framework.pub", "the built-in default")
-    fw.config_dir().mkdir(parents=True)
+    # Nothing names a server: only login offers framework.pub
+    with pytest.raises(cloud.NoServerError, match="cloud_login"):
+        cloud.cloud_server()
+    with pytest.raises(cloud.NoServerError, match="FW_CLOUD_URL"):
+        cloud.cloud_server(scope="project")
+    assert cloud.cloud_server(scope="login") == cloud.Server(
+        "https://framework.pub", "the cloud_login() default"
+    )
+    fw.config_dir().mkdir(parents=True, exist_ok=True)
     _yaml.write(fw.config_dir() / "cloud.yml", {"server": "https://saved.example.org"})
     assert cloud.cloud_server().source == "your cloud_login() default"
-    assert cloud.cloud_server(scope="project").url == "https://framework.pub"
+    assert cloud.cloud_server(scope="login").url == "https://saved.example.org"
+    # A project whose .env has no FW_CLOUD_URL uses the saved login
+    assert cloud.cloud_server(scope="project").url == "https://saved.example.org"
 
     os.environ["FW_CLOUD_URL"] = "https://env.example.org"
     assert cloud.cloud_server().url == "https://env.example.org"
@@ -142,6 +153,26 @@ def test_server_resolution(project: Path) -> None:
     assert cloud.cloud_server().url == "https://env.example.org"
     assert cloud.cloud_server(scope="project").url == "https://project.example.org"
     assert cloud.cloud_server("arg.example.org", scope="project").url == "https://arg.example.org"
+
+
+def test_project_calls_stop_when_logins_disagree(project: Path) -> None:
+    fw_file, r_file = fw.config_dir() / "cloud.yml", r_config_dir() / "cloud.yml"
+    fw.config_dir().mkdir(parents=True, exist_ok=True)
+    r_config_dir().mkdir(parents=True, exist_ok=True)
+    _yaml.write(fw_file, {"server": "https://framework.example.edu"})
+    _yaml.write(r_file, {"server": "https://framework.pub"})
+    now = time.time()
+    os.utime(r_file, (now - 3600, now - 3600))
+    (project / ".env").write_text("FW_PROJECT_TOKEN=fwp_project0123\n", encoding="utf-8")
+
+    both = r"framework\.example\.edu and framework\.pub"
+    with pytest.raises(cloud.AmbiguousServerError, match=both):
+        cloud.cloud_server(scope="project")
+    # User calls use the most recent login
+    assert cloud.cloud_server().url == "https://framework.example.edu"
+    # The same server saved twice is one login
+    _yaml.write(r_file, {"server": "framework.example.edu/"})
+    assert cloud.cloud_server(scope="project").url == "https://framework.example.edu"
 
 
 def test_saved_server_falls_back_to_r(project: Path) -> None:
@@ -178,7 +209,7 @@ def test_token_resolution(project: Path, keyring: dict[str, str]) -> None:
     r_config_dir().mkdir(parents=True)
     (r_config_dir() / "cloud-token").write_text("fw_from_r_file\n", encoding="utf-8")
     assert cloud.cloud_token(url) == "fw_from_r_file"
-    fw.config_dir().mkdir(parents=True)
+    fw.config_dir().mkdir(parents=True, exist_ok=True)
     (fw.config_dir() / "cloud-token").write_text("fw_python_file\n", encoding="utf-8")
     assert cloud.cloud_token(url) == "fw_python_file"
     keyring["framework.pub"] = "fw_legacy_keyring"
@@ -255,7 +286,7 @@ def test_logout(project: Path, server: FakeCloud, keyring: dict[str, str]) -> No
     server.route("DELETE", "/api/v1/token", lambda r: httpx.Response(204))
     keyring["framework-cloud:framework.pub"] = "a"
     keyring["framework.pub"] = "b"
-    fw.config_dir().mkdir(parents=True)
+    fw.config_dir().mkdir(parents=True, exist_ok=True)
     (fw.config_dir() / "cloud-token").write_text("c\n", encoding="utf-8")
     removed = fw.cloud_logout()
     assert len(removed) == 3 and keyring == {}
@@ -1330,7 +1361,7 @@ def test_logout_revokes_each_stored_token_once(
 ) -> None:
     keyring["framework-cloud:framework.pub"] = "fw_same"
     keyring["framework.pub"] = "fw_same"
-    fw.config_dir().mkdir(parents=True)
+    fw.config_dir().mkdir(parents=True, exist_ok=True)
     (fw.config_dir() / "cloud-token").write_text("fw_other\n", encoding="utf-8")
     server.route("DELETE", "/api/v1/token", lambda r: httpx.Response(204))
     fw.cloud_logout()

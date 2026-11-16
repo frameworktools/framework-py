@@ -190,6 +190,15 @@ def set_data_record(
             )
 
 
+def locked_data_records(root: str | Path | None = None) -> list[tuple[str, str]]:
+    """Name and path of each ``data`` row marked locked; none without framework.db."""
+    if not db_path(root).is_file():
+        return []
+    with connect(root) as connection:
+        rows = connection.execute("SELECT name, path FROM data WHERE locked").fetchall()
+    return [(row["name"], row["path"]) for row in rows if row["path"]]
+
+
 def update_data_hash(name: str, hash: str, root: str | Path | None = None) -> None:
     """Record a new hash for a data file, as R's ``.update_data_with_hash()`` does."""
     now = timestamp()

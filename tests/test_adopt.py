@@ -12,6 +12,7 @@ import framework as fw
 from framework import _yaml
 from framework.__main__ import main
 from framework.adopt import adopt_plan, scan_folders
+from tests.conftest import save_login
 from tests.test_cloud import FakeCloud
 
 
@@ -154,6 +155,9 @@ def test_structure_import(existing: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     with pytest.raises(fw.FrameworkError, match="Pass yes=True"):
         fw.structure_import(existing)
+    with pytest.raises(fw.CloudError, match="No Framework Cloud server is chosen"):
+        fw.structure_import(existing, yes=True)
+    save_login()
     with pytest.raises(fw.CloudError, match="No cloud token"):
         fw.structure_import(existing, yes=True)
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
@@ -203,6 +207,7 @@ def test_registering_an_adopted_project_keeps_the_token_out_of_git(
 
     server.route("POST", "/api/v1/projects", create)
     monkeypatch.setattr(cloud, "_transport", httpx.MockTransport(server))
+    save_login()
     os.environ["FW_CLOUD_TOKEN"] = "fw_user0123456"
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     # Accept the folders, no to sensitive, yes to register

@@ -439,7 +439,7 @@ def db_query(
             this query and closed afterward.
         params: Values for the query's placeholders, as a sequence or a mapping.
         read_only: Open the connection read-only for this query (True), as
-            ``db_connect()`` does. Default: the connection's setting, which False can't
+            ``db_connect()`` does. Default: the connection's setting, which False cannot
             override when it is ``read_only: true``. A read-only DuckDB
             file can be open in several processes at once, so ``read_only=True`` lets a
             notebook query a database another job holds open read-only too.

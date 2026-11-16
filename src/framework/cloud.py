@@ -7,13 +7,17 @@ and documents you publish.
 
 The server is resolved per call, as in R:
 
-- User calls (login, settings, sync, ``new(key=...)``): the ``url``
-  argument, then ``FW_CLOUD_URL``, then the server saved by
-  ``cloud_login()``, then https://framework.pub.
+- User calls (settings, sync, ``new(key=...)``): the ``url`` argument, then
+  ``FW_CLOUD_URL``, then the server saved by the last login (``cloud_login()``,
+  ``fw login``, or R's ``cloud_login()``).
 - Project calls (publishing, the ledger): the ``url`` argument, then
   ``FW_CLOUD_URL`` in the project's ``.env``, then the environment variable,
-  then https://framework.pub. A project token is only valid on the server
-  that issued it, so these calls never use the login default.
+  then the saved login. A project token is only valid on the server that
+  issued it, so when saved logins name different servers these calls stop
+  instead of guessing.
+- With nothing set, calls raise ``NoServerError``. Only ``cloud_login()``
+  falls back to https://framework.pub, which its notice names before
+  connecting. Using the public cloud is always the user's choice.
 
 Plain ``http`` is accepted only for localhost.
 """
@@ -69,6 +73,14 @@ class CloudError(FrameworkError):
     status: int | None = None
 
 
+class NoServerError(CloudError):
+    """Nothing names a server: no ``url``, no ``FW_CLOUD_URL``, and no saved login."""
+
+
+class AmbiguousServerError(CloudError):
+    """A project call found logins to several servers and nothing naming the project's."""
+
+
 def _version() -> str:
     from framework import __version__
 
@@ -121,14 +133,14 @@ def is_default(url: str) -> bool:
     return host(url) == host(DEFAULT_URL)
 
 
-def _saved_url() -> str | None:
-    """The default server a login saved, from the newer of fw's and R's cloud.yml.
+def _saved_urls() -> list[str]:
+    """Every server a login saved in fw's and R's cloud.yml, the most recent first.
 
-    The most recently written file wins, so the last login in any tool counts.
-    On a tie fw's folder comes first. fw and R use the same rule.
+    URLs are normalized and duplicates dropped. The most recently written file
+    comes first, so the last login in any tool counts. On a tie fw's folder
+    comes first. fw and R use the same rule.
     """
-    best: str | None = None
-    best_time = -1
+    found: list[tuple[int, str]] = []
     for folder in dict.fromkeys((config_dir(), r_config_dir())):
         path = folder / "cloud.yml"
         if not path.is_file():
@@ -136,10 +148,9 @@ def _saved_url() -> str | None:
         data = _yaml.read(path)
         server = data.get("server") if isinstance(data, dict) else None
         if isinstance(server, str) and server:
-            written = path.stat().st_mtime_ns
-            if written > best_time:
-                best, best_time = server, written
-    return best
+            found.append((path.stat().st_mtime_ns, normalize_url(server)))
+    found.sort(key=lambda item: -item[0])
+    return list(dict.fromkeys(url for _, url in found))
 
 
 def _project_dir(project_dir: str | Path | None) -> Path | None:
@@ -163,16 +174,42 @@ class Server:
 def cloud_server(
     url: str | None = None, scope: str = "user", project_dir: str | Path | None = None
 ) -> Server:
-    """Which server a call uses, and where that setting came from."""
+    """Which server a call uses, and where that setting came from.
+
+    ``scope`` is ``"user"``, ``"project"``, or ``"login"``. Raises
+    ``NoServerError`` when nothing names a server, except for ``"login"``,
+    which falls back to https://framework.pub.
+    """
     candidates: list[tuple[str | None, str]] = [(url, "the url argument")]
     if scope == "project":
         candidates.append((_project_env("FW_CLOUD_URL", project_dir), "the project's .env"))
     candidates.append((os.environ.get("FW_CLOUD_URL"), "the FW_CLOUD_URL environment variable"))
-    if scope == "user":
-        candidates.append((_saved_url(), "your cloud_login() default"))
-    candidates.append((DEFAULT_URL, "the built-in default"))
-    value, source = next((v, s) for v, s in candidates if v)
-    return Server(normalize_url(str(value)), source)
+    for value, source in candidates:
+        if value:
+            return Server(normalize_url(str(value)), source)
+
+    saved = _saved_urls()
+    if len(saved) == 1 or (saved and scope != "project"):
+        return Server(saved[0], "your cloud_login() default")
+    if saved:
+        hosts = " and ".join(host(u) for u in saved)
+        raise AmbiguousServerError(
+            "This project does not say which Framework Cloud server it uses: its .env has no "
+            f"FW_CLOUD_URL, and you are logged in to {hosts}. Add FW_CLOUD_URL=<server> to the "
+            "project's .env, or set FW_CLOUD_URL."
+        )
+    if scope == "login":
+        return Server(DEFAULT_URL, "the cloud_login() default")
+    where = (
+        "This project's .env has no FW_CLOUD_URL and you have not logged in. "
+        "Add FW_CLOUD_URL=<server> to .env, or log in"
+        if scope == "project"
+        else "Log in"
+    )
+    raise NoServerError(
+        f"No Framework Cloud server is chosen. {where} with fw.cloud_login() (framework.pub) "
+        'or fw.cloud_login(url="<server>"), or set FW_CLOUD_URL.'
+    )
 
 
 # Tokens ---------------------------------------------------------------------------
@@ -546,7 +583,7 @@ def cloud_login(
     Args:
         token: A personal token. Omit it to approve this computer in the browser.
         url: The server. Default: ``FW_CLOUD_URL``, then your saved default,
-            then https://framework.pub.
+            then https://framework.pub, which the notice names before connecting.
         verify: Check the token with the server first.
         consent: ``True`` to confirm a pasted token without a prompt (scripts,
             CI). Approving in the browser is the confirmation for browser login.
@@ -556,7 +593,7 @@ def cloud_login(
         Where the token was stored: ``"keyring"`` or a file path.
     """
     show_messages()
-    server = cloud_server(url).url
+    server = cloud_server(url, scope="login").url
     name = host(server)
     if token is None:
         print(consent_notice(server), file=sys.stderr)
@@ -624,7 +661,7 @@ def _revoke(server: str, token: str) -> None:
 def cloud_logout(url: str | None = None) -> list[str]:
     """Revoke and remove this machine's stored token for a server. Returns what was removed.
 
-    Each stored token is revoked on the server first. If the server can't be reached, the
+    Each stored token is revoked on the server first. If the server cannot be reached, the
     local copy is still removed, and you can revoke the token on the server's tokens page.
     The keyring entry, the token file, and the file ``FW_TOKEN_FILE`` names are removed. For
     the default server, the legacy keyring entry and ``~/.secrets/framework/token`` are removed
@@ -632,8 +669,7 @@ def cloud_logout(url: str | None = None) -> list[str]:
     until you unset it.
 
     Args:
-        url: The server. Default: ``FW_CLOUD_URL``, then your saved default, then
-            https://framework.pub.
+        url: The server. Default: ``FW_CLOUD_URL``, then your saved default.
 
     Returns:
         A description of each keyring entry and the path of each file removed. The list is
@@ -677,19 +713,25 @@ def cloud_status(url: str | None = None) -> bool:
     publishes to a different server, that server is printed too.
 
     Args:
-        url: The server. Default: ``FW_CLOUD_URL``, then your saved default, then
-            https://framework.pub.
+        url: The server. Default: ``FW_CLOUD_URL``, then your saved default.
 
     Returns:
         True when a token is stored and the server accepts it. False when no token is stored,
         the server is unreachable, or the token is invalid.
     """
     show_messages()
-    server = cloud_server(url)
+    try:
+        server = cloud_server(url)
+    except NoServerError as error:
+        inform(str(error))
+        return False
     inform(f"Server: {server.url} (from {server.source})")
     if project_token() is not None:
-        project = cloud_server(scope="project")
-        if project.url != server.url:
+        try:
+            project: Server | None = cloud_server(scope="project")
+        except CloudError:
+            project = None
+        if project is not None and project.url != server.url:
             inform(f"This project publishes to {project.url} (from {project.source})")
     token = cloud_token(server.url)
     if token is None:
@@ -1308,7 +1350,10 @@ def register_project(
     was built from. A server without ``/api/v1/projects`` gets the older
     registration.
     """
-    server = cloud_server().url
+    try:
+        server = cloud_server().url
+    except NoServerError:
+        return None
     token = cloud_token(server)
     if token is None:
         return None
@@ -1468,7 +1513,7 @@ def cloud_register(
     A project that already has a token in ``.env`` is left as it is. When you
     already have a project with the slug, an interactive session offers to
     link this folder to that project instead, and nothing is created. A slug
-    held by a project in your Trash can't be reused. A self-hosted server from
+    held by a project in your Trash cannot be reused. A self-hosted server from
     before the spec API builds the project from your defaults; the spec is
     then sent separately (``PUT /api/v1/project/spec``). This is
     ``fw project link --create``.

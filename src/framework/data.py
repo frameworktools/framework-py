@@ -13,9 +13,12 @@ too.
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
+import sys
 import warnings
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +29,7 @@ from framework._identifiers import warn_identifiers
 from framework._log import inform
 from framework._paths import in_root, relative_to_root
 from framework._private import is_private_data, note_private_read
-from framework.catalog import DataInfo, catalog_locate, data_info
+from framework.catalog import DataInfo, catalog_locate, catalog_names, data_info
 from framework.errors import (
     DataChangedWarning,
     DataNotFoundError,
@@ -516,15 +519,97 @@ def _in_settings_folder(folder: Path) -> bool:
     return False
 
 
+@dataclass(frozen=True)
+class LockedData:
+    """Locked data a write would change: its name, its file, and where the lock is."""
+
+    name: str
+    file: Path
+    source: str  # "catalog" or "record"
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    """Whether two paths name the same file. Case is ignored on macOS and Windows."""
+    left, right = os.path.normpath(a.resolve()), os.path.normpath(b.resolve())
+    if sys.platform in ("darwin", "win32"):
+        return left.lower() == right.lower()
+    return left == right
+
+
+def locked_data_at(file_path: str | Path, name: str | None = None) -> LockedData | None:
+    """The locked data a write to ``file_path`` would change, or None, as in R.
+
+    Locked data is a catalog entry with ``locked: true``, or a framework.db record saved
+    locked (``data_save()`` to a path has no catalog entry). An entry counts when its file
+    exists and is ``file_path``, or when its name is ``name``, since a save by name
+    repoints the entry. A catalog entry's flag wins over its record, so ``locked: false``
+    in the settings unlocks it.
+    """
+    try:
+        root = project_root()
+        data = settings_read().get("data")
+    except FrameworkError:
+        return None
+    target = Path(file_path)
+
+    def hit(entry_name: str, entry_path: Any) -> Path | None:
+        if not isinstance(entry_path, str) or not entry_path:
+            return None
+        file = Path(entry_path) if Path(entry_path).is_absolute() else root / entry_path
+        if file.is_file() and (entry_name == name or _same_file(file, target)):
+            return file
+        return None
+
+    names = catalog_names(data)
+    for entry_name in names:
+        located = catalog_locate(entry_name, data)
+        entry = located[0][located[1]] if located else None
+        if isinstance(entry, dict) and entry.get("locked") is True:
+            file = hit(entry_name, entry.get("path"))
+            if file is not None:
+                return LockedData(entry_name, file, "catalog")
+    for record_name, record_path in db.locked_data_records(root):
+        if record_name in names:
+            continue
+        file = hit(record_name, record_path)
+        if file is not None:
+            return LockedData(record_name, file, "record")
+    return None
+
+
+def locked_message(caller: str, held: LockedData, advice: str) -> str:
+    """The error for a write that would change locked data."""
+    where = (
+        "locked: true in the data catalog" if held.source == "catalog" else "saved with locked=True"
+    )
+    try:
+        shown = relative_to_root(held.file, project_root())
+    except FrameworkError:
+        shown = str(held.file)
+    return (
+        f"{caller} does not overwrite locked data.\n"
+        f"  dataset: {held.name} ({where})\n"
+        f"  file:    {shown}\n"
+        f"{advice}"
+    )
+
+
 def data_save(
     data: pd.DataFrame,
     path: str,
     type: str | None = None,
     delimiter: str = "comma",
-    locked: bool = True,
+    locked: bool | None = None,
     force: bool = False,
+    unlock: bool = False,
 ) -> pd.DataFrame:
     """Save a DataFrame and record its hash.
+
+    Data is saved unlocked unless you lock it. Locked data protects inputs:
+    ``data_read()`` raises when a locked file changed. So ``data_save()`` never changes a
+    locked file unless asked. Save under another name, or pass ``unlock=True`` to replace
+    it; the new file is then unlocked, and later saves replace it. Pass
+    ``unlock=True, locked=True`` to replace it and keep it locked.
 
     Args:
         data: The data to save.
@@ -540,17 +625,26 @@ def data_save(
         type: ``"parquet"`` or ``"csv"``. Default: from the file extension,
             or Parquet for a catalog name.
         delimiter: Delimiter for CSV files: comma, tab, semicolon, or space.
-        locked: Whether later reads must find the file unchanged. Default: True, as in R.
-            Saving again over locked data with different contents replaces it, as R does,
-            with a ``DataChangedWarning``. The same contents save silently.
+        locked: Whether later reads must find the file unchanged. Default: unlocked, as
+            in R, so a pipeline can save the data again. Pass ``locked=True`` to lock data
+            you mean to keep as it is. Left out, a save keeps a lock the data already
+            has, unless ``unlock=True``.
         force: Create any missing folder. Without it, a missing folder is created
             only when it is a folder named in the settings (``directories``,
             ``extra_directories``, ``render_dirs``) or inside one, such as
             ``inputs/private/intermediate`` in a fresh checkout; any other missing
             folder is an error.
+        unlock: Replace locked data and save it unlocked, unless ``locked=True``.
+            Without it, ``data_save()`` raises ``IntegrityError`` before writing when the
+            save would change locked data: a catalog entry with ``locked: true``, or a
+            file saved earlier with ``locked=True``. Saving the same contents again needs
+            no ``unlock``.
 
     Returns:
         ``data``, so the call can end a pipeline.
+
+    Raises:
+        IntegrityError: The save would change locked data and ``unlock`` is False.
     """
     if not isinstance(data, pd.DataFrame):
         raise FrameworkError("data_save() needs a pandas DataFrame")
@@ -577,12 +671,43 @@ def data_save(
         folder.mkdir(parents=True, exist_ok=True)
         inform(f"Created directory: {folder}")
 
-    if file_type == "csv":
-        # In readr's form (1 not 1.0, TRUE, NA, "\n" line endings), so R reads the same
-        # values and the same data hashes the same in both languages
-        _csv.write_csv(data, target, sep=_separator(delimiter))
-    else:
-        data.to_parquet(target, index=False)
+    def write(destination: Path) -> None:
+        if file_type == "csv":
+            # In readr's form (1 not 1.0, TRUE, NA, "\n" line endings), so R reads the same
+            # values and the same data hashes the same in both languages
+            _csv.write_csv(data, destination, sep=_separator(delimiter))
+        else:
+            data.to_parquet(destination, index=False)
+
+    # Locked data stays unchanged unless unlock=True: reads raise when a locked file
+    # changed. The new contents go to a temporary file first, so a refused save leaves
+    # the locked file as it was. The same contents pass.
+    held = locked_data_at(target, name=name)
+    if held is not None:
+        same = False
+        if _same_file(held.file, target):
+            temporary = folder / f".fw-save-{os.getpid()}{target.suffix}"
+            try:
+                write(temporary)
+                same = file_hash(temporary) == file_hash(target)
+            finally:
+                temporary.unlink(missing_ok=True)
+        if not same and not unlock:
+            raise IntegrityError(
+                locked_message(
+                    "data_save()",
+                    held,
+                    "Save the data under another name, or pass unlock=True to replace it.\n"
+                    "The new file is then unlocked. Add locked=True to keep it locked.",
+                )
+            )
+        if not same:
+            inform(f"Replacing locked data '{held.name}' (unlock=True).")
+    # Without ``locked``, locked data saved with the same contents stays locked, and
+    # unlock=True saves it unlocked. Everything else is saved unlocked.
+    if locked is None:
+        locked = held is not None and not unlock
+    write(target)
     root = project_root()
     relative = relative_to_root(target, root)
     inform(f"Data saved to: {relative}")
@@ -592,17 +717,6 @@ def data_save(
     key = name or relative
 
     digest = file_hash(target)
-    previous = db.get_data_record(key, root)
-    if previous is not None and previous.locked and previous.hash and previous.hash != digest:
-        # As in R, the save goes ahead: data_save() is how locked data is rebuilt. It
-        # says so, since the lock means reads expect the file unchanged.
-        warnings.warn(
-            f"data_save() replaced locked data '{key}' with different contents.\n"
-            f"Previous hash: {previous.hash[:12]}\nCurrent hash:  {digest[:12]}\n"
-            "Pass locked=False for data a pipeline rebuilds.",
-            DataChangedWarning,
-            stacklevel=2,
-        )
     db.set_data_record(
         key,
         path=relative,
@@ -714,7 +828,7 @@ def data_add(
     name: str | None = None,
     type: str | None = None,
     delimiter: str = "comma",
-    locked: bool = True,
+    locked: bool | None = None,
     update_config: bool = True,
 ) -> dict[str, Any]:
     """Add an existing file to the data catalog and record its hash.
@@ -727,7 +841,8 @@ def data_add(
             ``inputs.private.raw.<file>`` in ``inputs_private_raw``), else the file name.
         type: File type. Default: from the extension.
         delimiter: Delimiter for CSV files.
-        locked: Whether later reads must find the file unchanged.
+        locked: Whether later reads must find the file unchanged. Default: unlocked.
+            Left out, a file already locked in the catalog or framework.db stays locked.
         update_config: Write the entry to the settings, not just framework.db.
 
     Returns:
@@ -749,6 +864,11 @@ def data_add(
     _separator(delimiter)
     if name is None:
         name = _derive_name(path, settings_read(), root)
+
+    # Left out, ``locked`` keeps a lock the file already has, so registering locked
+    # data again doesn't unlock it
+    if locked is None:
+        locked = locked_data_at(path, name=name) is not None
 
     relative = relative_to_root(path, root)
     stored_delimiter = delimiter if type == "csv" else None

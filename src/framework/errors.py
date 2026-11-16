@@ -24,7 +24,8 @@ class UnsupportedFormatError(FrameworkError):
 
 
 class IntegrityError(FrameworkError):
-    """A locked data file no longer matches the hash recorded in framework.db."""
+    """A locked data file no longer matches the hash recorded in framework.db, or a save
+    would change locked data."""
 
 
 class FrameworkWarning(UserWarning):
@@ -33,7 +34,7 @@ class FrameworkWarning(UserWarning):
 
 class DataChangedWarning(FrameworkWarning):
     """A data file changed since Framework last recorded its hash: an unlocked file read
-    after it changed, or locked data that ``data_save()`` replaced with new contents."""
+    after it changed."""
 
 
 class CacheWarning(FrameworkWarning):

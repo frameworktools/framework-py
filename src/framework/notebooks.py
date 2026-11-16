@@ -242,7 +242,7 @@ def make_notebook(
         overwrite: Replace an existing file.
         subdir: A subfolder of ``dir``.
         title: The title, used exactly as given. Default: made from ``name`` in sentence
-            case, which keeps a name with capitals as typed but can't know that a
+            case, which keeps a name with capitals as typed but cannot infer whether a
             lowercase file name such as "bp-for-ldl" holds acronyms. Pass
             ``title="BP for LDL"`` for those.
 

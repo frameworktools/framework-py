@@ -17,10 +17,10 @@
         ".agents/skills/framework-data"
       ],
       "variant": "python",
-      "hash": "05c8d581592e4d82d7b74e232e48e7465317f6ce07e92befb5257e5eb30ff2c4",
+      "hash": "f023459703635800f30e11b45921265326afd97b993faea815353fd4f6697857",
       "origin": {
         "skill_id": "framework:framework-data",
-        "hash": "05c8d581592e4d82d7b74e232e48e7465317f6ce07e92befb5257e5eb30ff2c4"
+        "hash": "f023459703635800f30e11b45921265326afd97b993faea815353fd4f6697857"
       }
     },
     "package:framework-packages": {

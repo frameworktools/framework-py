@@ -1225,7 +1225,7 @@ def publish_list(
 
     Like ``publish()``, it follows ``to``, then ``publish.default``. For a folder
     destination it lists the published artifacts, one row per slug. GitHub and Cloud
-    destinations can't be listed here: Framework Cloud artifacts are on the server's
+    destinations cannot be listed here: Framework Cloud artifacts are on the server's
     Artifacts page, ``<server>/published``.
 
     Args:

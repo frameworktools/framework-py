@@ -8,6 +8,7 @@ import pytest
 
 import framework as fw
 from framework import packages
+from tests.conftest import save_login
 
 PYPROJECT = """\
 [project]
@@ -218,6 +219,7 @@ def test_package_set_add_from_the_cloud(
 ) -> None:
     from framework import cloud
 
+    save_login()
     sent: list[dict[str, object]] = []
 
     def resolve(body: dict[str, object], token: str, url: str) -> tuple[dict[str, object], None]:

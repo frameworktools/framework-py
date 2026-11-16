@@ -520,7 +520,7 @@ def adopt(
         The project folder.
 
     Raises:
-        FrameworkError: When the folder doesn't exist or is already a Framework project,
+        FrameworkError: When the folder does not exist or is already a Framework project,
             when its files say another language and ``force`` is False, when the
             arguments disagree, or when the review needs a terminal and ``yes`` is False.
     """
@@ -743,7 +743,7 @@ def structure_import(
 
     Raises:
         CloudError: When you are not logged in, or the server rejects the layout or
-            doesn't support structures.
+            does not support structures.
         FrameworkError: When the review needs a terminal and ``yes`` is False, or when
             you cancel it.
     """

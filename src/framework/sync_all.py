@@ -469,9 +469,9 @@ def pull_all(
     are kept unless ``overwrite=True`` (edited skills are backed up first).
 
     The revisions pulled are kept in ``.framework/setup.lock.json`` (packages) and
-    ``.framework/data.lock.json`` (data registry) for ``push_all()``. When a part can't be
-    read or applied, the others still are, and the error names which parts were applied
-    and which weren't.
+    ``.framework/data.lock.json`` (data registry) for ``push_all()``. When a part cannot be
+    read or applied, the others still proceed, and the error names which parts were applied
+    and which were skipped.
 
     Args:
         project_path: The project's root directory. Default: the current directory.
@@ -683,8 +683,8 @@ def _skills_push_plan(root: Path, force: bool) -> dict[str, Any]:
     from framework.skill_pull import _push_apply, _push_edited, _push_plan, _warning
 
     edited = _push_edited(root)
-    url = cloud_server().url
-    if edited and cloud_token(url) is None:
+    # Only edited skills need a server; with none chosen, NoServerError says how to pick one
+    if edited and cloud_token(url := cloud_server().url) is None:
         names = ", ".join(Path(paths[0]).name for _, paths in edited)
         raise CloudError(
             f"Not signed in, so edited skills ({names}) can't be pushed. {login_hint(url)}"
@@ -767,7 +767,7 @@ def push_all(
     edited skills, and its data registry. Cloud previews each part first (as a dry run),
     and the changes are listed together, grouped by part (Packages, Skills, Data registry),
     with what each push affects: new setups, zips, and Update on GitHub use the package
-    list and data registry, and a skill's new version is used wherever it's attached. Then
+    list and data registry, and a skill's new version is used wherever it is attached. Then
     asks "Push these changes?" once. framework-py and the unpinned workflow tool packages
     every project gets are not sent.
 
@@ -779,13 +779,13 @@ def push_all(
     packages and the data registry go with the project token. Only data definitions are
     sent, never data files or hashes.
 
-    When a part can't be pushed, the others still are, and the error names which parts
-    were pushed and which weren't. A push resolves the project again from its blueprint's
+    When a part cannot be pushed, the others still proceed, and the error names which parts
+    were pushed and which were skipped. A push resolves the project again from its blueprint's
     latest version.
 
     Args:
         project_path: The project's root directory. Default: the current directory.
-        remove: Remove packages and data entries from Cloud that this project doesn't have.
+        remove: Remove packages and data entries from Cloud that this project does not have.
         force: Push even when a part changed on Cloud since the last pull.
         confirm: True pushes without asking; False cancels. None asks in a console.
         dry_run: List the changes and send nothing.
@@ -794,11 +794,11 @@ def push_all(
         A dict: ``packages`` and ``data_registry`` (each with ``revision`` and Cloud's
         ``changes``: ``added``, ``changed``, ``removed``, and ``kept``), ``skills`` (each
         skill's ``name``, ``status``, and ``path``), ``applied`` (the parts pushed),
-        ``failed`` (a reason for each part that wasn't), ``dry_run``, and ``message``.
+        ``failed`` (a reason for each part that failed), ``dry_run``, and ``message``.
 
     Raises:
         CloudError: Without a project token, offline, or when the server has no setup
-            endpoint (nothing changes then), and when a part couldn't be pushed.
+            endpoint (nothing changes then), and when a part could not be pushed.
         FrameworkError: Without a console and without ``confirm=True`` or ``dry_run=True``.
     """
     from framework._log import inform, show_messages
