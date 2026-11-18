@@ -275,6 +275,8 @@ def test_bambi_logit(tmp_path: Path, bambi_logit: tuple[Any, Any]) -> None:
     assert row["ratio_std_error"] == pytest.approx(np.exp(draws).std(ddof=1))
     assert row["ratio_conf_low"] == pytest.approx(np.exp(row["conf_low"]))
     assert row["ratio_conf_high"] == pytest.approx(np.exp(row["conf_high"]))
+    # The intercept's exponent is a baseline, not a ratio
+    assert effects.loc["(Intercept)", RATIO].isna().all()
     groups = tables(document)["Group-level effects"]
     assert list(groups.columns) == ["group", *COLUMNS]
     assert groups[["group", "term"]].values.tolist() == [["island", "1|island_sigma"]]

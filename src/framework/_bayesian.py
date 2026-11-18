@@ -549,7 +549,8 @@ def bambi_document(fit: BambiFit) -> dict[str, Any]:
                 continue
             if variable in available:
                 common.append((variable, label))
-                if is_parent:
+                # The exponent of an intercept is a baseline, not a ratio: R leaves it out too
+                if is_parent and label != "(Intercept)":
                     ratio.add(variable)
 
     if not common:
