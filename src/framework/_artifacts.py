@@ -278,6 +278,8 @@ def as_frame(source: Any) -> pd.DataFrame | None:
         name = "value" if source.name is None or source.name == "" else str(source.name)
         return source.to_frame(name)
     if isinstance(source, np.ndarray):
+        if _axes_array(source):
+            return None
         return _numpy_frame(source)
     if _has_class(source, "polars", "DataFrame", "Series"):
         if _has_class(source, "polars", "Series"):
@@ -709,11 +711,14 @@ class _Design:
                 self.predictors.append(name)
         return next(iter(used)) if len(used) == 1 else None
 
-    def match(self, names: Sequence[str], factors: Sequence[Sequence[_Part]]) -> None:
+    def match(
+        self, names: Sequence[str], factors: Sequence[Sequence[_Part]], prefix: str = ""
+    ) -> None:
         """Map each design column to the parts whose names join to its name."""
         candidates: dict[str, tuple[_Part, ...]] = {}
         for combination in itertools.product(*factors):
-            candidates.setdefault(":".join(part.name for part in combination), combination)
+            name = prefix + ":".join(part.name for part in combination)
+            candidates.setdefault(name, combination)
         for name in names:
             parts = candidates.get(name)
             if parts is None or not all(part.mappable for part in parts):
@@ -1308,11 +1313,51 @@ def _structured(source: Any) -> dict[str, Any] | None:
         return _test_document(source)
     if _from(source, "statsmodels"):
         raise FrameworkError("This statsmodels result does not expose coefficient statistics.")
+    return _bayesian_document(source)
+
+
+def _bayesian_document(source: Any) -> dict[str, Any] | None:
+    from framework import _bayesian
+
+    if isinstance(source, _bayesian.BambiFit):
+        return _bayesian.bambi_document(source)
+    if _bayesian.is_posterior(source):
+        return _bayesian.posterior_document(source)
+    if _bayesian.is_bambi_model(source):
+        raise FrameworkError(
+            "Publish the InferenceData that fit() returned, with the model: "
+            "publish(idata, model=model)."
+        )
     return None
+
+
+def _axes_array(source: Any) -> bool:
+    """Whether an array holds matplotlib Axes, as ArviZ 0.x multi-panel plots return."""
+    return (
+        isinstance(source, np.ndarray)
+        and source.dtype == object
+        and source.size > 0
+        and all(_from(item, "matplotlib") for item in source.flat)
+    )
+
+
+def _plot_collection(source: Any) -> Any:
+    """Return the backend figure an ArviZ 1.x PlotCollection draws on, or the source."""
+    if not _has_class(source, "arviz_plots", "PlotCollection"):
+        return source
+    try:
+        figure = source.get_viz("figure")
+    except Exception:
+        return source
+    if hasattr(figure, "item") and getattr(figure, "ndim", 1) == 0:
+        figure = figure.item()
+    return source if figure is None else figure
 
 
 def _figure(source: Any) -> Any:
     """Return the matplotlib Figure behind an Axes, Figure, or seaborn grid."""
+    if _axes_array(source):
+        source = next(iter(source.flat))
     figure = source
     for _ in range(3):
         if callable(getattr(figure, "savefig", None)):
@@ -1322,6 +1367,8 @@ def _figure(source: Any) -> Any:
 
 
 def is_figure(source: Any) -> bool:
+    if _axes_array(source):
+        return True
     return _from(source, "matplotlib", "seaborn") and _figure(source) is not None
 
 
@@ -1365,6 +1412,7 @@ def _styler_html(source: Any, directory: Path) -> Path:
 
 def rendered(source: Any, directory: Path, cloud: bool) -> Path | None:
     """Write figures, formatted tables, and charts to their file formats, or return None."""
+    source = _plot_collection(source)
     exporters: list[tuple[Callable[[Any], bool], Callable[[Any, Path], Path]]] = [
         (is_figure, lambda s, d: save_figure(s, d, svg=cloud)),
         (lambda s: _has_class(s, "pandas", "Styler"), _styler_html),

@@ -156,12 +156,22 @@ Supported file inputs:
 - **Tables:** `pandas` and `polars` DataFrames/Series, 1D/2D `numpy` arrays, `pandas.crosstab()`, and `statsmodels` `anova_lm()` tables export all rows plus column profiles (missing counts, distinct counts, numeric histograms, and top values). Integers outside `±9,007,199,254,740,991` serialize as strings to preserve exact IDs. `pandas` `Styler` objects export as formatted HTML tables.
 - **Hypothesis tests:** `scipy.stats` results (`ttest_ind()`, `pearsonr()`, `chi2_contingency()`, `mannwhitneyu()`, `shapiro()`, and others) export method, test statistic, degrees of freedom, p-value, and confidence intervals.
 - **Statistical and ML models:** `statsmodels` results (OLS, WLS, GLM, Logit, Probit, Poisson, NegativeBinomial, MixedLM, QuantReg, MNLogit, and others) export coefficients, standard errors, p-values, 95% Wald intervals, fit statistics, formula, family/link, and variance components. Fitted `scikit-learn` linear models export coefficients; tree, `xgboost`, and `lightgbm` models export feature importances and hyperparameters.
-- **Figures:** `matplotlib` Figures/Axes and `seaborn` plots/grids export as SVG (or PNG above 5 MB), `plotly` Figures export as HTML, and `altair` charts export as Vega-Lite JSON.
+- **Bayesian models:** ArviZ `InferenceData` exports posterior summaries for each named variable: posterior mean, posterior SD, a 95% equal-tailed credible interval, R-hat, and bulk and tail ESS, plus chains, draws, warmup, sampler, and divergent transitions. Variables indexed by observation and variables with more than 100 elements are left out. Pass the Bambi model that produced it as `model` to add the family, formula, odds or rate ratios summarized over the exponentiated draws, group-level standard deviations, priors, and the model's variables. Draws, observed data, and LOO results are never exported.
+- **Figures:** `matplotlib` Figures/Axes (including ArviZ plots) and `seaborn` plots/grids export as SVG (or PNG above 5 MB), `plotly` Figures export as HTML, and `altair` charts export as Vega-Lite JSON.
 
 ```python
 fw.publish(figure, to="cloud", slug="treatment-effect", title="Treatment effect")
 fw.publish(results_table, to="cloud", slug="estimates")
 fw.publish(fitted_model, to="cloud", slug="adjusted-model", password="reviewer-password")
+```
+
+A Bambi model's `fit()` returns its posterior; publish the posterior with the model:
+
+```python
+model = bmb.Model("heavy ~ flipper_length_mm + species + (1|island)", penguins, family="bernoulli")
+idata = model.fit(random_seed=1)
+fw.publish(idata, model=model, to="cloud", slug="heavy-penguins")
+fw.publish(az.plot_forest(idata), to="cloud", slug="heavy-penguins-forest")
 ```
 
 Each publish creates a new artifact version. Metadata arguments include `title`, `description`, `kind`, `password` (minimum 8 characters), and `visibility` (`"public"`, `"unlisted"`, or `"private"`). New string-slug artifacts default to `"unlisted"`, existing artifacts retain their visibility unless `visibility` is set, `slug=True` enables a public slug derived from the filename, and `slug=False` reverts to unlisted. Public artifacts resolve at `/@handle/project/slug` once a handle is set under **Account > Account details**.

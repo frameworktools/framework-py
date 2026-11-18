@@ -1504,3 +1504,36 @@ def test_data_verify_takes_a_saved_path_from_a_subfolder(
     (cloud_project / "outputs/public/summary.csv").write_text("a\n9\n", encoding="utf-8")
     with pytest.warns(fw.FrameworkWarning, match="Integrity mismatch"):
         assert fw.data_verify("outputs/public/summary.csv") is False
+
+
+def test_publish_model_needs_a_bambi_model(cloud_project: Path, server: FakeCloud) -> None:
+    import pandas as pd
+
+    with pytest.raises(fw.FrameworkError, match="accepts a Bambi model"):
+        fw.publish(pd.DataFrame({"estimate": [1.2]}), to="cloud", model=object())
+    assert server.requests == []
+
+
+def test_cloud_bambi_model_uses_structured_schema(cloud_project: Path, server: FakeCloud) -> None:
+    import warnings
+
+    import pandas as pd
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        bmb = pytest.importorskip("bambi")
+        frame = pd.DataFrame({"x": [0.1, 0.5, -0.3, 1.2, -1.0, 0.7] * 5})
+        frame["y"] = (frame["x"] + [0.4, -0.2, 0.3] * 10 > 0).astype(int)
+        model = bmb.Model("y ~ x", frame, family="bernoulli")
+        idata = model.fit(draws=50, tune=50, chains=1, cores=1, random_seed=1, progressbar=False)
+    server.route(
+        "POST",
+        "/api/v1/documents",
+        lambda r: httpx.Response(201, json={"id": 15, "url": "https://x/d/model", "version": 1}),
+    )
+    assert fw.publish(idata, model=model, to="cloud", slug="logit") == "https://x/d/model"
+    body = server.requests[-1].content
+    assert b'filename="model.json"' in body
+    assert b'name="kind"\r\n\r\nmodel' in body
+    assert b'"inference": "bayesian"' in body
+    assert b'"exponentiate": "Odds ratio"' in body

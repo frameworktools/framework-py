@@ -350,8 +350,8 @@ def _slug_ignored(slug: str | bool | None) -> None:
 _ACCEPTED = (
     "publish() accepts a file or rendered folder; a pandas or polars DataFrame or Series; a "
     "numpy array; a pandas Styler; a scipy.stats test result; a statsmodels results object; "
-    "a fitted scikit-learn, xgboost, or lightgbm model; a matplotlib Figure or Axes or a "
-    "seaborn plot; a plotly Figure; or an altair chart."
+    "a fitted scikit-learn, xgboost, or lightgbm model; an ArviZ InferenceData; a matplotlib "
+    "Figure or Axes or a seaborn plot; a plotly Figure; or an altair chart."
 )
 
 
@@ -552,6 +552,7 @@ def publish(
     visibility: str | None = None,
     collection: str | int | None = None,
     share_unlisted: bool = False,
+    model: Any = None,
 ) -> str | list[str]:
     """Publish an artifact to a named destination or the project default.
 
@@ -559,14 +560,15 @@ def publish(
         source: A file, a rendered folder, or an object. Accepted objects are pandas and
             polars DataFrames and Series, numpy arrays with one or two dimensions, pandas
             Styler tables, scipy.stats test results, statsmodels results, fitted
-            scikit-learn, xgboost, and lightgbm models, matplotlib Figures and Axes, seaborn
-            plots and grids, plotly Figures, and altair charts. On Framework Cloud, tables
-            become typed tables with column summaries (every row is kept), tests and models
-            become structured summaries, and static plots become SVG. Model exports carry
-            coefficients, importance, and fit statistics, never observations, residuals, or
-            serialized models. Buckets receive CSV tables, PNG figures, and HTML model
-            summaries; Styler tables, plotly figures, and altair charts keep their HTML or
-            Vega-Lite form everywhere.
+            scikit-learn, xgboost, and lightgbm models, ArviZ InferenceData (alone or with
+            the Bambi model that produced it, through ``model``), matplotlib Figures and Axes
+            (including ArviZ plots), seaborn plots and grids, plotly Figures, and altair
+            charts. On Framework Cloud, tables become typed tables with column summaries
+            (every row is kept), tests and models become structured summaries, and static
+            plots become SVG. Model exports carry coefficients, importance, and fit
+            statistics, never observations, residuals, posterior draws, or serialized models.
+            Buckets receive CSV tables, PNG figures, and HTML model summaries; Styler tables,
+            plotly figures, and altair charts keep their HTML or Vega-Lite form everywhere.
         dest: Where to put it in the bucket. Default: the source's name.
         connection: A storage bucket name. Default: the project's default bucket.
         overwrite: Accepted for parity with R; uploads always replace.
@@ -591,6 +593,9 @@ def publish(
             ``slug=True`` or ``False``.
         collection: Existing project collection ID or slug; follows the latest artifact version.
         share_unlisted: Explicitly allow collection readers to access an unlisted artifact.
+        model: The Bambi model whose ``fit()`` returned ``source``, an InferenceData:
+            ``publish(idata, model=model)``. The model adds its family, formula, priors,
+            group-level effects, and variables to the posterior summaries.
         allow_private: Deprecated name for ``include_private``.
 
     Returns:
@@ -630,6 +635,11 @@ def publish(
     else:
         driver = _target(connection, to)
         validate(Destination(driver, driver, {}), visibility, password, collection)
+    fitted = None
+    if model is not None:
+        from framework._bayesian import with_model
+
+        fitted = with_model(source, model)
     if isinstance(source, (str, Path)):
         path = Path(source)
         if not path.exists():
@@ -647,6 +657,8 @@ def publish(
             include_private_arg(include_private, allow_private),
             sensitive_reasons(f"this {type(source).__name__}"),
         )
+    if fitted is not None:
+        source = fitted
     with tempfile.TemporaryDirectory(prefix="fw_publish_bundle_") as temp:
         bundle = Path(temp) / "bundle"
         manifest = build_bundle(

@@ -66,6 +66,8 @@ dev = [
     "statsmodels>=0.14",
     "types-PyYAML>=6.0",
 ]
+# Bambi, PyMC, and ArviZ for tests/test_bayesian.py: uv run --group bayesian pytest
+bayesian = ["bambi>=0.15; python_version >= '3.12'"]
 
 [build-system]
 requires = ["hatchling>=1.27"]
