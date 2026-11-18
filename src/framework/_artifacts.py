@@ -9,8 +9,12 @@ from them is published.
 
 from __future__ import annotations
 
+import ast
+import contextlib
+import itertools
 import json
 import math
+import re
 from collections.abc import Callable, Iterable, Sequence
 from datetime import date, datetime
 from pathlib import Path
@@ -658,7 +662,424 @@ def _statsmodels_document(result: Any) -> dict[str, Any]:
     formula = getattr(model, "formula", None)
     if isinstance(formula, str):
         document["formula"] = formula
+    # Variables are optional; a design this code can't read leaves them out.
+    with contextlib.suppress(Exception):
+        document |= _statsmodels_variables(result, tables[0])
     return document
+
+
+# --------------------------------------------------------------------------- model variables
+
+VARIABLE_LIMIT = 100
+LEVEL_LIMIT = 50
+TERM_LIMIT = 500
+PART_LIMIT = 10
+_LABEL_ATTRS = ("column_labels", "variable_labels", "labels")
+
+
+class _Part:
+    """One factor's contribution to a design column: its name piece, variable, and level."""
+
+    def __init__(
+        self, name: str, variable: str | None, level: str | None = None, **coding: Any
+    ) -> None:
+        self.name, self.variable, self.level = name, variable, level
+        # A categorical part is mappable only when its column is one level's indicator.
+        self.mappable = variable is not None and coding.get("indicator", True)
+        self.categories: list[str] | None = coding.get("categories")
+        self.reference: str | None = coding.get("reference")
+
+
+class _Design:
+    """What a model's design says about its variables and coefficient terms."""
+
+    def __init__(self, columns: Sequence[str]) -> None:
+        self.columns = set(columns)
+        self.predictors: list[str] = []
+        self.terms: dict[str, list[dict[str, str]]] = {}
+        self.categories: dict[str, list[list[str]]] = {}
+        self.references: dict[str, set[str | None]] = {}
+        self.numeric: set[str] = set()
+
+    def predictor(self, expression: str) -> str | None:
+        """Note the variables an expression uses; return the one it transforms, if one."""
+        used = _referenced(expression, self.columns)
+        for name in sorted(used):
+            if name not in self.predictors:
+                self.predictors.append(name)
+        return next(iter(used)) if len(used) == 1 else None
+
+    def match(self, names: Sequence[str], factors: Sequence[Sequence[_Part]]) -> None:
+        """Map each design column to the parts whose names join to its name."""
+        candidates: dict[str, tuple[_Part, ...]] = {}
+        for combination in itertools.product(*factors):
+            candidates.setdefault(":".join(part.name for part in combination), combination)
+        for name in names:
+            parts = candidates.get(name)
+            if parts is None or not all(part.mappable for part in parts):
+                continue
+            self.add(name, parts)
+
+    def factor(self, variable: str | None, categories: list[str] | None = None) -> None:
+        """Note how the model codes a variable: numeric, or categorical with these levels."""
+        if variable is None:
+            return
+        if categories is None:
+            self.numeric.add(variable)
+        else:
+            self.categories.setdefault(variable, []).append(categories)
+
+    def add(self, name: str, parts: Sequence[_Part]) -> None:
+        self.terms[name] = [
+            {"variable": str(p.variable)} | ({"level": p.level} if p.level is not None else {})
+            for p in parts
+        ]
+        for part in parts:
+            if part.categories is not None:
+                self.references.setdefault(str(part.variable), set()).add(part.reference)
+
+
+def _referenced(expression: str, columns: set[str]) -> set[str]:
+    """Return the data columns a formula factor reads, or an empty set when unsure."""
+    if expression in columns:
+        return {expression}
+    used = {name for name in re.findall(r"`([^`]+)`", expression)}
+    code = re.sub(r"`[^`]+`", "_fw_quoted_", expression)
+    try:
+        tree = ast.parse(code, mode="eval")
+    except SyntaxError:
+        return set()
+    skip = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            skip.add(id(node.func))
+            quoted = node.args[0] if len(node.args) == 1 else None
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id == "Q"
+                and isinstance(quoted, ast.Constant)
+                and isinstance(quoted.value, str)
+            ):
+                used.add(quoted.value)
+        elif isinstance(node, ast.Attribute):
+            skip.add(id(node.value))
+    used |= {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and id(node) not in skip and node.id in columns
+    }
+    return used if used <= columns else set()
+
+
+def _indicator(column: Any, categories: Sequence[str]) -> str | None:
+    """Return the level a contrast column indicates, or None for other codings."""
+    values = np.asarray(column, dtype="float64")
+    ones = np.flatnonzero(values == 1)
+    if len(ones) == 1 and np.all((values == 0) | (values == 1)):
+        return categories[int(ones[0])]
+    return None
+
+
+def _coding(matrix: Any, categories: Sequence[str]) -> tuple[list[str | None], str | None]:
+    """Return each contrast column's level and the coding's reference level, if any."""
+    matrix = np.asarray(matrix, dtype="float64")
+    levels = [_indicator(matrix[:, j], categories) for j in range(matrix.shape[1])]
+    reference = None
+    zero = [i for i in range(matrix.shape[0]) if not np.any(matrix[i])]
+    if all(level is not None for level in levels) and len(zero) == 1:
+        reference = categories[zero[0]]
+    return levels, reference
+
+
+def _patsy_design(info: Any, design: _Design) -> None:
+    for term, subterms in info.term_codings.items():
+        if not term.factors:
+            continue
+        names = info.column_names[info.term_slices[term]]
+        variables = {factor: design.predictor(factor.name()) for factor in term.factors}
+        for subterm in subterms:
+            factors: list[list[_Part]] = []
+            for factor in subterm.factors:
+                factor_info = info.factor_infos[factor]
+                variable = variables[factor]
+                if factor_info.type == "categorical":
+                    contrast = subterm.contrast_matrices[factor]
+                    categories = [str(c) for c in factor_info.categories]
+                    levels, reference = _coding(contrast.matrix, categories)
+                    design.factor(variable, categories)
+                    factors.append(
+                        [
+                            _Part(
+                                factor.name() + suffix,
+                                variable,
+                                level,
+                                indicator=level is not None,
+                                categories=categories,
+                                reference=reference,
+                            )
+                            for suffix, level in zip(contrast.column_suffixes, levels, strict=True)
+                        ]
+                    )
+                else:
+                    width = factor_info.num_columns
+                    design.factor(variable)
+                    factors.append(
+                        [
+                            _Part(
+                                factor.name() if width == 1 else f"{factor.name()}[{i}]", variable
+                            )
+                            for i in range(width)
+                        ]
+                    )
+            design.match(names, factors)
+
+
+def _formulaic_design(spec: Any, design: _Design) -> None:
+    for term in spec.terms:
+        names = [spec.column_names[i] for i in spec.term_indices[term]]
+        factors: list[list[_Part]] = []
+        single_numeric: str | None = None
+        for factor in term.factors:
+            expression = str(factor.expr)
+            state = spec.encoder_state.get(expression)
+            kind = getattr(state[0], "value", None) if state else None
+            if kind not in ("categorical", "numerical"):
+                factors = []
+                break
+            variable = design.predictor(expression)
+            if kind == "numerical":
+                design.factor(variable)
+                factors.append([_Part(expression, variable)])
+                single_numeric = variable if len(term.factors) == 1 else None
+                continue
+            contrasts = state[1].get("contrasts")
+            categories = [str(c) for c in contrasts.levels]
+            design.factor(variable, categories)
+            parts = []
+            for reduced in (True, False):
+                coding = contrasts.contrasts.get_coding_matrix(
+                    contrasts.levels, reduced_rank=reduced
+                )
+                template = contrasts.contrasts.get_factor_format(
+                    contrasts.levels, reduced_rank=reduced
+                )
+                levels, reference = _coding(coding.to_numpy(), categories)
+                parts += [
+                    _Part(
+                        template.format(name=expression, field=field),
+                        variable,
+                        level,
+                        indicator=level is not None,
+                        categories=categories,
+                        reference=reference,
+                    )
+                    for field, level in zip(coding.columns, levels, strict=True)
+                ]
+            factors.append(parts)
+        if not factors:
+            continue
+        design.match(names, factors)
+        if single_numeric is not None:
+            # Multi-column transformations such as poly(x, 2) name columns their own way.
+            for name in names:
+                if name not in design.terms:
+                    design.add(name, [_Part(name, single_numeric)])
+
+
+def _position(name: str, formula: str) -> int:
+    right = formula.split("~", 1)[-1]
+    match = re.search(rf"(?<![\w.`]){re.escape(name)}(?![\w`])", right)
+    return match.start() if match else len(right)
+
+
+def _labels(frame: Any) -> dict[str, str]:
+    attrs = getattr(frame, "attrs", None)
+    if not isinstance(attrs, dict):
+        return {}
+    for key in _LABEL_ATTRS:
+        labels = attrs.get(key)
+        if isinstance(labels, dict):
+            return {
+                str(name): label.strip()
+                for name, label in labels.items()
+                if isinstance(label, str) and label.strip()
+            }
+    return {}
+
+
+def _variable(
+    name: str,
+    series: pd.Series | None,
+    role: str,
+    design: _Design | None = None,
+    label: str | None = None,
+) -> dict[str, Any]:
+    categories = design.categories.get(name) if design else None
+    categorical = bool(categories) and name not in (design.numeric if design else set())
+    kind = _column_type(series) if series is not None else "number"
+    entry: dict[str, Any] = {"name": name, "role": role}
+    if categorical and categories:
+        entry["type"] = "boolean" if kind == "boolean" else "categorical"
+        if all(levels == categories[0] for levels in categories):
+            entry["levels"] = categories[0][:LEVEL_LIMIT]
+        references = design.references.get(name, set()) if design else set()
+        if len(references) == 1 and None not in references:
+            entry["reference"] = next(iter(references))
+    else:
+        entry["type"] = kind
+    if label:
+        entry["label"] = label
+    if series is not None:
+        summary = _summary(series, "string" if entry["type"] == "categorical" else kind)
+        summary.pop("histogram", None)
+        entry["summary"] = summary
+    return entry
+
+
+def _used_rows(model: Any, frame: Any) -> pd.DataFrame | None:
+    """Return the rows of a formula model's data that the fit used, or None if unsure."""
+    if not isinstance(frame, pd.DataFrame):
+        return None
+    count = len(np.asarray(model.endog))
+    labels = getattr(model.data, "row_labels", None)
+    if (
+        labels is not None
+        and len(labels) == count
+        and frame.index.is_unique
+        and pd.Index(labels).isin(frame.index).all()
+    ):
+        used: pd.DataFrame = frame.loc[labels]
+        return used
+    return frame if len(frame) == count else None
+
+
+def _group_values(model: Any, count: int) -> pd.Series | None:
+    """Rebuild a mixed model's grouping column from its per-group row positions."""
+    rows = getattr(model, "row_indices", None)
+    if not isinstance(rows, dict):
+        return None
+    values = np.empty(count, dtype=object)
+    for group, positions in rows.items():
+        values[np.asarray(positions, dtype=int)] = group
+    series = pd.Series(values)
+    return series.infer_objects() if not series.isna().any() else None
+
+
+def _group_name(model: Any) -> str | None:
+    names = list(getattr(model.data, "exog_re_names", None) or [])
+    exog_re = np.asarray(getattr(model, "exog_re", np.empty((0, 0))))
+    intercept = exog_re.ndim == 2 and exog_re.size > 0 and bool(np.all(exog_re[:, 0] == 1))
+    if intercept and names and names[0] != "Group":
+        return str(names[0])
+    return None
+
+
+def _statsmodels_variables(result: Any, coefficients: dict[str, Any]) -> dict[str, Any]:
+    """Return ``variables`` and ``terms`` for a statsmodels result, or {} when unknown."""
+    model = result.model
+    data = model.data
+    spec = getattr(data, "model_spec", None)
+    variables: list[dict[str, Any]] = []
+    if spec is not None:
+        frame = _used_rows(model, getattr(data, "frame", None))
+        if frame is None:
+            return {}
+        columns = [str(c) for c in frame.columns]
+        if isinstance(frame.columns, pd.MultiIndex) or len(set(columns)) != len(columns):
+            return {}
+        frame = frame.set_axis(columns, axis=1)
+        design = _Design(columns)
+        if _has_class(spec, "patsy", "DesignInfo"):
+            _patsy_design(spec, design)
+        elif _has_class(spec, "formulaic", "ModelSpec"):
+            _formulaic_design(spec, design)
+        else:
+            return {}
+        labels = _labels(frame)
+        formula = getattr(model, "formula", None)
+        response = None
+        if isinstance(formula, str) and "~" in formula:
+            used = _referenced(formula.split("~", 1)[0].strip(), design.columns)
+            response = next(iter(used)) if len(used) == 1 else None
+        if response is not None:
+            variables.append(
+                _variable(response, frame[response], "response", label=labels.get(response))
+            )
+        predictors = design.predictors
+        if isinstance(formula, str):
+            # Patsy and formulaic sort terms; list predictors as the formula names them.
+            predictors = sorted(predictors, key=lambda name: _position(name, formula))
+        variables += [
+            _variable(name, frame[name], "predictor", design, labels.get(name))
+            for name in predictors
+            if name != response
+        ]
+        mapping = design.terms
+        if type(model).__name__ == "MixedLM":
+            group = _group_name(model)
+            values = _group_values(model, len(frame)) if group else None
+            if group and values is not None and group not in {v["name"] for v in variables}:
+                variables.append(_variable(group, values, "group", label=labels.get(group)))
+    else:
+        exog = getattr(data, "orig_exog", None)
+        endog = getattr(data, "orig_endog", None)
+        count = len(np.asarray(model.endog))
+        if not isinstance(exog, pd.DataFrame) or len(exog) != count:
+            return {}
+        const = getattr(data, "const_idx", None)
+        names = [str(c) for i, c in enumerate(exog.columns) if i != const]
+        if len(set(names)) != len(names):
+            return {}
+        labels = _labels(exog)
+        if isinstance(endog, pd.Series) and endog.name is not None and len(endog) == count:
+            variables.append(
+                _variable(str(endog.name), endog, "response", label=labels.get(str(endog.name)))
+            )
+        variables += [
+            _variable(str(c), exog.iloc[:, i], "predictor", label=labels.get(str(c)))
+            for i, c in enumerate(exog.columns)
+            if i != const
+        ]
+        mapping = {name: [{"variable": name}] for name in names}
+    two_way = getattr(result.params, "ndim", 1) == 2
+    return _variables_fields(variables, mapping, coefficients, two_way)
+
+
+def _variables_fields(
+    variables: list[dict[str, Any]],
+    mapping: dict[str, list[dict[str, str]]],
+    coefficients: dict[str, Any],
+    prefixed: bool = False,
+) -> dict[str, Any]:
+    """Cap the variables, then map each coefficient term cell to its parts."""
+    seen: set[str] = set()
+    kept = []
+    for variable in variables:
+        if variable["name"] not in seen:
+            seen.add(variable["name"])
+            kept.append(variable)
+    kept = kept[:VARIABLE_LIMIT]
+    names = {v["name"] for v in kept}
+    terms = []
+    for row in coefficients["rows"]:
+        cell = row[0]
+        parts = mapping.get(cell) if isinstance(cell, str) else None
+        if parts is None and prefixed and isinstance(cell, str) and ": " in cell:
+            # Multi-equation tables label each term "<equation>: <term>".
+            parts = next((p for name, p in mapping.items() if cell.endswith(f": {name}")), None)
+        if not parts or len(parts) > PART_LIMIT:
+            continue
+        if any(part["variable"] not in names for part in parts):
+            continue
+        terms.append({"term": cell, "parts": parts})
+        if len(terms) == TERM_LIMIT:
+            break
+    fields: dict[str, Any] = {}
+    if kept:
+        fields["variables"] = kept
+    if terms:
+        fields["terms"] = terms
+    return fields
 
 
 # --------------------------------------------------------------------------- machine learning
@@ -738,6 +1159,17 @@ def _sklearn_document(model: Any) -> dict[str, Any]:
             exponentiate=None if binary else False,
         )
         frame = pd.DataFrame({"term": terms, "estimate": estimates})
+        coefficients = table(frame, "Coefficients", role="coefficients")
+        variables: dict[str, Any] = {}
+        if getattr(model, "feature_names_in_", None) is not None and features == [
+            str(n) for n in model.feature_names_in_
+        ]:
+            # Linear models fit on a data frame: one numeric input column per coefficient.
+            variables = _variables_fields(
+                [{"name": f, "role": "predictor", "type": "number"} for f in features],
+                {f"{label}{f}": [{"variable": f}] for label in labels for f in features},
+                coefficients,
+            )
         metrics = _metrics(
             [
                 *_params(model, ("alpha", "l1_ratio", "C", "penalty", "fit_intercept")),
@@ -745,11 +1177,15 @@ def _sklearn_document(model: Any) -> dict[str, Any]:
                 ("n_classes", len(classes) if classes else None),
             ]
         )
-        return _document(model, "model") | {
-            "model": description,
-            "tables": [table(frame, "Coefficients", role="coefficients")],
-            "metrics": metrics,
-        }
+        return (
+            _document(model, "model")
+            | {
+                "model": description,
+                "tables": [coefficients],
+                "metrics": metrics,
+            }
+            | variables
+        )
     if hasattr(model, "feature_importances_"):
         importance = np.asarray(model.feature_importances_, dtype="float64")
         document = _importance_document(
@@ -841,7 +1277,18 @@ def structured(source: Any) -> dict[str, Any] | None:
     if document is None:
         return None
     # Readable key order: what it is, then the description, then tables and metrics.
-    order = ("schema", "kind", "source", "formula", "model", "test", "tables", "metrics")
+    order = (
+        "schema",
+        "kind",
+        "source",
+        "formula",
+        "model",
+        "test",
+        "tables",
+        "metrics",
+        "variables",
+        "terms",
+    )
     return {key: document[key] for key in order if key in document} | document
 
 

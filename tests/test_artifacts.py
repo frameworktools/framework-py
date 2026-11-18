@@ -390,6 +390,196 @@ def test_statsmodels_multinomial(tmp_path: Path) -> None:
     assert document["tables"][0]["rows"][1][5] == pytest.approx(fit.conf_int().iloc[1, 0])
 
 
+# --------------------------------------------------------------------------- model variables
+
+
+def _penguins(n: int = 120, seed: int = 9) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    species = rng.choice(["Adelie", "Chinstrap", "Gentoo"], n)
+    flipper = rng.normal(200, 14, n).round()
+    mass = -5000 + 46 * flipper + np.where(species == "Gentoo", 800, 0) + rng.normal(0, 300, n)
+    frame = pd.DataFrame(
+        {"body_mass_g": mass.round(), "flipper_length_mm": flipper, "species": species}
+    )
+    frame["heavy"] = (frame["body_mass_g"] > 4500).astype(int)
+    frame.loc[[3, 40], "flipper_length_mm"] = np.nan
+    frame.index = [f"{PRIVATE}-{i}" for i in range(n)]
+    frame.attrs["column_labels"] = {"body_mass_g": "Body mass (g)"}
+    return frame
+
+
+def variables(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {v["name"]: v for v in document["variables"]}
+
+
+def terms(document: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    cells = {row[0] for row in document["tables"][0]["rows"]}
+    mapped = {t["term"]: t["parts"] for t in document["terms"]}
+    assert set(mapped) <= cells
+    return mapped
+
+
+@pytest.mark.parametrize("engine", ["patsy", "formulaic"])
+def test_formula_model_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, engine: str
+) -> None:
+    pytest.importorskip(engine)
+    smf = pytest.importorskip("statsmodels.formula.api")
+    formula = pytest.importorskip("statsmodels.formula")
+    monkeypatch.setattr(formula.options, "formula_engine", engine)
+    frame = _penguins()
+    fit = smf.ols("body_mass_g ~ flipper_length_mm * species", frame).fit()
+    path, document = export(fit, tmp_path)
+    check_model(path, document)
+    assert list(variables(document)) == ["body_mass_g", "flipper_length_mm", "species"]
+    response, flipper, species = document["variables"]
+    assert response["role"] == "response"
+    assert response["label"] == "Body mass (g)"
+    assert flipper == {
+        "name": "flipper_length_mm",
+        "role": "predictor",
+        "type": "number",
+        "summary": flipper["summary"],
+    }
+    # Summaries cover the rows the model used: the two missing flippers are dropped.
+    summary = flipper["summary"]
+    assert summary["count"] == fit.nobs == 118
+    assert summary["missing"] == 0
+    assert summary["mean"] == pytest.approx(frame["flipper_length_mm"].mean())
+    assert "histogram" not in summary
+    assert species["type"] == "categorical"
+    assert species["levels"] == ["Adelie", "Chinstrap", "Gentoo"]
+    assert species["reference"] == "Adelie"
+    used = frame.dropna()["species"].value_counts()
+    assert {t["value"]: t["count"] for t in species["summary"]["top"]} == used.to_dict()
+    assert terms(document) == {
+        "flipper_length_mm": [{"variable": "flipper_length_mm"}],
+        "species[T.Chinstrap]": [{"variable": "species", "level": "Chinstrap"}],
+        "species[T.Gentoo]": [{"variable": "species", "level": "Gentoo"}],
+        "flipper_length_mm:species[T.Chinstrap]": [
+            {"variable": "flipper_length_mm"},
+            {"variable": "species", "level": "Chinstrap"},
+        ],
+        "flipper_length_mm:species[T.Gentoo]": [
+            {"variable": "flipper_length_mm"},
+            {"variable": "species", "level": "Gentoo"},
+        ],
+    }
+    assert list(document)[-2:] == ["variables", "terms"]
+
+
+def test_logit_and_transformed_variables(tmp_path: Path) -> None:
+    smf = pytest.importorskip("statsmodels.formula.api")
+    frame = _penguins()
+    fit = smf.logit("heavy ~ np.log(flipper_length_mm) + C(species, Treatment('Gentoo'))", frame)
+    _, document = export(fit.fit(disp=0), tmp_path)
+    assert [(v["name"], v["role"]) for v in document["variables"]] == [
+        ("heavy", "response"),
+        ("flipper_length_mm", "predictor"),
+        ("species", "predictor"),
+    ]
+    assert variables(document)["species"]["reference"] == "Gentoo"
+    assert variables(document)["heavy"]["summary"]["count"] == 118
+    assert terms(document) == {
+        "np.log(flipper_length_mm)": [{"variable": "flipper_length_mm"}],
+        "C(species, Treatment('Gentoo'))[T.Adelie]": [{"variable": "species", "level": "Adelie"}],
+        "C(species, Treatment('Gentoo'))[T.Chinstrap]": [
+            {"variable": "species", "level": "Chinstrap"}
+        ],
+    }
+
+    fit = smf.ols("np.log(body_mass_g) ~ bs(flipper_length_mm, df=3)", frame.dropna()).fit()
+    _, document = export(fit, tmp_path)
+    assert document["variables"][0]["name"] == "body_mass_g"
+    assert {t["term"] for t in document["terms"]} == {
+        f"bs(flipper_length_mm, df=3)[{i}]" for i in range(3)
+    }
+
+
+def test_uncertain_terms_are_left_out(tmp_path: Path) -> None:
+    smf = pytest.importorskip("statsmodels.formula.api")
+    frame = _penguins().dropna()
+    fit = smf.ols("body_mass_g ~ C(species, Sum) + I(flipper_length_mm * heavy)", frame).fit()
+    _, document = export(fit, tmp_path)
+    # Sum contrasts and products of two variables have no single variable and level.
+    assert "terms" not in document
+    species = variables(document)["species"]
+    assert species["levels"] == ["Adelie", "Chinstrap", "Gentoo"]
+    assert "reference" not in species
+    assert {"flipper_length_mm", "heavy"} <= set(variables(document))
+
+    fit = smf.ols("body_mass_g ~ 0 + species", frame).fit()
+    _, document = export(fit, tmp_path)
+    assert terms(document)["species[Adelie]"] == [{"variable": "species", "level": "Adelie"}]
+    assert "reference" not in variables(document)["species"]
+
+
+def test_non_formula_model_variables(tmp_path: Path) -> None:
+    sm = pytest.importorskip("statsmodels.api")
+    frame = _penguins()
+    features = pd.get_dummies(frame[["flipper_length_mm", "species"]], drop_first=True)
+    fit = sm.OLS(frame["body_mass_g"], sm.add_constant(features), missing="drop").fit()
+    path, document = export(fit, tmp_path)
+    check_model(path, document)
+    assert [(v["name"], v["role"], v["type"]) for v in document["variables"]] == [
+        ("body_mass_g", "response", "number"),
+        ("flipper_length_mm", "predictor", "number"),
+        ("species_Chinstrap", "predictor", "boolean"),
+        ("species_Gentoo", "predictor", "boolean"),
+    ]
+    assert all(v["summary"]["count"] == 118 for v in document["variables"])
+    assert terms(document) == {
+        name: [{"variable": name}]
+        for name in ("flipper_length_mm", "species_Chinstrap", "species_Gentoo")
+    }
+
+    fit = sm.OLS(frame["body_mass_g"].to_numpy(), np.ones((len(frame), 1))).fit()
+    _, document = export(fit, tmp_path)
+    assert "variables" not in document and "terms" not in document
+
+
+@pytest.mark.filterwarnings("ignore::Warning")
+def test_mixed_model_group_variable(tmp_path: Path) -> None:
+    smf = pytest.importorskip("statsmodels.formula.api")
+    frame = _frame(400)
+    frame.loc[frame.index[0], "x"] = np.nan
+    fit = smf.mixedlm("y_mixed ~ x", frame, groups="school", missing="drop").fit()
+    _, document = export(fit, tmp_path)
+    assert [(v["name"], v["role"]) for v in document["variables"]] == [
+        ("y_mixed", "response"),
+        ("x", "predictor"),
+        ("school", "group"),
+    ]
+    school = variables(document)["school"]["summary"]
+    assert school["count"] == 399
+    assert school["distinct"] == 10
+    assert terms(document) == {"x": [{"variable": "x"}]}
+
+
+def test_sklearn_model_variables(tmp_path: Path) -> None:
+    pytest.importorskip("sklearn")
+    from sklearn.linear_model import LinearRegression, LogisticRegression
+
+    frame = _frame()
+    fit = LinearRegression().fit(frame[["x", "z"]], frame["y"])
+    _, document = export(fit, tmp_path)
+    assert document["variables"] == [
+        {"name": "x", "role": "predictor", "type": "number"},
+        {"name": "z", "role": "predictor", "type": "number"},
+    ]
+    assert terms(document) == {"x": [{"variable": "x"}], "z": [{"variable": "z"}]}
+
+    labels = np.array(["low", "mid", "high"])[pd.cut(frame["y"], 3, labels=False)]
+    fit = LogisticRegression(max_iter=500).fit(frame[["x", "z"]], labels)
+    _, document = export(fit, tmp_path)
+    assert terms(document)["mid: z"] == [{"variable": "z"}]
+    assert len(document["terms"]) == 6
+
+    fit = LinearRegression().fit(frame[["x", "z"]].to_numpy(), frame["y"])
+    _, document = export(fit, tmp_path)
+    assert "variables" not in document and "terms" not in document
+
+
 # --------------------------------------------------------------------------- scipy
 
 
