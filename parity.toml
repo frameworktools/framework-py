@@ -642,6 +642,11 @@ status = "ported"
 python = "push_data_registry"
 status = "ported"
 
+[functions.skills_copy]
+python = "skills_copy"
+status = "ported"
+note = "from_ in place of R's from, a Python keyword"
+
 [functions.skills_sync]
 python = "skills_sync"
 status = "ported"

@@ -81,7 +81,7 @@ import framework as fw
 fw.pull_skills()
 ```
 
-`pull_skills()` installs missing skills, updates unmodified skills (using [cloud_login()](ref:cloud_login) for latest personal Cloud versions when available), preserves locally edited skills, leaves removed setup skills on disk with a note, and refreshes the **Skills** table in `AGENTS.md`. Pass `overwrite=True` to replace locally edited skills after backing them up to `.framework/skills-backups/`, or `dry_run=True` to preview changes.
+`pull_skills()` installs missing skills, updates unmodified skills (using [cloud_login()](ref:cloud_login) for latest personal Cloud versions when available), preserves locally edited skills, leaves removed setup skills on disk with a note, and refreshes the **Skills** table in `AGENTS.md`. Pass `overwrite=True` to replace locally edited skills after backing them up to `.framework/skills-backups/`, or `dry_run=True` to preview changes. A skill whose tracked copies differ, or with one of them missing, is reported as diverged and left alone, with the [skills_copy()](ref:skills_copy) call that fixes it. So is a skill `pull_skills()` would add to a new assistant folder while its existing copy is locally edited or your own Cloud skill. A pull works per lock entry: a copy the lock doesn't track (one you made by hand, say) is left alone and listed as untracked, with the commands that track it; a skill whose files can't be read is reported as failed; a skill whose tracked folder is gone (after switching assistants, say) is reported as missing; and a problem in one entry never holds up another, even one with the same folder name. A copy that belongs to a different skill than the one the setup names is reported as kept, never as current or edited. When every copy of your own Cloud skill is deleted, a signed-in pull restores it from that skill. `pull_all()` lists any failed or diverged skill in its `failed` result. A pull never changes a skill's Cloud identity or moves it to an older version: a copy tied to a Cloud skill the setup doesn't name at that version is kept, even with `overwrite=True`. With `overwrite=True`, your edits to one of your own Cloud skills are discarded: the copy is backed up and reset to that same skill's Cloud version, same or newer. overwrite never replaces it with a different skill (another Cloud skill, the package's, or inline content); and when Framework Cloud can't be reached such a skill is reported as unavailable and left alone. A tracked skill whose copies were all deleted is put back and reported as restored; `push_skills()` reports it as missing.
 
 ### Pushing edited skills
 
@@ -93,7 +93,29 @@ fw.push_skills()
 
 Edited built-in Framework skills save as private forks in your account rather than modifying built-in defaults. Concurrent Cloud edits stop with `Pull first` unless `force=True` is passed; non-interactive calls require `confirm=True`. To sync a standalone custom skill directory outside project setup, call [skills_sync()](ref:skills_sync).
 
+### Copying skills between assistants
+
+A project can keep the same skill in several assistant folders: `.claude/skills` for Claude Code and `.agents/skills` for Codex and Copilot. `pull_skills()` writes identical copies, but editing one copy makes them diverge. [skills_sync()](ref:skills_sync) then stops with `Assistant skill copies diverged`, naming both copies; `push_skills()` reports the skill as failed and goes on with the others, and `pull_skills()` leaves it alone. The same happens when a tracked copy is missing. [skills_copy()](ref:skills_copy) copies the version to keep over the others:
+
+```python
+fw.skills_copy(from_="claude", skills=["team-style"], dry_run=True)
+fw.skills_copy(from_="claude", skills=["team-style"])
+fw.skills_copy(from_="claude")                    # every skill, to every other assistant folder
+fw.skills_copy(from_dir=".claude/skills", to_dir="some/other/skills")
+```
+
+`from_` and `to` take assistant folder names: `"claude"` for `.claude/skills`, and `"agents"` (or `"codex"` or `"copilot"`) for `.agents/skills`. `from_dir` and `to_dir` take folders inside the project instead. Neither can be empty or absolute, use `..` or `:`, overlap the other, or be in, or contain, `.framework/`, where Framework keeps its own state. Without `to`, the copy goes to every other assistant skills folder in the project.
+
+A skill is a folder holding a regular `SKILL.md` file. Other folders are ignored, and so are folders whose names start with a dot, which is where the installer stages copies. Symlinked skill folders, broken symlinks, and folders that can't be read stop the copy with an error. Each skill's `SKILL.md` and its syncable companion files are copied, with their executable modes. Excluded files, such as `.env` and keys, are not copied and stay in the target. A replaced copy is backed up to `.framework/skills-backups/` first, and other files only the target had are removed from the active copy and kept in that backup. Identical copies are left alone. Skills only a target has are left alone and not read: they are listed, never deleted. Everything is checked before anything is written, and a copy that fails partway is undone; if a copy can't be put back, the error names it and the backup that holds it. When the copied skill is tracked in `.framework/skills.lock.json`, each target path joins its entry, so pulls and pushes treat the copies as one skill and move them to the same version. Nothing else in the lock changes, so a following `push_skills()` sends the edited skill as usual. A dry run leaves the lock alone, and so does a copy of a skill the lock doesn't track. A folder joins a skill's entry only this way: never because its folder name or its files match.
+
 [pull_all()](ref:pull_all) and [push_all()](ref:push_all) sync skills alongside packages and the data registry. See [Packages](guide:packages#sync-with-framework-cloud).
+
+### Known limits
+
+- Use one skill per folder name in a project.
+- Copy skills between assistants with [skills_copy()](ref:skills_copy), not by hand. A copy made by hand isn't tracked, and pull leaves it alone.
+- On macOS, folder names that differ only in letter case are the same folder. Pick one spelling.
+- A command that refuses has changed nothing. Follow its message.
 
 ## Privacy-sensitive guardrails
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -553,3 +554,55 @@ def test_folders_git_already_ignores_get_no_rule(old: Path) -> None:
     rules = (old / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert "/inputs/private/" in rules
     assert "/inputs/raw/" not in rules
+
+
+def test_a_declined_skill_install_is_reported_as_kept(
+    plain: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import framework.skill_sync as skill_sync
+
+    monkeypatch.setattr(skill_sync, "install_package", lambda *a, **k: False)
+    result = fw.upgrade(plain, dry_run=False)
+    skills = result.actions[result.actions["step"] == "skills"]
+    assert not skills.empty
+    assert set(skills["change"]) == {"kept (not installed)"}
+    assert any("Skills kept, not installed" in n for n in result.notes)
+    assert not (plain / ".claude/skills/framework-data").exists()
+
+
+def test_a_skill_tied_to_a_cloud_skill_is_not_planned_for_an_update(plain: Path) -> None:
+    from framework.skill_sync import _load, _save, bundle_hash, scan
+
+    fw.upgrade(plain, dry_run=False)
+    path = ".claude/skills/framework-data"
+    (plain / path / "SKILL.md").write_text("---\nname: framework-data\ndescription: x\n---\nv7\n")
+    state = _load(plain)
+    key = next(k for k, e in state["skills"].items() if path in e["paths"])
+    state["skills"][key].update(
+        skill_id="framework:framework-data",
+        version=7,
+        server="https://cloud.example",
+        hash=bundle_hash(scan(plain / path)),
+    )
+    _save(plain, state)
+    result = fw.upgrade(plain, dry_run=False)
+    assert path not in set(result.actions["path"])
+    assert "v7" in (plain / path / "SKILL.md").read_text()
+    assert _load(plain)["skills"][key]["skill_id"] == "framework:framework-data"
+
+
+def test_a_diverged_skill_is_kept_whole_with_its_hint(plain: Path) -> None:
+    fw.upgrade(plain, dry_run=False)
+    (plain / ".agents/skills").mkdir(parents=True)
+    fw.skills_copy(from_="claude", to="agents", skills=["framework-data"], project_path=plain)
+    data = plain / ".claude/skills/framework-data/SKILL.md"
+    sibling = plain / ".agents/skills/framework-data"
+    assert data.is_file() and sibling.is_dir()
+    data.write_text("my notes\n", encoding="utf-8")
+    shutil.rmtree(sibling)
+    result = fw.upgrade(plain, dry_run=False)
+    assert not sibling.exists()
+    assert data.read_text(encoding="utf-8") == "my notes\n"
+    assert ".agents/skills/framework-data" not in set(result.actions["path"])
+    note = next(n for n in result.notes if n.startswith("Skill kept, not upgraded: framework-data"))
+    assert 'skills_copy(from_="claude", to="agents", skills=["framework-data"])' in note

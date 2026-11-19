@@ -85,7 +85,7 @@
   title: AI
   description: AI assistant skill installation and sync
   common: [pull_skills, push_skills]
-  names: [pull_skills, push_skills, ai_skills_update]
+  names: [pull_skills, push_skills, skills_copy, ai_skills_update]
 
 - id: types
   title: Errors and types

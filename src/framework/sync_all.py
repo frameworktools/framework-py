@@ -196,9 +196,14 @@ def _project_name(root: Path) -> str:
 def _skills_line(counts: dict[str, int]) -> str | None:
     labels = [
         ("added", "to add"),
+        ("restored", "to restore"),
         ("updated", "to update"),
         ("replaced", "to replace (backed up)"),
         ("edited", "locally edited (kept)"),
+        ("diverged", "diverged (not pulled)"),
+        ("failed", "failed"),
+        ("missing", "missing"),
+        ("unavailable", "unavailable (kept)"),
         ("removed", "no longer in the project's setup (kept)"),
     ]
     parts = [f"{counts.get(key, 0)} {label}" for key, label in labels if counts.get(key)]
@@ -403,7 +408,7 @@ def _packages_pull_plan(
 def _skills_pull_plan(root: Path, overwrite: bool) -> dict[str, Any]:
     """Skills: what pull_skills() would add, update, or keep."""
     from framework._log import inform
-    from framework.skill_pull import _BACKUPS, pull_skills
+    from framework.skill_pull import _BACKUPS, pull_skills, row_text
 
     with _quiet():
         plan = pull_skills(root, overwrite=overwrite, dry_run=True)
@@ -411,15 +416,10 @@ def _skills_pull_plan(root: Path, overwrite: bool) -> dict[str, Any]:
     if line := _skills_line(plan["counts"]):
         lines.append(line)
     for skill in plan["skills"]:
-        name, status = skill["name"], skill["status"]
-        if status == "edited":
-            lines.append(f"  Kept (locally edited): {name} — pull_all(overwrite=True) replaces it")
-        elif status == "replaced":
-            lines.append(f"  Replaced (old copy in {_BACKUPS}): {name}")
-        elif status == "removed":
-            lines.append(f"  No longer in the project's setup (kept): {name}")
-        elif status == "unavailable":
-            lines.append(f"  Not in this version of framework-py: {name}")
+        if skill["status"] == "replaced":
+            lines.append(f"  replaced: {skill['name']} (old copy in {_BACKUPS})")
+        elif text := row_text(skill, overwrite="pull_all(overwrite=True)"):
+            lines.append(f"  {skill['status']}: {skill['name']}. {text}")
     if plan["source"] == "package":
         lines.append(
             "  Framework Cloud's skill list not read; using the package skills for this "
@@ -427,7 +427,7 @@ def _skills_pull_plan(root: Path, overwrite: bool) -> dict[str, Any]:
         )
     if lines:
         lines += [f"  {note}" for note in plan.get("notes") or []]
-    pending = any(plan["counts"].get(k) for k in ("added", "updated", "replaced"))
+    pending = any(plan["counts"].get(k) for k in ("added", "restored", "updated", "replaced"))
 
     def apply() -> dict[str, Any] | None:
         if not pending:
@@ -535,6 +535,8 @@ def pull_all(
         "dry_run": dry_run,
         "message": "\n".join(lines),
     }
+    if problem := _skill_problems(result["skills"], ("failed", "diverged", "missing")):
+        result["failed"].setdefault("skills", problem)
     if dry_run:
         return result
     if any(p.get("pending") for p in parts.values()) and not _ask(
@@ -552,9 +554,28 @@ def pull_all(
         for n, p in parts.items()
         if p["label"] in outcome["failed"]
     }
+    # A skill that failed, diverged, or is missing is a failure, as push_all() reports one
+    if problem := _skill_problems(result["skills"], ("failed", "diverged", "missing")):
+        result["failed"].setdefault("skills", problem)
+        outcome["failed"].setdefault(parts["skills"]["label"], problem)
     if outcome["failed"]:
         raise CloudError(_partial("pull_all()", "Applied", outcome))
     return result
+
+
+def _skill_problems(
+    plan: dict[str, Any] | None, statuses: tuple[str, ...] = ("failed", "diverged")
+) -> str | None:
+    """The skills a pull or push couldn't handle (by default failed or diverged), as one
+    reason."""
+    rows = [s for s in (plan or {}).get("skills") or [] if s.get("status") in statuses]
+    if not rows:
+        return None
+    parts = []
+    for row in rows:
+        why = str(row.get("reason") or row.get("hint") or "").rstrip(".")
+        parts.append(f"{row['name']} {row['status']}" + (f" ({why})" if why else ""))
+    return "; ".join(parts)
 
 
 # Push ----------------------------------------------------------------------------------------
@@ -682,12 +703,19 @@ def _skills_push_plan(root: Path, force: bool) -> dict[str, Any]:
     """
     from framework._log import inform
     from framework.cloud import CloudError, cloud_server, cloud_token, login_hint
-    from framework.skill_pull import _push_apply, _push_edited, _push_plan, _warning
+    from framework.skill_pull import (
+        _push_apply,
+        _push_edited,
+        _push_plan,
+        _warning,
+        push_row,
+        push_text,
+    )
 
     edited = _push_edited(root)
     # Only edited skills need a server; with none chosen, NoServerError says how to pick one
     if edited and cloud_token(url := cloud_server().url) is None:
-        names = ", ".join(Path(paths[0]).name for _, paths in edited)
+        names = ", ".join(Path(paths[0]).name for _, paths, _ in edited)
         raise CloudError(
             f"Not signed in, so edited skills ({names}) can't be pushed. {login_hint(url)}"
         )
@@ -695,20 +723,17 @@ def _skills_push_plan(root: Path, force: bool) -> dict[str, Any]:
     pushes = [p for p in plans if p["status"] == "push"]
     refused = [p for p in plans if p["status"] == "refused"]
     failed = [p for p in plans if p["status"] == "failed"]
+    missing = [p for p in plans if p["status"] == "missing"]
 
     lines: list[str] = []
     if pushes:
         lines.append(f"  Skills to push: {_names(pushes)}")
-    for p in refused:
-        lines.append(
-            f"  Pull first: {p['name']} changed on Cloud since this project pulled it. "
-            "push_all(force=True) replaces it."
-        )
-    for p in failed:
-        lines.append(f"  Not checked: {p['name']}: {p.get('reason')}")
+    for p in refused + failed + missing:
+        text = push_text(push_row(p), force="push_all(force=True)")
+        lines.append(f"  {p['status']}: {p['name']}. {text}")
     quiet = not lines
     for p in untracked:
-        lines.append(f"  Not tracked: {p['name']} — use skills_sync() to add it")
+        lines.append(f"  untracked: {p['name']}. {push_text(push_row(p))}")
 
     def apply() -> list[dict[str, Any]]:
         done = _push_apply(root, plans)
@@ -753,7 +778,10 @@ def _data_push_plan(
 
 
 def _skill_rows(plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [{"name": p["name"], "status": p["status"], "path": p["path"]} for p in plans]
+    """push_all()'s skill rows, in push_skills()'s statuses (never ``push``)."""
+    from framework.skill_pull import push_row
+
+    return [{**push_row(p), "path": p["path"]} for p in plans]
 
 
 def push_all(
@@ -846,6 +874,13 @@ def push_all(
         "dry_run": dry_run,
         "message": "\n".join(lines),
     }
+    # A skill that can't be pushed (failed, diverged, or missing) is a failure, in a dry
+    # run too, as pull_all() reports one
+    skill_problem = _skill_problems(
+        {"skills": parts["skills"].get("plans") or []}, ("failed", "diverged", "missing")
+    )
+    if skill_problem:
+        result["failed"].setdefault("skills", skill_problem)
     if dry_run:
         return result
     if any(p.get("pending") for p in parts.values()) and not _ask(
@@ -867,6 +902,8 @@ def push_all(
         for n, p in parts.items()
         if p["label"] in outcome["failed"]
     }
+    if skill_problem:
+        result["failed"].setdefault("skills", skill_problem)
     if outcome["failed"]:
         raise CloudError(_partial("push_all()", "Pushed", outcome))
     return result

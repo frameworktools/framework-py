@@ -76,7 +76,8 @@ def test_ai_skills_update(tmp_path: Path) -> None:
     result = fw.ai_skills_update(root)
     statuses = {s["name"]: s["status"] for s in result["skills"]}
     # Audit 2026-11-05: skills that were already current were reported as updated
-    assert statuses["framework-sensitive-data"] == "added"
+    # Tracked in the lock, then deleted: put back, and reported as restored
+    assert statuses["framework-sensitive-data"] == "restored"
     assert statuses["framework-data"] == "edited"
     assert statuses["framework-workflow"] == "current"
     assert (root / ".claude/skills/framework-sensitive-data/SKILL.md").is_file()

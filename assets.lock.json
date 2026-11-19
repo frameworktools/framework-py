@@ -1,5 +1,5 @@
 {
-  "commit": "8ea101489732b48aa98ba74326f36f6476a0c86f",
+  "commit": "21f3c218c6cb9689e9e586bfed15b71f6180881a",
   "files": {
     "docs/docs-site.md": {
       "sha256": "be34e19dacbe77390e41986e47bac11d95ace1e458e6fec868e2b279a9e7c497",
@@ -230,7 +230,7 @@
       "source": "tests/integration/sqlserver/init.sql"
     },
     "tests/shared/NAMESPACE": {
-      "sha256": "0927c5f0ded9bb7a761e2818418eec027130d87744d32fd5a7ad38bed08511ab",
+      "sha256": "ac07f3f622cc41b9199e4b09dd8c7e4ca5491478625ed3b3b53002a5a1702ab1",
       "source": "NAMESPACE"
     },
     "tests/shared/conformance/README.md": {
@@ -382,6 +382,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "v2.0.14",
+  "ref": "v2.0.15",
   "source": "framework (R package)"
 }

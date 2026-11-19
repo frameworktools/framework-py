@@ -331,7 +331,7 @@ def edited_skill(
 
     monkeypatch.setattr(module, "cloud_token", lambda url: "fw_user" if signed_in else None)
     monkeypatch.setattr(
-        skill_pull, "_push_edited", lambda root: [({}, [".claude/skills/analysis"])]
+        skill_pull, "_push_edited", lambda root: [({}, [".claude/skills/analysis"], None)]
     )
     monkeypatch.setattr(
         skill_pull,
@@ -514,3 +514,59 @@ def test_requirement_rows() -> None:
     assert _row("thing @ https://example.org/thing.whl") is None
     assert _same(row("x", "==1.2"), row("x", "1.2"))
     assert not _same(row("x", source="github", repo="a/x"), row("x", source="github", repo="b/x"))
+
+
+def test_pull_reports_a_failed_skill_at_the_top_level(cloud: Cloud, project: Path) -> None:
+    cloud.packages = [row("pandas", ">=2.0"), row("requests")]
+    cloud.entries = [entry("inputs.raw.survey", "inputs/raw/survey.csv")]
+    fw.pull_skills()
+    folder = next(
+        project / f for f in (".claude/skills", ".agents/skills") if (project / f).is_dir()
+    )
+    skill = next(p for p in sorted(folder.iterdir()) if p.is_dir())
+    (skill / "SKILL.md").unlink()  # Unreadable: no SKILL.md
+    result = fw.pull_all(dry_run=True)
+    assert "skills" in result["failed"]
+    assert f"{skill.name} failed" in result["failed"]["skills"]
+    with pytest.raises(CloudError, match=f"Not applied: Skills \\({skill.name} failed"):
+        fw.pull_all(confirm=True)
+
+
+def test_pull_lists_a_deleted_skill_outside_the_setup_as_missing(
+    cloud: Cloud, project: Path
+) -> None:
+    from framework.skill_sync import _load, _save
+
+    cloud.packages = [row("pandas", ">=2.0"), row("requests")]
+    cloud.entries = [entry("inputs.raw.survey", "inputs/raw/survey.csv")]
+    fw.pull_skills()
+    state = _load(project)
+    state["skills"]["lab"] = {"paths": ["lab/skills/gone"], "variant": "python", "hash": "x"}
+    _save(project, state)
+    result = fw.pull_all(dry_run=True)
+    assert result["message"] != "Project is up to date with Framework Cloud."
+    assert "missing: gone. Every tracked copy is gone." in result["message"]
+    assert "gone missing" in result["failed"]["skills"]
+    rows = [s for s in result["skills"]["skills"] if s.get("entry") == "lab"]
+    assert [r["status"] for r in rows] == ["missing"]
+
+
+def test_push_dry_run_reports_a_missing_skill_at_the_top_level(
+    cloud: Cloud, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import shutil
+
+    import framework.cloud as module
+
+    cloud.packages = [row("pandas", ">=2.0"), row("requests")]
+    cloud.entries = [entry("inputs.raw.survey", "inputs/raw/survey.csv")]
+    fw.pull_skills()
+    folder = next(
+        project / f for f in (".claude/skills", ".agents/skills") if (project / f).is_dir()
+    )
+    skill = next(p for p in sorted(folder.iterdir()) if p.is_dir())
+    shutil.rmtree(skill)
+    save_login(SERVER)
+    monkeypatch.setattr(module, "cloud_token", lambda url: "fw_user")
+    result = fw.push_all(dry_run=True)
+    assert f"{skill.name} missing" in result["failed"]["skills"]

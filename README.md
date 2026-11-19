@@ -65,6 +65,12 @@ fw.skills_sync(".agents/skills/my-skill")
 
 Local edits create account versions. Edited Framework skills become private forks pinned to an exact source version. Concurrent edits stop for reconciliation. See the [Skill sync guide](https://framework.pub/docs/skill-sync).
 
+When a skill's copies in `.claude/skills` and `.agents/skills` differ, copy the version to keep over the others (what it replaces is backed up), then sync:
+
+```python
+fw.skills_copy(from_="claude", skills=["my-skill"])
+```
+
 ## Development
 
 ```sh

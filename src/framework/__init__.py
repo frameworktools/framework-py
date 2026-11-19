@@ -129,7 +129,7 @@ from framework.scaffold import project_info, scaffold, status
 from framework.scratch import scratch_capture, scratch_clean
 from framework.security import AuditResult, git_security_audit
 from framework.settings import settings, settings_read, settings_write
-from framework.skill_pull import pull_skills, push_skills
+from framework.skill_pull import pull_skills, push_skills, skills_copy
 from framework.skill_sync import skills_sync
 from framework.snippets import load_ipython_extension as load_ipython_extension
 from framework.snippets import snippet
@@ -275,6 +275,7 @@ __all__ = [
     "settings_read",
     "settings_write",
     "show_table",
+    "skills_copy",
     "skills_sync",
     "snippet",
     "spec_check",

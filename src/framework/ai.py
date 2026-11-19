@@ -27,7 +27,11 @@ def assistant_targets(spec: dict[str, Any]) -> tuple[list[str], list[str]]:
     With no assistants selected, skills go to ``.agents/skills`` only, the
     folder more tools read.
     """
-    selected = [name for name in spec.get("ai", {}).get("assistants", {}) if name in ASSISTANTS]
+    chosen = spec.get("ai", {}).get("assistants", {})
+    # A mapping selects the assistants whose value is true; a list selects each one listed
+    if isinstance(chosen, dict):
+        chosen = [name for name, on in chosen.items() if on]
+    selected = [name for name in chosen if name in ASSISTANTS]
     if not selected:
         return [AGENTS_DEFAULT], []
     folders = list(dict.fromkeys(ASSISTANTS[name][0] for name in selected))
@@ -141,11 +145,13 @@ def write_ai_files(root: Path, spec: dict[str, Any]) -> list[str]:
             if entry.get("package") is True:
                 from framework.skill_sync import install_package
 
-                install_package(_shipped(name), root, target, name)
+                if not install_package(_shipped(name), root, target, name):
+                    continue  # Declined (an existing edited or Cloud copy): not written
             elif entry.get("sync") and entry.get("bundle"):
                 from framework.skill_sync import install_cloud
 
-                install_cloud(root, target, entry)
+                if not install_cloud(root, target, entry):
+                    continue
             else:
                 _write(root, f"{target}/SKILL.md", entry["content"])
                 for relative, content in (entry.get("files") or {}).items():

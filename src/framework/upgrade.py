@@ -1057,12 +1057,30 @@ def _step_skills(plan: _Plan) -> None:
     else:
         dirs = existing
     edited = []
+    # A diverged lock entry (a copy missing, or copies that differ) is one unit: upgrade()
+    # writes nothing for it, so it never refills one copy beside an edited one
+    from framework.skill_pull import _entry_problems, row_text
+    from framework.skill_sync import _load, entry_for
+
+    try:
+        state = _load(plan.root)
+        problems = _entry_problems(plan.root, state)
+    except Exception:
+        state, problems = {"skills": {}}, {}
+    diverged: dict[str, str] = {}
     for skill in skills:
         source = _shipped(skill)
         if not source.is_dir():
             continue
         for folder in dirs:
             relative = f"{folder}/{skill}"
+            key, _ = entry_for(state, relative)
+            if key is not None and problems.get(key, ("",))[0] == "diverged":
+                _, reason, hint = problems[key]
+                diverged.setdefault(
+                    skill, row_text({"status": "diverged", "reason": reason, "hint": hint})
+                )
+                continue
             try:
                 status = package_status(source, plan.root, relative, skill)
             except Exception:
@@ -1072,7 +1090,8 @@ def _step_skills(plan: _Plan) -> None:
                 plan.actions.append({"step": "skills", "path": relative, "change": change})
 
                 def run(src: Any = source, rel: str = relative, name: str = skill) -> Any:
-                    return install_package(src, plan.root, rel, name)
+                    # The path when the installer declined it, else None
+                    return None if install_package(src, plan.root, rel, name) else rel
 
                 plan.skills.append(run)
             elif status in ("edited", "account"):
@@ -1082,6 +1101,8 @@ def _step_skills(plan: _Plan) -> None:
             "Skills kept because they were edited (or come from your account): "
             f"{', '.join(edited)}. ai_skills_update() leaves them too."
         )
+    for skill, hint in diverged.items():
+        plan.note(f"Skill kept, not upgraded: {skill}. {hint}")
 
 
 def _step_quarto(plan: _Plan) -> None:
@@ -1531,9 +1552,17 @@ def upgrade(
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
-    for install in plan.skills:
-        install()
-    result.applied = True
+    declined = [path for install in plan.skills if (path := install())]
+    if declined:
+        # A declined install was never added or updated: say so, in the result too
+        kept = result.actions["path"].isin(declined) & (result.actions["step"] == "skills")
+        result.actions.loc[kept, "change"] = "kept (not installed)"
+        note = (
+            f"Skills kept, not installed (edited, or tied to a Cloud skill): {', '.join(declined)}"
+        )
+        result.notes.append(note)
+        inform(note)
+    result.applied = bool(plan.pending) or len(declined) < len(plan.skills)
     where = (
         f". Backups: {result.backup_location.relative_to(root).as_posix()}"
         if result.backup_location
