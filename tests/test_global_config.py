@@ -106,13 +106,16 @@ def test_ai_skills_update_refuses_a_folder_that_is_not_a_project(tmp_path: Path)
 def test_ai_skills_update_updates_skills_from_an_older_release(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import hashlib
+    import base64
 
     from framework import skill_sync
 
     old = "---\nname: framework-data\n---\nAn older release.\n"
-    shipped = hashlib.sha256(old.encode()).hexdigest()
-    monkeypatch.setattr(skill_sync, "_shipped_history", lambda: {"framework-data": [shipped]})
+    content = base64.b64encode(old.encode()).decode()
+    shipped = skill_sync.bundle_hash([{"path": "SKILL.md", "content": content}])
+    monkeypatch.setattr(
+        skill_sync, "_shipped_history", lambda: {"framework-data": {"python": [shipped]}}
+    )
     (project / "settings.yml").write_text(
         "default:\n  project_type: project\n  ai: {assistants: [claude]}\n", encoding="utf-8"
     )

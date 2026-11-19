@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -352,10 +353,6 @@ def test_a_project_made_sensitive_by_hand_hears_where_outputs_go(plain: Path) ->
 def test_refreshes_the_spec_author_and_gitignore_copy_and_agents_skills(
     old: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import hashlib
-
-    from framework import skill_sync
-
     fw.upgrade(old, dry_run=False)
     spec_path = old / ".framework/spec.json"
     gitignore = (old / ".gitignore").read_text(encoding="utf-8")
@@ -363,11 +360,10 @@ def test_refreshes_the_spec_author_and_gitignore_copy_and_agents_skills(
         gitignore.rstrip("\n")
     )
 
-    # A copy in .agents/skills from an older release, with no lock entry: the lock's
-    # entry for .claude/skills/... says nothing about it
+    # A copy in .agents/skills from an older release, with no lock entry, beside the
+    # tracked .claude/skills copy: untracked, so upgrade() never writes or claims it
+    # (skills lock v2: a loose copy is recorded only by skills_copy())
     released = "---\nname: framework-data\n---\nAn older release.\n"
-    digest = hashlib.sha256(released.encode()).hexdigest()
-    monkeypatch.setattr(skill_sync, "_shipped_history", lambda: {"framework-data": [digest]})
     agents = old / ".agents/skills/framework-data"
     agents.mkdir(parents=True)
     (agents / "SKILL.md").write_text(released, encoding="utf-8")
@@ -387,10 +383,10 @@ def test_refreshes_the_spec_author_and_gitignore_copy_and_agents_skills(
     plan = fw.upgrade(old)
     change = plan.actions.set_index("path").loc[".framework/spec.json", "change"]
     assert "author" in change and "git.gitignore_content" in change
-    assert ".agents/skills/framework-data" in set(plan.actions["path"])
+    assert ".agents/skills/framework-data" not in set(plan.actions["path"])
 
     fw.upgrade(old, dry_run=False)
-    assert "older release" not in (agents / "SKILL.md").read_text(encoding="utf-8")
+    assert "older release" in (agents / "SKILL.md").read_text(encoding="utf-8")
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     assert spec["author"]["name"] == "Ada Lovelace"
     assert "github" not in spec["author"]
@@ -561,7 +557,10 @@ def test_a_declined_skill_install_is_reported_as_kept(
 ) -> None:
     import framework.skill_sync as skill_sync
 
-    monkeypatch.setattr(skill_sync, "install_package", lambda *a, **k: False)
+    def refuse(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("install refused")
+
+    monkeypatch.setattr(skill_sync, "_install", refuse)
     result = fw.upgrade(plain, dry_run=False)
     skills = result.actions[result.actions["step"] == "skills"]
     assert not skills.empty
@@ -577,18 +576,21 @@ def test_a_skill_tied_to_a_cloud_skill_is_not_planned_for_an_update(plain: Path)
     path = ".claude/skills/framework-data"
     (plain / path / "SKILL.md").write_text("---\nname: framework-data\ndescription: x\n---\nv7\n")
     state = _load(plain)
-    key = next(k for k, e in state["skills"].items() if path in e["paths"])
+    key = next(k for k, e in state["skills"].items() if path in e["copies"])
+    digest = bundle_hash(scan(plain / path))
+    # Last delivered by Cloud (version 7): the built-in on the cloud channel
     state["skills"][key].update(
-        skill_id="framework:framework-data",
-        version=7,
-        server="https://cloud.example",
-        hash=bundle_hash(scan(plain / path)),
+        base={"channel": "cloud", "hash": digest, "version": 7, "server": "https://cloud.example"},
+        known=[digest],
+        copies={path: {"hash": digest}},
     )
     _save(plain, state)
     result = fw.upgrade(plain, dry_run=False)
     assert path not in set(result.actions["path"])
     assert "v7" in (plain / path / "SKILL.md").read_text()
-    assert _load(plain)["skills"][key]["skill_id"] == "framework:framework-data"
+    entry = _load(plain)["skills"][key]
+    assert entry["identity"]["skill_id"] == "framework:framework-data"
+    assert entry["base"]["channel"] == "cloud" and entry["base"]["version"] == 7
 
 
 def test_a_diverged_skill_is_kept_whole_with_its_hint(plain: Path) -> None:

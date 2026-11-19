@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -275,80 +276,64 @@ def _dir_modes(path: Path) -> dict[str, int]:
     return modes
 
 
-def _load(root: Path) -> dict[str, Any]:
-    path = _path(root, ".framework/skills.lock.json")
-    state: dict[str, Any] = (
-        json.loads(path.read_text()) if path.exists() else {"schema": 1, "skills": {}}
-    )
-    if state.get("schema") != 1 or not isinstance(state.get("skills"), dict):
-        raise ValueError("Unsupported skill lock file")
+LOCK_FILE = ".framework/skills.lock.json"
+
+
+def _read(root: Path) -> tuple[dict[str, Any], bool]:
+    """The skill lock as v2 (a v1 lock is migrated in memory), with its paths in their
+    on-disk spelling, and whether the file exists. A lock newer than v2 raises
+    ``LockSchemaError``."""
+    from framework._skill_plan import empty_lock, migrate
+
+    path = _path(root, LOCK_FILE)
+    if not path.exists():
+        return empty_lock(), False
+    lock = migrate(json.loads(path.read_text(encoding="utf-8")))
     # Lock paths in their on-disk spelling, so every lookup matches by filesystem identity
     # (an older lock may say .CLAUDE/skills/x for .claude/skills/x)
-    for entry in state["skills"].values():
-        if isinstance(entry, dict) and isinstance(entry.get("paths"), list):
-            spelled = []
-            for path in entry["paths"]:
-                try:
-                    spelled.append(on_disk(root, path))
-                except (ValueError, OSError):
-                    spelled.append(path)  # As stored: the entry fails on its own later
-            entry["paths"] = list(dict.fromkeys(spelled))
-    _merge_split(state)
-    return state
+    for entry in lock["skills"].values():
+        spelled: dict[str, Any] = {}
+        for relative, record in entry["copies"].items():
+            with contextlib.suppress(ValueError, OSError):
+                relative = on_disk(root, relative)  # Else as stored: it fails on its own later
+            spelled.setdefault(relative, record)
+        entry["copies"] = spelled
+    return lock, True
 
 
-def _merge_split(state: dict[str, Any]) -> None:
-    """Merge entries for one skill into one, with all their paths.
-
-    Older lock files (R's, or any written before each skill had one entry) can track a
-    skill's copies in two assistant folders as two entries. Then the copies are never
-    compared, and a one-sided edit could be pushed. Entries are one skill when they share
-    a Cloud ID (server, skill_id, variant), or a name, built-in origin, and variant. The
-    merged entry keeps the newest version's metadata. Saved with the next change.
-    """
-    groups: dict[tuple[Any, ...], list[str]] = {}
-    for key, entry in state["skills"].items():
-        if not isinstance(entry, dict) or not entry.get("paths"):
-            continue
-        if entry.get("skill_id"):
-            group: tuple[Any, ...] = (
-                "id",
-                entry.get("server"),
-                entry["skill_id"],
-                entry.get("variant"),
-            )
-        elif (entry.get("origin") or {}).get("skill_id"):
-            names = {PurePosixPath(p).name for p in entry["paths"]}
-            group = ("origin", entry["origin"]["skill_id"], entry.get("variant"), *sorted(names))
-        else:
-            continue
-        groups.setdefault(group, []).append(key)
-    for keys in groups.values():
-        if len(keys) < 2:
-            continue
-        entries = [state["skills"][k] for k in keys]
-        newest = max(range(len(keys)), key=lambda i: int(entries[i].get("version") or 0))
-        merged = dict(entries[newest])
-        merged["paths"] = list(dict.fromkeys(p for e in entries for p in e["paths"]))
-        state["skills"][keys[newest]] = merged
-        for i, key in enumerate(keys):
-            if i != newest:
-                del state["skills"][key]
+def _load(root: Path) -> dict[str, Any]:
+    """The skill lock as v2. See ``_read()``."""
+    return _read(root)[0]
 
 
-def _save(root: Path, state: dict[str, Any]) -> None:
-    path = _path(root, ".framework/skills.lock.json")
+def _save(root: Path, lock: dict[str, Any]) -> None:
+    """Write the lock as v2 (see ``_skill_plan.dump()``)."""
+    from framework._skill_plan import dump
+
+    path = _path(root, LOCK_FILE)
     path.parent.mkdir(parents=True, exist_ok=True)
     _private(root)
     fd, temp = tempfile.mkstemp(dir=path.parent)
     try:
         with os.fdopen(fd, "w") as stream:
-            json.dump(state, stream, indent=2)
+            json.dump(dump(lock), stream, indent=2)
             stream.write("\n")
         Path(temp).replace(path)
     finally:
         if Path(temp).exists():
             Path(temp).unlink()
+
+
+def _save_changed(root: Path, before: dict[str, Any], after: dict[str, Any]) -> bool:
+    """Save ``after`` when it differs from ``before`` (both as read or planned). A lock
+    that comes out unchanged is not rewritten, so a v1 file stays v1 until a command
+    changes it. Returns whether the file was written."""
+    from framework._skill_plan import dump
+
+    if dump(before) == dump(after):
+        return False
+    _save(root, after)
+    return True
 
 
 @contextmanager
@@ -579,6 +564,7 @@ def skills_sync(
     Returns:
         The action, skill identity, hashes, paths, and resulting version.
     """
+    from framework._skill_plan import after_push, identity_for, key_of, owner_of
     from framework.cloud import CloudConflictError, _require_token, api, cloud_server
 
     if (
@@ -593,46 +579,65 @@ def skills_sync(
     server = cloud_server().url.rstrip("/")
     token = _require_token(server)
     with _lock(root):
-        state = _load(root)
-        matches = [(k, e) for k, e in state["skills"].items() if path in e["paths"]]
-        entry: dict[str, Any]
-        wanted = {"skill_id": skill_id, "server": server, "variant": variant}
-        same = [(k, e) for k, e in state["skills"].items() if skill_id and same_identity(e, wanted)]
-        if matches:
-            key, entry = matches[0]
-        elif same:
+        lock = _load(root)
+        before = json.loads(json.dumps(lock))
+        key = owner_of(lock, path)
+        if key is None and skill_id:
             # skill_id names a skill the lock tracks: this path is one more copy of it
-            key, entry = same[0]
-            entry = {**entry, "paths": [*entry["paths"], path]}
-        else:
+            wanted = key_of(identity_for(skill_id, variant, server))
+            if wanted in lock["skills"]:
+                key = wanted
+                lock["skills"][key]["copies"][path] = {"hash": None}
+        if key is None:
             # Never a key already in use: saving must not overwrite another entry
-            key, n = path, 2
-            while key in state["skills"]:
-                key, n = f"{path}#{n}", n + 1
-            entry = {"paths": [path], "variant": variant}
-        if entry.get("server") and entry["server"] != server:
+            key, n = f"local:{path}", 2
+            while key in lock["skills"]:
+                key, n = f"local:{path}#{n}", n + 1
+            lock["skills"][key] = {
+                "identity": {"kind": "local", "variant": variant},
+                "base": None,
+                "known": [],
+                "copies": {path: {"hash": None}},
+            }
+        entry = lock["skills"][key]
+        identity = entry["identity"]
+        base = entry.get("base") or {}
+        if identity["kind"] == "cloud" and identity.get("server") != server:
             raise ValueError("This skill is tracked on another server")
-        if skill_id and entry.get("skill_id") and skill_id != entry["skill_id"]:
+        if (
+            skill_id
+            and (identity["kind"] == "cloud" or base.get("channel") == "cloud")
+            and skill_id != identity.get("skill_id")
+        ):
             raise ValueError("This directory already tracks another skill")
-        variant = entry.get("variant", variant)
-        paths = entry["paths"]
+        variant = identity["variant"]
+        # Edited copies first, so a diverged message copies an edit, never over one
+        paths = sorted(
+            entry["copies"],
+            key=lambda p: (
+                _path(root, p).exists()
+                and bundle_hash(scan(_path(root, p))) == entry["copies"][p].get("hash"),
+                p,
+            ),
+        )
         bundles = [scan(_path(root, p)) if _path(root, p).exists() else None for p in paths]
         hashes = [bundle_hash(b) if b else None for b in bundles]
         if len(set(hashes)) > 1:
             raise ValueError(_diverged(paths, hashes))
         local_hash, files = hashes[0], bundles[0]
-        identity = entry.get("skill_id") or skill_id
+        # On Cloud: your own or a team's skill, or a built-in last delivered by Cloud
+        on_cloud = identity["kind"] == "cloud" or base.get("channel") == "cloud"
+        cloud_id = skill_id or (identity["skill_id"] if identity["kind"] == "cloud" else None)
         remote = None
-        if identity:
+        if cloud_id:
             remote = api(
-                f"/api/v1/skills/sync/{quote(identity, safe='')}?variant={variant}", token, server
+                f"/api/v1/skills/sync/{quote(cloud_id, safe='')}?variant={variant}", token, server
             )
-        elif entry.get("origin"):
-            origin = entry["origin"]
+        elif identity["kind"] == "builtin" and base.get("hash"):
             try:
                 remote = api(
-                    f"/api/v1/skills/sync/{quote(origin['skill_id'], safe='')}"
-                    f"?variant={variant}&hash={origin['hash']}",
+                    f"/api/v1/skills/sync/{quote(identity['skill_id'], safe='')}"
+                    f"?variant={variant}&hash={base['hash']}",
                     token,
                     server,
                 )
@@ -642,23 +647,23 @@ def skills_sync(
                 remote = None
         if remote and bundle_hash(remote["bundle"]) != remote["hash"]:
             raise ValueError("Cloud skill verification failed")
-        base = entry.get("hash") if entry.get("skill_id") else entry.get("origin", {}).get("hash")
+        last = base.get("hash")
         if not remote:
             if not files:
                 action = "missing"
-            elif not entry.get("skill_id") and local_hash == base:
+            elif not on_cloud and local_hash == last:
                 action = "unchanged"
             else:
                 action = "push"
         elif local_hash == remote["hash"]:
-            action = "adopt" if not entry.get("skill_id") else "unchanged"
+            action = "adopt" if not on_cloud else "unchanged"
         elif local_hash is None:
-            action = "pull" if base is None and skill_id else "conflict"
-        elif base is None:
+            action = "pull" if last is None and skill_id else "conflict"
+        elif last is None:
             action = "conflict"
-        elif local_hash == base:
+        elif local_hash == last:
             action = "pull"
-        elif remote["hash"] == base:
+        elif remote["hash"] == last:
             action = "push"
         else:
             action = "conflict"
@@ -682,46 +687,83 @@ def skills_sync(
         if dry_run or direction == "status" or action in ("conflict", "blocked", "missing"):
             return result
         if action == "push":
-            expected = (
-                remote["version"]
-                if resolve == "local" and remote and not remote.get("system")
-                else entry.get("version", remote["version"] if remote else 0)
+            assert files is not None and local_hash is not None
+            if resolve == "local" and remote and not remote.get("system"):
+                expected = remote["version"]
+            elif base.get("channel") == "cloud":
+                expected = base.get("version") or 0
+            else:
+                expected = remote["version"] if remote else 0
+            remote = post_push(
+                root,
+                lock,
+                key,
+                files,
+                local_hash,
+                int(expected),
+                remote["skill_id"] if remote else None,
+                variant,
+                server,
+                token,
             )
-            basis = f"{expected}:{remote['skill_id'] if remote else ''}:{variant}"
-            pending = entry.get("pending")
-            if not pending or pending["hash"] != local_hash or pending.get("basis") != basis:
-                pending = {"request_id": str(uuid.uuid4()), "hash": local_hash, "basis": basis}
-            entry["pending"] = pending
-            state["skills"][key] = entry
-            _save(root, state)  # Retry identity survives a lost HTTP response.
-            body = {
-                "request_id": pending["request_id"],
-                "skill_id": remote["skill_id"] if remote else None,
-                "expected_version": expected,
-                "variant": variant,
-                "bundle": files,
-                "client": {"app": "framework-py"},
-            }
-            if named := _project_token(root, server):
-                body["project_token"] = named
-            remote = api("/api/v1/skills/sync", token, server, method="POST", body=body)
         if remote:
             if bundle_hash(remote["bundle"]) != remote["hash"]:
                 raise ValueError("Cloud skill verification failed")
             if action == "pull":
                 _install(root, paths, remote["bundle"], local_hash)
-            entry.update(
-                server=server,
-                skill_id=remote["skill_id"],
-                version=remote["version"],
-                hash=remote["hash"],
-                variant=variant,
+            lock = after_push(
+                lock,
+                key,
+                {
+                    "skill_id": remote["skill_id"],
+                    "version": remote["version"],
+                    "hash": remote["hash"],
+                    "server": server,
+                },
             )
-            entry.pop("pending", None)
-            state["skills"][key] = entry
-            _save(root, state)
             result.update(skill_id=remote["skill_id"], version=remote["version"])
+        _save_changed(root, before, lock)
         return result
+
+
+def post_push(
+    root: Path,
+    lock: dict[str, Any],
+    key: str,
+    files: list[dict[str, Any]],
+    local_hash: str,
+    expected: int,
+    skill_id: str | None,
+    variant: str,
+    server: str,
+    token: str,
+) -> dict[str, Any]:
+    """Send one skill's bundle to Cloud as a new version, and return Cloud's response.
+
+    The entry's ``pending`` request is saved first, so a retry after a lost response
+    reuses its request ID and Cloud doesn't make a second version. ``skill_id`` None
+    makes a new skill of your own (a first push, or an edited built-in)."""
+    from framework.cloud import api
+
+    entry = lock["skills"][key]
+    basis = f"{expected}:{skill_id or ''}:{variant}"
+    pending = entry.get("pending")
+    if not pending or pending.get("hash") != local_hash or pending.get("basis") != basis:
+        pending = {"request_id": str(uuid.uuid4()), "hash": local_hash, "basis": basis}
+    entry["pending"] = pending
+    _save(root, lock)  # Retry identity survives a lost HTTP response.
+    body = {
+        "request_id": pending["request_id"],
+        "skill_id": skill_id,
+        "expected_version": expected,
+        "variant": variant,
+        "bundle": files,
+        "client": {"app": "framework-py"},
+    }
+    if named := _project_token(root, server):
+        body["project_token"] = named
+    response: dict[str, Any] = api("/api/v1/skills/sync", token, server, method="POST", body=body)
+    return response
 
 
 def _source_files(folder: Traversable, prefix: str = "") -> list[dict[str, Any]]:
@@ -743,7 +785,9 @@ def _source_files(folder: Traversable, prefix: str = "") -> list[dict[str, Any]]
     return out
 
 
-def _shipped_history() -> dict[str, list[str]]:
+def _shipped_history() -> dict[str, dict[str, list[str]]]:
+    """``templates/skill-history.json``: the bundle hash of every version of each
+    built-in skill framework-py has shipped, per variant."""
     from importlib import resources
 
     record = resources.files("framework").joinpath("templates/skill-history.json")
@@ -752,196 +796,33 @@ def _shipped_history() -> dict[str, list[str]]:
     except (OSError, ValueError):
         return {}
     skills = data.get("skills") if isinstance(data, dict) else None
-    return skills if isinstance(skills, dict) else {}
+    if not isinstance(data, dict) or data.get("schema") != 2 or not isinstance(skills, dict):
+        return {}
+    return {n: v for n, v in skills.items() if isinstance(v, dict)}
 
 
-def shipped_release(target: Path, name: str) -> bool:
-    """Whether a skill folder is an unedited copy of a SKILL.md framework-py shipped: its
-    only file is SKILL.md, and its SHA-256 (as stored, or with CRLF turned into LF) is in
-    ``templates/skill-history.json``. Projects made before ``skills.lock.json`` have such
-    copies with no lock entry."""
-    files = scan(target) if target.is_dir() else []
-    if [f["path"] for f in files] != ["SKILL.md"]:
-        return False
-    raw = base64.b64decode(files[0]["content"])
-    known = set(_shipped_history().get(name) or [])
-    return any(hashlib.sha256(data).hexdigest() in known for data in (raw, hash_bytes(raw)))
+VARIANT = "python"
 
 
-def entry_for(
-    state: dict[str, Any], relative: str, key: str | None = None
-) -> tuple[str | None, dict[str, Any]]:
-    """A skill's lock entry and its key: the entry tracking this path, else the entry under
-    ``key`` (the setup's key for the skill: ``package:<name>``, or a Cloud skill's). A path
-    never joins an entry because of its folder name or its bytes; ``skills_copy()``
-    records joins explicitly. ``(None, {})`` when neither is tracked."""
-    for found, entry in state["skills"].items():
-        if relative in entry["paths"]:
-            return found, entry
-    if key is not None and isinstance(state["skills"].get(key), dict):
-        return key, state["skills"][key]
-    return None, {}
+def package_source(name: str) -> dict[str, Any]:
+    """A built-in skill as this framework-py ships it, as a planner source: its bundle
+    (None when it isn't shipped), hash, and known hashes (every shipped version)."""
+    from framework.ai import _shipped
 
-
-def cloud_key(state: dict[str, Any], source: dict[str, Any]) -> str:
-    """The lock key of a Cloud skill: the entry with its ID, else the key a new one gets."""
-    for key, entry in state["skills"].items():
-        if (
-            entry.get("skill_id") == source["skill_id"]
-            and entry.get("server", source.get("server")) == source.get("server")
-            and entry.get("variant", source.get("variant")) == source.get("variant")
-        ):
-            return str(key)
-    return f"account:{source['server']}:{source['skill_id']}:{source['variant']}"
-
-
-def join_paths(root: Path, source: str, targets: list[str]) -> None:
-    """Record copies of the skill at ``source`` at ``targets``: each joins the source's lock
-    entry, leaving any other entry it was in. Nothing changes when the source isn't
-    tracked. Call it under the sync lock."""
-    state = _load(root)
-    tracked: list[str] = [str(p) for e in state["skills"].values() for p in e["paths"]]
-
-    def spelled(relative: str) -> str:
-        """The lock's spelling of a path, matched by filesystem identity, so a case alias
-        such as .Claude/skills on a case-insensitive volume finds the entry."""
-        for path in tracked:
-            if path == relative:
-                return path
-        here = root / relative
-        if lstat(here) is None:
-            return relative
-        for path in tracked:
-            there = root / path
-            if lstat(there) is not None and there.samefile(here):
-                return path
-        return relative
-
-    key, entry = entry_for(state, spelled(source))
-    if key is None:
-        return
-    for target in (spelled(t) for t in targets):
-        for other_key, other in list(state["skills"].items()):
-            if other_key != key and target in other["paths"]:
-                other["paths"].remove(target)
-                if not other["paths"]:
-                    del state["skills"][other_key]
-        if target not in entry["paths"]:
-            entry["paths"].append(target)
-    _save(root, state)
-
-
-def same_identity(a: dict[str, Any], b: dict[str, Any]) -> bool:
-    """Whether two lock entries or setup sources name one Cloud skill: the same server,
-    skill_id, and variant. Another variant or server is another skill."""
-    return (
-        bool(a.get("skill_id"))
-        and a.get("skill_id") == b.get("skill_id")
-        and a.get("server") == b.get("server")
-        and a.get("variant", "python") == b.get("variant", "python")
-    )
-
-
-def identified(entry: dict[str, Any]) -> bool:
-    """Whether a lock entry is tied to a Cloud skill: your own, a team's, or a Cloud-
-    published built-in (``framework:``). Package content never replaces such a copy or
-    clears its identity."""
-    return bool(entry.get("skill_id"))
-
-
-def package_status(source: Traversable, root: Path, relative: str, name: str) -> str:
-    """What installing a package skill would do: ``create`` (missing), ``update`` (a clean
-    copy of an older version), ``current``, ``edited`` (changed locally, kept), or
-    ``account`` (tied to a Cloud skill, kept: the package never replaces it). An
-    unedited copy of a Cloud skill is ``current``."""
-    target = _path(root, relative)
-    state = _load(root)
-    _, tracked = entry_for(state, relative, "package:" + name)
-    found = tracked if relative in tracked.get("paths", []) else None
-    current = bundle_hash(scan(target)) if target.exists() else None
-    if identified(tracked):
-        return "current" if current is not None and current == tracked.get("hash") else "account"
-    fresh = bundle_hash(validate(_source_files(source)))
-    if current is None:
-        return "create"
-    if current == fresh:
-        return "current"
-    if found:
-        return "update" if current == found.get("hash") else "edited"
-    return "update" if shipped_release(target, name) else "edited"
-
-
-def _install_package(
-    source: Traversable, root: Path, relative: str, name: str, *, force: bool = False
-) -> bool:
-    """Refresh a clean package installation. Unknown or edited copies are preserved; a copy
-    of a released SKILL.md with no lock entry is clean. ``force`` replaces an edited copy,
-    backing it up first. A skill tied to a Cloud skill (any ``skill_id``) is never turned
-    back into the package's: that install is declined (returns False), even with
-    ``force``. A new path joins the skill's existing lock entry."""
-    status = package_status(source, root, relative, name)
-    if status in ("account", "edited") and not force:
-        return False
-    state = _load(root)
-    # Exact shipped snapshots identify the canonical source even when SKILL.md has no version.
-    key, tracked = entry_for(state, relative, "package:" + name)
-    key = key or "package:" + name
-    if identified(tracked):
-        return False
-    target = _path(root, relative)
-    files = validate(_source_files(source))
-    fresh = bundle_hash(files)
-    current = bundle_hash(scan(target)) if target.exists() else None
-    if current != fresh:
-        _install(root, [relative], files, current)
-    state = _load(root)
-    entry = state["skills"].setdefault(key, {"paths": [], "variant": "python"})
-    if relative not in entry["paths"]:
-        entry["paths"].append(relative)
-    entry.update(hash=fresh, origin={"skill_id": "framework:" + name, "hash": fresh})
-    for field in ("skill_id", "version", "server", "pending"):
-        entry.pop(field, None)
-    _save(root, state)
-    return True
-
-
-def _install_cloud(
-    root: Path,
-    relative: str,
-    entry: dict[str, Any],
-    *,
-    force: bool = False,
-    clean: tuple[str, ...] = (),
-) -> bool:
-    """Install a Cloud skill bundle. A copy that matches neither the lock nor ``clean``
-    (other unedited versions) is kept, unless ``force`` replaces it after a backup. The
-    lock entry never changes to another skill or an older version: that install is
-    declined (returns False), even with ``force``."""
-    source = entry["sync"]
-    files = validate(entry["bundle"])
-    if bundle_hash(files) != source["hash"]:
-        raise ValueError("Cloud skill verification failed")
-    state = _load(root)
-    key, tracked = entry_for(state, relative, cloud_key(state, source))
-    key = key or cloud_key(state, source)
-    tracked = tracked or {"paths": [], "variant": source["variant"]}
-    if tracked.get("skill_id") and not same_identity(tracked, source):
-        return False
-    if int(tracked.get("version") or 0) > int(source["version"]):
-        return False
-    target = _path(root, relative)
-    current = bundle_hash(scan(target)) if target.exists() else None
-    unedited = current in (tracked.get("hash", source["hash"]), *clean)
-    if current and not unedited and not force:
-        return False
-    if current != source["hash"]:
-        _install(root, [relative], files, current)
-    if relative not in tracked["paths"]:
-        tracked["paths"].append(relative)
-    tracked.update(source)
-    state["skills"][key] = tracked
-    _save(root, state)
-    return True
+    folder = _shipped(name)
+    bundle = validate(_source_files(folder)) if folder.is_dir() else None
+    digest = bundle_hash(bundle) if bundle else None
+    known = set((_shipped_history().get(name) or {}).get(VARIANT) or [])
+    return {
+        "name": name,
+        "identity": {"kind": "builtin", "skill_id": f"framework:{name}", "variant": VARIANT},
+        "channel": "package",
+        "version": None,
+        "server": None,
+        "hash": digest,
+        "known": sorted(known | ({digest} if digest else set())),
+        "bundle": bundle,
+    }
 
 
 def _private(root: Path) -> None:
@@ -952,13 +833,3 @@ def _private(root: Path) -> None:
         if line not in text.splitlines():
             text = text.rstrip("\n") + "\n" + line + "\n"
     path.write_text(text)
-
-
-def install_package(source: Traversable, root: Path, relative: str, name: str) -> bool:
-    with _lock(root):
-        return _install_package(source, root, relative, name)
-
-
-def install_cloud(root: Path, relative: str, entry: dict[str, Any]) -> bool:
-    with _lock(root):
-        return _install_cloud(root, relative, entry)

@@ -427,7 +427,8 @@ def _skills_pull_plan(root: Path, overwrite: bool) -> dict[str, Any]:
         )
     if lines:
         lines += [f"  {note}" for note in plan.get("notes") or []]
-    pending = any(plan["counts"].get(k) for k in ("added", "restored", "updated", "replaced"))
+    # Any step that writes, copies, or records: a metadata-only update is applied too
+    pending = any(step["action"] != "none" for step in plan["steps"])
 
     def apply() -> dict[str, Any] | None:
         if not pending:
@@ -704,50 +705,63 @@ def _skills_push_plan(root: Path, force: bool) -> dict[str, Any]:
     from framework._log import inform
     from framework.cloud import CloudError, cloud_server, cloud_token, login_hint
     from framework.skill_pull import (
-        _push_apply,
-        _push_edited,
-        _push_plan,
+        _edited_keys,
+        _public,
+        _push_prepare,
+        _push_send,
+        _rows,
+        _scan,
+        _tracked_paths,
         _warning,
-        push_row,
         push_text,
     )
+    from framework.skill_sync import _read
 
-    edited = _push_edited(root)
+    lock, _ = _read(root)
+    disk, _ = _scan(root, _tracked_paths(lock), [])
+    edited = _edited_keys(lock, disk)
+    server, token = "", None
     # Only edited skills need a server; with none chosen, NoServerError says how to pick one
-    if edited and cloud_token(url := cloud_server().url) is None:
-        names = ", ".join(Path(paths[0]).name for _, paths, _ in edited)
-        raise CloudError(
-            f"Not signed in, so edited skills ({names}) can't be pushed. {login_hint(url)}"
-        )
-    plans, untracked = _push_plan(root, force)
-    pushes = [p for p in plans if p["status"] == "push"]
-    refused = [p for p in plans if p["status"] == "refused"]
-    failed = [p for p in plans if p["status"] == "failed"]
-    missing = [p for p in plans if p["status"] == "missing"]
+    if edited:
+        server = cloud_server().url.rstrip("/")
+        token = cloud_token(server)
+        if token is None:
+            names = ", ".join(
+                sorted({Path(p).name for k in edited for p in lock["skills"][k]["copies"]})
+            )
+            raise CloudError(
+                f"Not signed in, so edited skills ({names}) can't be pushed. {login_hint(server)}"
+            )
+    prep = _push_prepare(root, force, server, token)
+    rows = _rows(prep["plan"].steps, "push", prep["lock"], prep["errors"], verb="push")
+    pushes = [r for r in rows if r["status"] == "pushed"]
+    problems = [r for r in rows if r["status"] in ("refused", "failed", "missing")]
+    untracked = [r for r in rows if r["status"] == "untracked"]
 
     lines: list[str] = []
     if pushes:
         lines.append(f"  Skills to push: {_names(pushes)}")
-    for p in refused + failed + missing:
-        text = push_text(push_row(p), force="push_all(force=True)")
-        lines.append(f"  {p['status']}: {p['name']}. {text}")
+    for r in problems:
+        lines.append(f"  {r['status']}: {r['name']}. {push_text(r, force='push_all(force=True)')}")
     quiet = not lines
-    for p in untracked:
-        lines.append(f"  untracked: {p['name']}. {push_text(push_row(p))}")
+    for r in untracked:
+        lines.append(f"  untracked: {r['name']}. {push_text(r)}")
+    pending = any(s["action"] != "none" for s in prep["plan"].steps)
 
     def apply() -> list[dict[str, Any]]:
-        done = _push_apply(root, plans)
-        pushed = [p for p in done if p["status"] == "pushed"]
+        steps = _push_send(root, prep)
+        done = [_public(r) for r in _rows(steps, "push", prep["lock"], prep["errors"], "push")]
+        pushed = [r for r in done if r["status"] == "pushed"]
         if pushed:
             inform(f"✓ Skills pushed: {_names(pushed)}")
-        bad = [p for p in done if p["status"] in ("refused", "failed")]
+        bad = [r for r in done if r["status"] in ("refused", "failed")]
         if bad:
             why = "; ".join(
-                f"{p['name']} changed on Cloud since this project pulled it; "
+                f"{r['name']} changed on Cloud since this project pulled it; "
                 "push_all(force=True) replaces it"
-                if p["status"] == "refused"
-                else f"{p['name']}: {str(p.get('reason')).rstrip('.')}"
-                for p in bad
+                if r["status"] == "refused"
+                else f"{r['name']}: {str(r.get('reason')).rstrip('.')}"
+                for r in bad
             )
             first = f"pushed {_names(pushed)}; " if pushed else ""
             raise CloudError(f"{first}not pushed: {why}")
@@ -755,10 +769,11 @@ def _skills_push_plan(root: Path, force: bool) -> dict[str, Any]:
 
     return {
         "lines": lines,
-        "warnings": [_warning(p) for p in pushes],
+        "warnings": [_warning(r) for r in pushes],
         "quiet": quiet,
-        "pending": bool(pushes),
-        "plans": plans + untracked,
+        "pending": pending,
+        "plans": [_public(r) for r in rows],
+        "steps": prep["plan"].steps,
         "apply": apply,
     }
 
@@ -777,11 +792,10 @@ def _data_push_plan(
     return plan
 
 
-def _skill_rows(plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """push_all()'s skill rows, in push_skills()'s statuses (never ``push``)."""
-    from framework.skill_pull import push_row
-
-    return [{**push_row(p), "path": p["path"]} for p in plans]
+def _skill_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """push_all()'s skill rows, in push_skills()'s statuses, each with its first
+    ``path``."""
+    return [{**r, "path": r["paths"][0] if r["paths"] else None} for r in rows]
 
 
 def push_all(

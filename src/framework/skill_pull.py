@@ -3,23 +3,30 @@
 ``pull_skills()`` installs and updates the skills the project's Cloud setup lists.
 ``push_skills()`` sends locally edited skills back as new versions. ``skills_copy()``
 copies skills from one assistant's folder to the others, so diverged copies agree
-again. All build on the per-skill machinery in ``framework.skill_sync``.
-R: ``pull_skills()``, ``push_skills()``, ``skills_copy()``.
+again, and ``skills_move()`` moves a tracked skill to another folder or identity.
+Every command gathers what is on disk and what its sources offer, then calls the one
+planner in ``framework._skill_plan`` (skills lock v2) and applies its steps.
+R: ``pull_skills()``, ``push_skills()``, ``skills_copy()``, ``skills_move()``.
 """
 
 from __future__ import annotations
 
 import base64
+import copy
+import json
 import os
+import posixpath
 import stat
 import sys
 from contextlib import nullcontext
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote
 
+from framework import _skill_plan as planner
+from framework._skill_plan import ABSENT, UNREADABLE, Disk, Plan, identity_for, key_of, present
 from framework.errors import FrameworkError
-from framework.skill_sync import same_identity
+from framework.skill_sync import _listed
 
 STATUSES = (
     "added",
@@ -36,22 +43,6 @@ STATUSES = (
     "removed",
     "unavailable",
 )
-# Which status names a skill when its copies in several folders differ
-_PRECEDENCE = (
-    "failed",
-    "diverged",
-    "missing",
-    "unavailable",
-    "edited",
-    "kept",
-    "replaced",
-    "restored",
-    "updated",
-    "added",
-    "current",
-)
-_PROTECTED = "tied to a Cloud skill the project's setup doesn't name at this version"
-_GONE = "Every tracked copy is gone."
 _BACKUPS = ".framework/skills-backups/"
 
 
@@ -151,6 +142,8 @@ def _latest(skills: dict[str, Any], server: str, notes: list[str]) -> None:
                 **entry,
                 "bundle": remote["bundle"],
                 "sync": {**source, "version": remote["version"], "hash": remote["hash"]},
+                # The setup's version is a known hash too: a copy of it is unedited
+                "_setup_hash": source["hash"],
             }
 
 
@@ -162,371 +155,476 @@ def _inline_bundle(entry: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _newer(entry: dict[str, Any], tracked: dict[str, Any], current: str | None) -> bool:
-    """Whether the project holds a newer version of a Cloud skill than its setup names.
-
-    After push_skills(), the lock tracks the pushed version while the setup still names
-    the one it was resolved with. Without your login, that older version is all a pull
-    has, and it must not replace the newer one.
-    """
-    sync = entry.get("sync") or {}
-    return (
-        bool(sync)
-        and tracked.get("skill_id") == sync.get("skill_id")
-        and current == tracked.get("hash")
-        and int(tracked.get("version") or 0) > int(sync.get("version") or 0)
-    )
+# Sources ---------------------------------------------------------------------------------
 
 
-def _hash_at(root: Path, relative: str) -> str | None:
-    """The bundle hash of the copy at a path, or None when there is none. A file or
-    anything else that isn't a folder there is an error."""
+def _setup_source(name: str, entry: dict[str, Any]) -> dict[str, Any]:
+    """One setup skill as a planner source: a package skill (this framework-py's copy),
+    a Cloud skill (its bundle and version), or inline setup text."""
+    from framework.skill_sync import VARIANT, bundle_hash, package_source, validate
+
+    sync = entry.get("sync")
+    if entry.get("package") is True:
+        return {**package_source(name), "name": name}
+    if sync and entry.get("bundle"):
+        files = validate(entry["bundle"])
+        if bundle_hash(files) != sync["hash"]:
+            raise ValueError(f"Cloud skill verification failed: {name}")
+        server = str(sync.get("server") or "").rstrip("/") or None
+        known = {sync["hash"], *(sync.get("known_hashes") or [])}
+        if entry.get("_setup_hash"):
+            known.add(entry["_setup_hash"])
+        return {
+            "name": name,
+            "identity": identity_for(str(sync["skill_id"]), sync.get("variant") or VARIANT, server),
+            "channel": "cloud",
+            "version": sync.get("version"),
+            "server": server,
+            "hash": sync["hash"],
+            "known": sorted(known),
+            "bundle": files,
+        }
+    files = validate(_inline_bundle(entry))
+    digest = bundle_hash(files)
+    return {
+        "name": name,
+        "identity": {"kind": "inline", "skill_id": f"inline:{name}", "variant": VARIANT},
+        "channel": "inline",
+        "version": None,
+        "server": None,
+        "hash": digest,
+        "known": [digest],
+        "bundle": files,
+    }
+
+
+def _pull_offer(root: Path, spec: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """What pull offers: the skills the project's Cloud setup lists (``source`` cloud),
+    else, offline, the package skills for the project type (``source`` package)."""
+    from framework._log import inform
+    from framework.cloud import CloudError, ProjectServerMissingError
+    from framework.spec.merge import SpecError
+
+    notes: list[str] = []
+    try:
+        wanted = _cloud_skills(root, notes)
+        source = "cloud"
+    except ProjectServerMissingError:
+        raise
+    except (CloudError, SpecError) as error:
+        reason = str(error).rstrip(".") or type(error).__name__
+        inform(
+            f"Framework Cloud not reached ({reason}); "
+            "using the package skills for this project type."
+        )
+        wanted = _package_skills(spec)
+        source = "package"
+        notes = []
+    skills = [_setup_source(n, e) for n, e in wanted.items() if isinstance(e, dict)]
+    return {"source": source, "skills": skills, "by_identity": {}}, notes
+
+
+def _fetch_by_identity(
+    root: Path, lock: dict[str, Any], disk: Disk, offer: dict[str, Any], notes: list[str]
+) -> None:
+    """Your own Cloud skills the setup doesn't name, with every copy deleted: their
+    latest versions, fetched by identity so pull can restore them. Needs your login;
+    without it they are reported missing."""
+    from framework.cloud import api, cloud_token
+    from framework.skill_sync import bundle_hash, validate
+
+    named = {key_of(s["identity"]) for s in offer["skills"]}
+    for key, entry in lock["skills"].items():
+        identity = entry["identity"]
+        if key in named or identity["kind"] != "cloud" or not entry["copies"]:
+            continue
+        if any(disk.get(p) != ABSENT for p in entry["copies"]):
+            continue
+        server = str(identity.get("server") or "")
+        token = cloud_token(server) if server else None
+        if token is None:
+            continue
+        try:
+            remote = api(
+                f"/api/v1/skills/sync/{quote(identity['skill_id'], safe='')}"
+                f"?variant={identity['variant']}",
+                token,
+                server,
+            )
+            files = validate(remote["bundle"])
+            if bundle_hash(files) != remote["hash"]:
+                raise ValueError("Cloud skill verification failed")
+        except Exception as error:
+            notes.append(f"{identity['skill_id']} not fetched from Cloud ({error}).")
+            continue
+        offer["by_identity"][key] = {
+            "name": PurePosixPath(sorted(entry["copies"])[0]).name,
+            "identity": dict(identity),
+            "channel": "cloud",
+            "version": remote["version"],
+            "server": server,
+            "hash": remote["hash"],
+            "known": [remote["hash"]],
+            "bundle": files,
+        }
+
+
+def _sources(offer: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Each source the offer holds, by the lock key it plans."""
+    found = {key_of(s["identity"]): s for s in offer.get("skills") or []}
+    found.update(offer.get("by_identity") or {})
+    return found
+
+
+# The project, as the planner sees it ------------------------------------------------------
+
+
+def _hash_now(root: Path, relative: str) -> tuple[str, str | None]:
+    """A copy's bundle hash, ``ABSENT``, or ``UNREADABLE`` (with why)."""
     from framework.skill_sync import _path, bundle_hash, scan
 
-    kind = _kind(root, relative)
+    try:
+        kind = _kind(root, relative)
+    except (FrameworkError, OSError) as error:
+        return UNREADABLE, str(error)
+    if kind == "missing":
+        return ABSENT, None
     if kind == "other":
-        raise FrameworkError(
-            f"{relative} exists but is not a skill folder. Move it, then pull again."
+        return UNREADABLE, f"{relative} exists but is not a skill folder"
+    try:
+        return bundle_hash(scan(_path(root, relative))), None
+    except (ValueError, OSError) as error:
+        return UNREADABLE, str(error)
+
+
+def _scan(root: Path, paths: Any, dirs: list[str]) -> tuple[Disk, dict[str, str]]:
+    """What the planner may ask about: each path's hash (under its on-disk spelling),
+    the folders that exist, and each skills folder's child folders. Also why each
+    unreadable copy can't be read."""
+    from framework.skill_sync import on_disk
+
+    disk, errors = Disk(), {}
+    for folder in dirs:
+        try:
+            if _kind(root, folder) == "dir":
+                disk.folders.add(folder)
+                disk.children[folder] = _folders(root, folder)
+        except (FrameworkError, OSError):
+            continue
+    every = set()
+    for relative in set(paths):
+        try:
+            spelled = on_disk(root, relative)
+        except (ValueError, OSError):
+            spelled = relative
+        if spelled != relative:
+            disk.spelling[relative] = spelled
+        every.add(spelled)
+    every |= {f"{d}/{n}" for d in dirs for n in disk.children.get(d, [])}
+    for relative in sorted(every):
+        parent = posixpath.dirname(relative)
+        while parent and parent not in disk.folders:
+            try:
+                if _kind(root, parent) != "dir":
+                    break
+            except (FrameworkError, OSError):
+                break
+            disk.folders.add(parent)
+            parent = posixpath.dirname(parent)
+        disk.hashes[relative], why = _hash_now(root, relative)
+        if why:
+            errors[relative] = why
+    return disk, errors
+
+
+def _tracked_paths(lock: dict[str, Any]) -> list[str]:
+    return [p for e in lock["skills"].values() for p in e["copies"]]
+
+
+# Apply -----------------------------------------------------------------------------------
+
+
+def _apply(
+    root: Path,
+    plan: Plan,
+    lock: dict[str, Any],
+    sources: dict[str, dict[str, Any]],
+    disk: Disk,
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, str]]:
+    """Carry out a plan's steps in path order, and return the steps as they ended, the
+    lock to save, and each replaced copy's backup.
+
+    Before each write or copy the copy is hashed again: one that changed since planning
+    is left alone (``edited``, ``changed_during_pull``). A step that fails is ``failed``
+    and the others go on. A declined copy keeps its old record, and its entry its old
+    base; ``known`` still gains the source's hashes."""
+    from framework.skill_sync import SkillRestoreError, _install, _path, scan
+
+    steps = sorted((dict(s) for s in plan.steps), key=lambda s: s["path"].encode())
+    declined: list[dict[str, Any]] = []
+    backups: dict[str, str] = {}
+    for step in steps:
+        relative, action = step["path"], step["action"]
+        if action == "move":
+            source = _path(root, step["from"])
+            target = _path(root, relative)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source.rename(target)
+            continue
+        if action not in ("write", "copy"):
+            continue
+        now, _ = _hash_now(root, relative)
+        if now != disk.get(relative):
+            step.update(
+                action="none", status="edited", reason_code="changed_during_pull", hint=None
+            )
+            declined.append(step)
+            continue
+        try:
+            if action == "write":
+                files = sources[step["entry"]]["bundle"]
+            else:
+                files = scan(_path(root, step["from"]))
+            installed = _install(root, [relative], files, None if now == ABSENT else now)
+        except SkillRestoreError:
+            raise
+        except (ValueError, OSError, FrameworkError) as error:
+            step.update(action="none", status="failed", reason_code=None, hint=None)
+            step["error"] = str(error)
+            declined.append(step)
+            continue
+        if installed.get(relative):
+            backups[relative] = str(installed[relative])
+    final = copy.deepcopy(plan.lock_after)
+    for step in declined:
+        key = step["entry"]
+        old, new = lock["skills"].get(key), final["skills"].get(key)
+        if new is None:
+            continue
+        if old is not None and step["path"] in old["copies"]:
+            new["copies"][step["path"]] = dict(old["copies"][step["path"]])
+        else:
+            new["copies"].pop(step["path"], None)
+        if old is not None:
+            new["base"] = copy.deepcopy(old.get("base"))
+            if old.get("pending"):
+                new["pending"] = old["pending"]
+        elif not new["copies"]:
+            del final["skills"][key]
+    return steps, final, backups
+
+
+# Rows and their wording --------------------------------------------------------------------
+
+
+def _identity_text(identity: dict[str, Any]) -> str:
+    if identity["kind"] == "builtin":
+        return f"the built-in {str(identity['skill_id']).split(':', 1)[1]} ({identity['variant']})"
+    if identity["kind"] == "inline":
+        return f"the setup's inline text for {str(identity['skill_id']).split(':', 1)[1]}"
+    if identity["kind"] == "cloud":
+        return f"Cloud skill {identity['skill_id']} ({identity['variant']})"
+    return "a skill not yet pushed to Cloud"
+
+
+def hint_text(
+    hint: dict[str, Any] | None,
+    overwrite: str = "pull_skills(overwrite=True)",
+    force: str = "push_skills(force=True)",
+) -> str | None:
+    """A hint as the exact Python call that follows it, or None when no call can (a copy
+    between folders of different names is made by hand)."""
+    from framework.skill_sync import copy_call
+
+    if not hint:
+        return None
+    key = hint["key"]
+    if key == "overwrite":
+        return overwrite
+    if key == "force":
+        return force
+    if key == "login":
+        return "cloud_login()"
+    if key == "sync":
+        return f"skills_sync({json.dumps(hint['path'])})"
+    if key == "move":
+        return f"skills_move({json.dumps(hint['from'])}, {json.dumps(hint['to'])})"
+    if key == "retarget":
+        identity, path = hint["identity"], json.dumps(hint["path"])
+        if identity["kind"] == "builtin":
+            name = json.dumps(str(identity["skill_id"]).split(":", 1)[1])
+            return f"skills_move({path}, builtin={name}, variant={json.dumps(identity['variant'])})"
+        return (
+            f"skills_move({path}, skill_id={json.dumps(identity['skill_id'])}, "
+            f"variant={json.dumps(identity['variant'])})"
         )
-    return bundle_hash(scan(_path(root, relative))) if kind == "dir" else None
+    if key == "copy":
+        targets = list(hint.get("to") or [])
+        source = hint.get("from") or (targets[0] if targets else None)
+        if source is None:
+            return None
+        calls = [copy_call(source, t) for t in targets if t != source]
+        return "; ".join(c for c in calls if c) if calls and all(calls) else None
+    return None
 
 
-def _last_pushed(entry: dict[str, Any]) -> dict[str, Any]:
-    """The Cloud skill a missing entry was last pushed as, for its message."""
-    return {"skill_id": entry["skill_id"]} if entry.get("skill_id") else {}
+def _reason(row: dict[str, Any], lock: dict[str, Any], errors: dict[str, str], verb: str) -> str:
+    code, paths, name = row["reason_code"], row["paths"], row["name"]
+    steps = row["steps"]
+    path = paths[0] if paths else name
+    hint = row.get("hint_args") or {}
+    if row["status"] == "failed" and not code:
+        return next((s["error"] for s in steps if s.get("error")), "The skill failed.")
+    if code == "local_edits":
+        edited = [s["path"] for s in steps if s["status"] == "edited"]
+        verb_ = "has" if len(edited) == 1 else "have"
+        return f"{_listed(edited)} {verb_} local edits, which were kept."
+    if code == "replaced_edits":
+        replaced = [s["path"] for s in steps if s["status"] == "replaced"]
+        return f"{_listed(replaced)} had local edits; the old copy is in {_BACKUPS}."
+    if code == "newer_in_project":
+        return "The project holds a newer version than the setup names, so it was kept."
+    if code == "copies_differ":
+        return f"{_listed(paths)} differ."
+    if code == "copy_absent":
+        gone = list(hint.get("to") or [])
+        return (
+            f"{hint.get('from')} exists and {_listed(gone)} "
+            f"{'is' if len(gone) == 1 else 'are'} missing."
+        )
+    if code in ("other_identity", "other_variant"):
+        owner = (lock["skills"].get(row["entry"]) or {}).get("identity")
+        if code == "other_variant" and owner:
+            return (
+                f"{path} tracks the {owner['variant']} variant of this skill, so {verb} "
+                "left it alone."
+            )
+        theirs = (owner or {}).get("skill_id") or "a skill not yet pushed to Cloud"
+        return f"{path} belongs to a different skill ({theirs}), so {verb} left it alone."
+    if code == "cloud_tracked":
+        return (
+            f"{name} was last updated from Framework Cloud, so the package's copy wasn't installed."
+        )
+    if code == "untracked":
+        return f"{path} isn't tracked, so {verb} left it alone."
+    if code == "folder_gone":
+        gone = [s["path"] for s in steps if s["reason_code"] == "folder_gone"]
+        return f"{_listed(gone)} is tracked, and its folder is gone."
+    if code == "all_gone":
+        return "Every tracked copy is gone."
+    if code == "not_in_setup":
+        return "No longer in the project's setup, so pull left it alone."
+    if code == "offline":
+        return f"Framework Cloud wasn't reached, so {name} was left as it is."
+    if code == "not_shipped":
+        return f"This version of framework-py doesn't include {name}."
+    if code == "setup_older":
+        return (
+            "The setup names an older version than this project holds, and no copy is "
+            "left to copy from."
+        )
+    if code == "unreadable":
+        bad = next((p for p in paths if p in errors), path)
+        return f"{bad} can't be read as a skill ({errors.get(bad, 'not a valid skill')})."
+    if code == "changed_during_pull":
+        return f"{path} changed while the {verb} ran, so it was kept."
+    if code == "cloud_changed":
+        return _REFUSED
+    if code == "no_base":
+        return f"{name} has no Cloud version this project pulled, since it was retargeted."
+    if code == "cancelled":
+        return "The push was cancelled."
+    if code == "path_moved":
+        return f"Moved {steps[0].get('from')} to {path}."
+    if code == "lock_moved":
+        return f"{path} was already in place; the lock now tracks it there."
+    if code == "retargeted":
+        identity = (lock["skills"].get(row["entry"]) or {}).get("identity")
+        return f"{path} now tracks {_identity_text(identity) if identity else row['entry']}."
+    return ""
 
 
-def row_text(row: dict[str, Any], overwrite: str = "pull_skills(overwrite=True)") -> str:
+def _rows(
+    steps: list[dict[str, Any]],
+    command: str,
+    lock: dict[str, Any],
+    errors: dict[str, str] | None = None,
+    verb: str = "pull",
+) -> list[dict[str, Any]]:
+    """Result rows: the planner's rows, with each reason in words and each hint as the
+    call to run (``hint``), beside their codes (``reason_code``, ``hint_key``, and
+    ``hint_args``)."""
+    out = []
+    for row in planner.rows(steps, command):
+        hint = row["hint"]
+        shown = {
+            "name": row["name"],
+            "status": row["status"],
+            "paths": row["paths"],
+            "entry": row["entry"],
+            "reason_code": row["reason_code"],
+            "hint_key": hint["key"] if hint else None,
+            "hint_args": {k: v for k, v in hint.items() if k != "key"} if hint else None,
+            "steps": row["steps"],
+        }
+        shown["reason"] = _reason(shown, lock, errors or {}, verb)
+        shown["hint"] = hint_text(hint)
+        owner = (lock["skills"].get(row["entry"]) or {}).get("identity") or {}
+        if row["status"] == "missing" and owner.get("kind") == "cloud":
+            shown["skill_id"] = owner["skill_id"]
+        out.append(shown)
+    return out
+
+
+def _public(row: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in row.items() if k != "steps"}
+
+
+def row_text(
+    row: dict[str, Any],
+    overwrite: str = "pull_skills(overwrite=True)",
+    force: str = "push_skills(force=True)",
+) -> str:
     """A skill row's message, from its reason and hint, in the shared wording. Empty for
     a row that needs none."""
-    status = str(row["status"])
-    reason, hint = str(row.get("reason") or ""), row.get("hint")
+    reason = str(row.get("reason") or "")
+    key = row.get("hint_key")
+    hint = (
+        hint_text({"key": key, **(row.get("hint_args") or {})}, overwrite, force)
+        if key
+        else row.get("hint")
+    )
     if not reason:
         return ""
-    if status == "diverged":
-        if not hint:
+    if row.get("status") == "missing" and row.get("skill_id"):
+        reason += f" Its last pushed version is Cloud skill {row['skill_id']}."
+    if key == "copy":
+        if hint is None:
             return (
                 f"{reason} Their folders have different names, so skills_copy() can't copy "
                 "between them: copy the one to keep over the others by hand."
             )
-        if reason.endswith("missing."):
+        if row.get("status") == "untracked":
+            return f"{reason} To track it with this skill: {hint}"
+        if row.get("reason_code") == "copy_absent":
             return f"{reason} Copy it over: {hint}"
         return f"{reason} Pick one and copy it over the other: {hint}"
-    if status == "missing":
-        last = (
-            f" Its last pushed version is Cloud skill {row['skill_id']}."
-            if row.get("skill_id")
-            else ""
-        )
-        return f"{reason}{last}" + (f" {hint}" if hint else "")
-    if status == "untracked":
-        return f"{reason} To track it with this skill: {hint}" if hint else reason
-    if status == "edited" and hint:
-        return f"{reason} {overwrite} replaces them with the Cloud version."
-    if status == "restored" and hint:
-        return f"{reason} To restore it there: {hint}"
+    if key == "overwrite":
+        return f"{reason} {hint} replaces them with the Cloud version."
+    if key == "force":
+        return f"{reason} {hint} pushes it anyway."
+    if key == "move":
+        return f"{reason} If it was moved by hand, record the move: {hint}"
+    if key == "retarget":
+        return f"{reason} To track it as the setup's skill: {hint}"
+    if key == "sync":
+        return f"{reason} To add it as its own skill: {hint}"
+    if key == "login":
+        return f"{reason} After {hint}, pull can get it from Cloud."
     return reason
 
 
-def _setup_key(state: dict[str, Any], name: str, entry: dict[str, Any]) -> str | None:
-    """The lock key the setup's entry for a skill installs under: ``package:<name>`` for a
-    package skill, the Cloud skill's key for a synced one, none for inline content."""
-    from framework.skill_sync import cloud_key
-
-    if entry.get("package") is True:
-        return "package:" + name
-    if entry.get("sync"):
-        return cloud_key(state, entry["sync"])
-    return None
-
-
-def _setup_entry(
-    root: Path, state: dict[str, Any], name: str, entry: dict[str, Any], dirs: list[str]
-) -> tuple[str | None, dict[str, Any]]:
-    """The lock entry that is the setup's skill, and its key: the entry under the setup's
-    key; else the entry tracking the skill's path in an assistant folder. Never matched
-    by folder name or bytes. ``(None, {})`` when the skill isn't tracked."""
-    from framework.skill_sync import entry_for
-
-    key = _setup_key(state, name, entry)
-    if key is not None and isinstance(state["skills"].get(key), dict):
-        return key, state["skills"][key]
-    from framework.skill_sync import on_disk
-
-    for folder in dirs:
-        # As the lock reader spells it (on disk), so a case-only rename still matches
-        try:
-            path = on_disk(root, f"{folder}/{name}")
-        except (ValueError, OSError):
-            path = f"{folder}/{name}"
-        found, tracked = entry_for(state, path)
-        if found is not None:
-            return found, tracked
-    return None, {}
-
-
-def _own_restore(
-    root: Path, name: str, entry: dict[str, Any], tracked: dict[str, Any]
-) -> dict[str, Any] | None:
-    """When every copy of your own Cloud skill is gone and the setup names something else
-    under its name, that skill's latest version from Cloud, as a setup entry to restore
-    from. None when a copy exists, the setup names this skill, or Cloud can't be read
-    (no login, offline, or a failed check)."""
-    from urllib.parse import quote
-
-    from framework.cloud import api, cloud_token
-    from framework.skill_sync import bundle_hash
-
-    if same_identity(tracked, entry.get("sync") or {}):
-        return None
-    if any(_hash_at(root, p) is not None for p in tracked["paths"]):
-        return None
-    server = str(tracked.get("server") or "")
-    token = cloud_token(server) if server else None
-    if token is None:
-        return None
-    try:
-        remote = api(
-            f"/api/v1/skills/sync/{quote(tracked['skill_id'], safe='')}"
-            f"?variant={tracked.get('variant', 'python')}",
-            token,
-            server,
-        )
-        if bundle_hash(remote["bundle"]) != remote["hash"]:
-            return None
-    except Exception:
-        return None
-    return {
-        "bundle": remote["bundle"],
-        "sync": {
-            "skill_id": remote["skill_id"],
-            "version": remote["version"],
-            "hash": remote["hash"],
-            "variant": tracked.get("variant", "python"),
-            "server": server,
-        },
-    }
-
-
-def _plan(
-    root: Path, name: str, entry: dict[str, Any], relative: str, overwrite: bool
-) -> tuple[str, str | None, str | None]:
-    """What pulling one skill into one folder does, the copy's hash it was decided on, and
-    why the copy is protected (kept even with ``overwrite``), or None."""
-    current = _hash_at(root, relative)
-    status, protected = _decide(root, name, entry, relative, overwrite, current)
-    return status, current, protected
-
-
-def _decide(
-    root: Path,
-    name: str,
-    entry: dict[str, Any],
-    relative: str,
-    overwrite: bool,
-    current: str | None,
-) -> tuple[str, str | None]:
-    """A folder's status, and why its copy is protected (None when it isn't).
-
-    Pull never replaces a skill's Cloud identity or moves it to an older version, whatever
-    the setup's source (package, inline, or Cloud): a copy whose lock entry is tied to a
-    Cloud skill is protected unless the setup names that same skill at the same or a newer
-    version. With ``overwrite``, an edited copy of it is reset to that same skill's Cloud
-    version (same or newer), after a backup. A protected copy is kept even with
-    ``overwrite``; a missing one is not put back (unavailable). A missing copy the lock
-    tracks is ``restored``, not ``added``.
-    """
-    from framework.ai import _shipped
-    from framework.skill_sync import (
-        _load,
-        bundle_hash,
-        entry_for,
-        identified,
-        package_status,
-        validate,
-    )
-
-    _, tracked = entry_for(_load(root), relative)
-    sync = entry.get("sync") or {}
-    same = identified(tracked) and same_identity(tracked, sync)
-    level = same and int(sync.get("version") or 0) == int(tracked.get("version") or 0)
-    newer = same and int(sync.get("version") or 0) > int(tracked.get("version") or 0)
-    protected = _PROTECTED if identified(tracked) and not (level or newer) else None
-    other = protected is not None and not same  # Tied to another skill than the setup's
-    if entry.get("package") is True:
-        if not _shipped(name).is_dir():
-            return "unavailable", None
-        status = package_status(_shipped(name), root, relative, name)
-        status = {"create": "added", "update": "updated", "current": "current"}.get(
-            status, "edited"
-        )
-        unchanged = status == "current"
-    else:
-        files = validate(entry["bundle"] if sync else _inline_bundle(entry))
-        fresh = bundle_hash(files)
-        if sync and fresh != sync["hash"]:
-            raise ValueError(f"Cloud skill verification failed: {name}")
-        clean = {tracked.get("hash"), entry.get("_setup_hash")} - {None}
-        if current is None:
-            status = "added"
-        elif current == fresh or _newer(entry, tracked, current):
-            status = "current"
-        elif sync and current in clean:
-            status = "updated"
-        else:
-            status = "edited"
-        unchanged = status == "current" or current == tracked.get("hash")
-    if protected:
-        if current is None:
-            return "missing", _GONE
-        if other:
-            # Not the setup's skill: nothing was checked against it, so never "current"
-            return "kept", (
-                f"{relative} belongs to a different skill ({tracked.get('skill_id')}), "
-                "so pull left it alone."
-            )
-        if unchanged:
-            return "current", None
-        return "edited", f"{relative} has local edits, which were kept."
-    if status == "added" and relative in tracked.get("paths", []):
-        status = "restored"
-    return ("replaced" if status == "edited" and overwrite else status), None
-
-
-def _entry_problems(root: Path, state: dict[str, Any]) -> dict[str, tuple[str, str, str | None]]:
-    """Each lock entry pull must leave alone, by key: ``("diverged", hint)`` when its
-    copies differ or one of them is missing, ``("failed", reason)`` when one can't be
-    read. Judged per entry: entries never pool paths, whatever their folder names."""
-    from framework.skill_sync import diverged_parts
-
-    problems: dict[str, tuple[str, str, str | None]] = {}
-    for key, entry in state["skills"].items():
-        paths = list(entry["paths"])
-        try:
-            hashes = [_hash_at(root, p) for p in paths]
-        except (ValueError, OSError, FrameworkError) as error:
-            problems[key] = ("failed", str(error), None)
-            continue
-        existing = [h for h in hashes if h is not None]
-        if len(paths) > 1 and existing and (None in hashes or len(set(existing)) > 1):
-            problems[key] = ("diverged", *diverged_parts(paths, hashes))
-        elif paths and not existing:
-            problems[key] = ("missing", _GONE, None)
-    return problems
-
-
-def _new_folder_hint(
-    root: Path,
-    state: dict[str, Any],
-    name: str,
-    wanted: dict[str, Any],
-    key: str | None,
-    tracked: dict[str, Any],
-    new: list[str],
-    dirs: list[str],
-    overwrite: bool,
-) -> tuple[str, str | None] | None:
-    """The reason and command when pull would add a skill to a new assistant folder
-    (``new``) while its existing copy is locally edited or your own Cloud skill (or newer
-    than the setup's): the setup's copy there would split the skill. None when the new
-    folders can be filled. With ``overwrite``, an edited copy that isn't your own Cloud skill is
-    replaced, so the new folders are filled with the setup's copy too."""
-    from framework.ai import _shipped
-    from framework.skill_sync import (
-        bundle_hash,
-        diverged_parts,
-        identified,
-        package_status,
-        validate,
-    )
-
-    if not new:
-        return None
-    entry = wanted[name]
-    if key is not None:
-        copies = [(p, h) for p in tracked["paths"] if (h := _hash_at(root, p)) is not None]
-        if not copies:
-            return None
-        owned = identified(tracked)
-        edited = any(h != tracked.get("hash") for _, h in copies)
-        sync = entry.get("sync") or {}
-        if (
-            owned
-            and not edited
-            and same_identity(tracked, sync)
-            and int(sync.get("version") or 0) >= int(tracked.get("version") or 0)
-        ):
-            owned = False  # The setup's copy of the same Cloud skill
-        if owned or (edited and not overwrite):
-            return diverged_parts([copies[0][0], new[0]], [copies[0][1], None])
-        return None
-    # Not tracked: a copy in another assistant folder counts, when it isn't the setup's
-    for folder in dirs if not overwrite else []:
-        there = f"{folder}/{name}"
-        if there in new or (h := _hash_at(root, there)) is None:
-            continue
-        if entry.get("package") is True:
-            edited = _shipped(name).is_dir() and (
-                package_status(_shipped(name), root, there, name) == "edited"
-            )
-        else:
-            files = entry["bundle"] if entry.get("sync") else _inline_bundle(entry)
-            edited = h != bundle_hash(validate(files))
-        if edited:
-            return diverged_parts([there, new[0]], [h, None])
-    return None
-
-
-def _apply(
-    root: Path, name: str, entry: dict[str, Any], relative: str, status: str, planned: str | None
-) -> str:
-    """Carry out one planned install, and return the status it ends with.
-
-    The plan was made for every folder against the lock as it was before the pull, so
-    the installers are forced: an install into one folder advances the lock entry the
-    other folders share, and must not make them decline. Right before installing, the
-    copy is hashed again; one that changed since planning is kept, as edited.
-    """
-    from framework.ai import _shipped
-    from framework.skill_sync import (
-        _install,
-        _install_cloud,
-        _install_package,
-        _load,
-        entry_for,
-        identified,
-    )
-
-    now = _hash_at(root, relative)
-    if now != planned:
-        return "edited"
-    if status == "current":
-        if entry.get("sync") and now == entry["sync"]["hash"]:
-            # The same bytes: record the identity and version the setup names. Nothing
-            # is rewritten; an older version or another skill's identity is declined.
-            clean = (entry["_setup_hash"],) if entry.get("_setup_hash") else ()
-            if _install_cloud(root, relative, entry, force=True, clean=clean):
-                return status
-        _, tracked = entry_for(_load(root), relative)
-        if relative in tracked.get("paths", []) or identified(tracked):
-            # Already recorded, or a copy of a Cloud skill the lock tracks elsewhere: an
-            # untracked path never joins an entry because its bytes match
-            return status
-    if entry.get("package") is True:
-        done = _install_package(_shipped(name), root, relative, name, force=True)
-    elif entry.get("sync"):
-        if status == "current" and now is not None and now != entry["sync"]["hash"]:
-            # Current with other files: a newer version than the setup's, kept as it is
-            return status
-        clean = (entry["_setup_hash"],) if entry.get("_setup_hash") else ()
-        done = _install_cloud(root, relative, entry, force=True, clean=clean)
-    else:
-        if status != "current":
-            _install(root, [relative], _inline_bundle(entry), now)
-        done = True
-    if not done:
-        raise FrameworkError(f"pull_skills() could not install {relative}; nothing was replaced.")
-    return status
+push_text = row_text
 
 
 def _summary(counts: dict[str, int], dry_run: bool) -> str:
@@ -550,6 +648,35 @@ def _summary(counts: dict[str, int], dry_run: bool) -> str:
     return prefix + (", ".join(parts) or "none")
 
 
+# Pull --------------------------------------------------------------------------------------
+
+
+def _pull_run(
+    root: Path,
+    offer: dict[str, Any],
+    opt: dict[str, Any],
+    dry_run: bool,
+    notes: list[str] | None = None,
+) -> dict[str, Any]:
+    """Plan a pull (or upgrade) against the project, and apply it unless ``dry_run``.
+    The caller holds the sync lock for a real run."""
+    from framework.skill_sync import _read, _save_changed
+
+    lock, _ = _read(root)
+    before = copy.deepcopy(lock)
+    dirs = list(opt["dirs"])
+    wanted = [f"{d}/{s['name']}" for s in offer["skills"] for d in dirs]
+    disk, errors = _scan(root, [*_tracked_paths(lock), *wanted], dirs)
+    if opt["command"] == "pull" and offer["source"] == "cloud":
+        _fetch_by_identity(root, lock, disk, offer, notes if notes is not None else [])
+    plan = planner.plan(disk, lock, offer, opt)
+    if dry_run:
+        return {"steps": plan.steps, "lock": lock, "errors": errors, "backups": {}}
+    steps, final, backups = _apply(root, plan, lock, _sources(offer), disk)
+    _save_changed(root, before, final)
+    return {"steps": steps, "lock": final, "errors": errors, "backups": backups}
+
+
 def pull_skills(
     project_path: str | Path = ".", overwrite: bool = False, dry_run: bool = False
 ) -> dict[str, Any]:
@@ -560,22 +687,24 @@ def pull_skills(
     are added. Unedited skills are updated to their latest versions: Framework's from
     this framework-py, and Cloud skills from Cloud (their latest versions need
     ``fw.cloud_login()``; otherwise the versions in the project's setup are used).
-    Locally edited skills are kept and listed; ``overwrite=True`` replaces them too,
-    backing them up to ``.framework/skills-backups/``. Skills no longer in the setup are
-    never deleted, only listed. Every skill and folder is checked before anything is
-    written, and a copy edited while the pull runs is kept, as edited. A skill in several
-    assistant folders is updated in all of them. A skill whose tracked copies differ, or
-    with one of them missing, is diverged: it is not touched, and the message gives the
-    ``skills_copy()`` call that fixes it. So is a skill pull would add to a new assistant
-    folder while its existing copy is locally edited or your own Cloud skill. Pull works
-    per lock entry: a copy the lock doesn't track is left alone, and an entry that is
-    diverged or can't be read (failed) never changes another entry's plan. Pull never
-    changes a skill's Cloud identity or moves it to an older version. The Skills table
-    in AGENTS.md is refreshed. To make a skill's copies in several assistant folders
-    agree again, use ``skills_copy()``.
+    Skills no longer in the setup are never deleted, only listed.
+
+    ``.framework/skills.lock.json`` records, for each copy of a skill, the hash pull last
+    wrote there. A copy that still has it is unedited and is updated; any other copy is
+    locally edited, even one reverted to an older version, and is kept and listed.
+    ``overwrite=True`` replaces edited copies too, backing them up to
+    ``.framework/skills-backups/``, but never moves a skill to an older version, and never
+    chooses between copies that differ. A skill in several assistant folders is judged as
+    one: when its copies differ, or one is missing beside an edited one, it is diverged
+    and the message gives the ``skills_copy()`` call that fixes it. A folder another
+    skill tracks is kept and never written. After a folder is renamed by hand, the
+    message gives the ``skills_move()`` call that records it. Every copy is checked
+    before anything is written, and a copy edited while the pull runs is kept, as
+    edited. The Skills table in AGENTS.md is refreshed.
 
     Offline, signed out, or without a project token, the package skills in the local
-    settings are used instead, and the message says so.
+    settings are used instead, and the message says so; your own Cloud skills are then
+    listed as unavailable.
 
     Args:
         project_path: The project's root directory. Default: the current directory.
@@ -583,12 +712,12 @@ def pull_skills(
         dry_run: Report what would change and write nothing.
 
     Returns:
-        A dict: ``source`` ("cloud" or "package"), ``dry_run``, ``skills`` (each with
-        ``name``, ``status``, and ``paths``), ``counts`` by status (added, updated,
-        current, edited, replaced, diverged, failed, removed, unavailable; a diverged
-        skill also has ``hint``, a failed one ``reason``; a problem in a lock entry that
-        isn't the setup's skill is listed with its ``entry`` key), ``message`` (the summary
-        line), and ``notes``.
+        A dict: ``source`` ("cloud" or "package"), ``dry_run``, ``skills`` (one row per
+        skill, plus one per kept, untracked, or removed folder, each with ``name``,
+        ``status``, ``paths``, ``reason`` and ``hint`` (words and the call to run), and
+        ``reason_code``, ``hint_key``, and ``hint_args``), ``steps`` (one per copy, with
+        its ``action``), ``counts`` by status, ``message`` (the summary line), and
+        ``notes``.
 
     Raises:
         ProjectNotFoundError: When the folder is not a Framework project.
@@ -598,473 +727,288 @@ def pull_skills(
     from framework._agents_md import refresh_skills
     from framework._log import inform, show_messages
     from framework.ai import _installed_spec
-    from framework.cloud import CloudError, ProjectServerMissingError
-    from framework.skill_sync import _load, _lock, copy_call, entry_for, identified, on_disk
-    from framework.spec.merge import SpecError
+    from framework.skill_sync import _lock
 
     show_messages()
     root = _root(project_path)
     spec = _installed_spec(root)
     dirs = _skill_dirs(root, spec)
-    notes: list[str] = []
-    try:
-        wanted = _cloud_skills(root, notes)
-        source = "cloud"
-    except ProjectServerMissingError:
-        raise
-    except (CloudError, SpecError) as error:
-        reason = str(error).rstrip(".") or type(error).__name__
-        inform(
-            f"Framework Cloud not reached ({reason}); "
-            "using the package skills for this project type."
-        )
-        wanted = _package_skills(spec)
-        source = "package"
-        notes = []
-    # A Cloud skill's version in the setup counts as unedited when a newer one replaces it
-    for entry in wanted.values():
-        if isinstance(entry, dict) and entry.get("sync"):
-            entry.setdefault("_setup_hash", entry["sync"]["hash"])
-    wanted = {n: e for n, e in wanted.items() if isinstance(e, dict)}
-
-    skills: list[dict[str, Any]] = []
+    for folder in dirs:
+        if _kind(root, folder) == "other":
+            raise FrameworkError(f"Can't install skills into {folder}: it is not a folder.")
+    offer, notes = _pull_offer(root, spec)
+    opt = {
+        "command": "pull",
+        "dirs": dirs,
+        "overwrite": overwrite,
+        "dry_run": dry_run,
+        "offline": offer["source"] == "package",
+        "scope": "all",
+    }
     with _lock(root) if not dry_run else nullcontext():
-        for folder in dirs:
-            if _kind(root, folder) == "other":
-                raise FrameworkError(f"Can't install skills into {folder}: it is not a folder.")
-        # Planned per lock entry, against the lock as it is now, and checked (Cloud
-        # verification, bundle limits, folders) before anything is written. The setup's
-        # skill is one entry: its tracked paths (custom folders too) move together, and
-        # it can be added to new assistant folders. A path another entry tracks, or an
-        # untracked copy beside a tracked skill, is left alone. A diverged or unreadable
-        # entry isn't touched, and never changes another entry's plan.
-        from framework.skill_sync import bundle_hash, validate
-
-        for name, entry in wanted.items():
-            # A Cloud bundle that fails verification stops the whole pull, before any write
-            sync = entry.get("sync")
-            if sync and bundle_hash(validate(entry["bundle"])) != sync["hash"]:
-                raise ValueError(f"Cloud skill verification failed: {name}")
-        state = _load(root)
-        problems = _entry_problems(root, state)
-        tracked_paths = {p for e in state["skills"].values() for p in e["paths"]}
-        claimed: set[str] = set()
-        targets: dict[str, list[str]] = {}
-        left_out: dict[str, list[str]] = {}
-        plans: dict[str, list[tuple[str, str, str | None, str | None]]] = {}
-        sources: dict[str, dict[str, Any]] = {}
-        for name, entry in wanted.items():
-            key, tracked = _setup_entry(root, state, name, entry, dirs)
-            if key is not None:
-                claimed.add(key)
-            if key in problems and problems[key][0] != "missing":
-                status, reason, hint = problems[key]
-                skills.append(
-                    {
-                        "name": name,
-                        "status": status,
-                        "paths": list(tracked["paths"]),
-                        "reason": reason,
-                        "hint": hint,
-                    }
-                )
-                continue
-            if source == "package" and identified(tracked):
-                # Package content never replaces Cloud content, and nothing here can check it
-                skills.append(
-                    {
-                        "name": name,
-                        "status": "unavailable",
-                        "paths": list(tracked["paths"]),
-                        "reason": f"Framework Cloud wasn't reached, so {name} was left as it is.",
-                        "hint": None,
-                    }
-                )
-                continue
-            try:
-                if key is not None and identified(tracked):
-                    entry = _own_restore(root, name, entry, tracked) or entry
-                # Each assistant folder's path for the skill, as spelled on disk
-                at = {d: on_disk(root, f"{d}/{name}") for d in dirs}
-                paths: list[str] = []
-                for path in tracked.get("paths", []):
-                    if _kind(root, Path(path).parent.as_posix()) == "dir" or path in at.values():
-                        paths.append(path)
-                    else:
-                        left_out.setdefault(name, []).append(path)
-                new = [
-                    at[d]
-                    for d in dirs
-                    if at[d] not in tracked_paths and _kind(root, at[d]) == "missing"
-                ]
-                if key is None:
-                    # Nothing tracked yet: each assistant folder's copy, as before the lock
-                    paths = [at[d] for d in dirs if at[d] not in tracked_paths]
-                else:
-                    # A copy the lock doesn't track, beside the tracked skill, is left alone
-                    for d in dirs:
-                        there = at[d]
-                        if there in tracked_paths or _kind(root, there) == "missing":
-                            continue
-                        home = (tracked.get("paths") or [there])[0]
-                        back = copy_call(there, home)
-                        again = copy_call(home, there)
-                        skills.append(
-                            {
-                                "name": name,
-                                "status": "untracked",
-                                "paths": [there],
-                                "entry": None,
-                                "reason": f"{there} isn't tracked, so pull left it alone.",
-                                # Copy it where the lock tracks the skill, then record it
-                                "hint": f"{back}; {again}" if back and again else None,
-                            }
-                        )
-                    if not paths:
-                        # Every tracked copy is gone with its folder: never refilled
-                        # elsewhere, so the lock can't move while a tracked copy is absent
-                        gone = left_out.pop(name, [])
-                        skills.append(
-                            {
-                                "name": name,
-                                "status": "missing",
-                                "paths": gone,
-                                "reason": _GONE,
-                                "hint": None,
-                                **_last_pushed(tracked),
-                            }
-                        )
-                        continue
-                split = _new_folder_hint(
-                    root, state, name, wanted, key, tracked, new, dirs, overwrite
-                )
-                if split:
-                    skills.append(
-                        {
-                            "name": name,
-                            "status": "diverged",
-                            "paths": paths + new,
-                            "reason": split[0],
-                            "hint": split[1],
-                        }
-                    )
-                    continue
-                if (
-                    key is not None
-                    and identified(tracked)
-                    and entry is wanted[name]
-                    and not same_identity(tracked, entry.get("sync") or {})
-                    and all(_hash_at(root, p) is None for p in paths)
-                ):
-                    # Your own Cloud skill, every copy gone, and Cloud not reached
-                    skills.append(
-                        {
-                            "name": name,
-                            "status": "missing",
-                            "paths": paths,
-                            "reason": _GONE,
-                            "hint": None,
-                            **_last_pushed(tracked),
-                        }
-                    )
-                    continue
-                paths += [p for p in new if p not in paths]
-                targets[name] = paths
-                sources[name] = entry  # The setup's entry, or the Cloud skill it restores from
-                plans[name] = [(path, *_plan(root, name, entry, path, overwrite)) for path in paths]
-            except (ValueError, OSError, FrameworkError) as error:
-                skills.append(
-                    {
-                        "name": name,
-                        "status": "failed",
-                        "paths": list(tracked.get("paths", [])),
-                        "reason": str(error),
-                        "hint": None,
-                    }
-                )
-                plans.pop(name, None)
-        # Problems in entries that aren't the setup's skills: listed on their own
-        for key, (status, reason, hint) in problems.items():
-            if key in claimed:
-                continue  # The setup's skill: planned above (a missing one is restored)
-            paths = list(state["skills"][key]["paths"])
-            skills.append(
-                {
-                    "name": Path(paths[0]).name,
-                    "status": status,
-                    "paths": paths,
-                    "entry": key,
-                    "reason": reason,
-                    "hint": hint,
-                    **(_last_pushed(state["skills"][key]) if status == "missing" else {}),
-                }
-            )
-        writes = ("added", "restored", "updated", "replaced", "current")
-        for name, planned in plans.items():
-            if not planned:
-                # Nowhere to install: each folder's path belongs to another skill
-                there = next((at for at in (f"{d}/{name}" for d in dirs)), name)
-                owner = next(
-                    (e.get("skill_id") for e in state["skills"].values() if there in e["paths"]),
-                    None,
-                )
-                skills.append(
-                    {
-                        "name": name,
-                        "status": "kept",
-                        "paths": [],
-                        "reason": f"{there} belongs to a different skill ({owner}), so pull "
-                        "left it alone.",
-                        "hint": None,
-                    }
-                )
-                continue
-            found: list[tuple[str, str]] = []
-            for relative, status, current, _ in planned:
-                if not dry_run and status in writes:
-                    # A current one is recorded in the lock
-                    status = _apply(root, name, sources[name], relative, status, current)
-                found.append((relative, status))
-            status = min((s for _, s in found), key=_PRECEDENCE.index)
-            skill: dict[str, Any] = {
-                "name": name,
-                "status": status,
-                "paths": [p for p, _ in found],
-            }
-            reasons = [protected for *_, protected in planned if protected]
-            if reasons and status in ("edited", "missing", "kept"):
-                # Protected: overwrite doesn't change it, so there is no command to give
-                skill["reason"], skill["hint"] = reasons[0], None
-                if status == "missing":
-                    skill.update(_last_pushed(entry_for(state, skill["paths"][0])[1]))
-            elif status == "edited":
-                path = next(p for p, s in found if s == "edited")
-                skill["reason"] = f"{path} has local edits, which were kept."
-                skill["hint"] = "pull_skills(overwrite=True)"
-            elif status == "unavailable":
-                skill["reason"] = f"This version of framework-py doesn't include {name}."
-                skill["hint"] = None
-            restored = [p for p, s in found if s == "restored"]
-            if restored:
-                skill["restored"] = restored
-                left = left_out.get(name, [])
-                if left:
-                    calls = [copy_call(restored[0], p) for p in left]
-                    skill["reason"] = (
-                        f"Restored {', '.join(restored)}; {', '.join(left)} is tracked too, "
-                        "and its folder is gone."
-                    )
-                    skill["hint"] = "; ".join(c for c in calls if c) if all(calls) else None
-            skills.append(skill)
-    if source == "cloud":
-        others: dict[str, list[str]] = {}
-        for folder in dirs:
-            for name in _folders(root, folder):
-                if name in wanted:
-                    continue
-                here = root / folder / name
-                # The same folder under another spelling is a wanted skill, not removed
-                if any(
-                    (root / folder / w).exists() and (root / folder / w).samefile(here)
-                    for w in wanted
-                ):
-                    continue
-                others.setdefault(name, []).append(f"{folder}/{name}")
-        skills += [
-            {
-                "name": n,
-                "status": "removed",
-                "paths": p,
-                "reason": "No longer in the project's setup, so pull left it alone.",
-                "hint": None,
-            }
-            for n, p in sorted(others.items())
-        ]
+        done = _pull_run(root, offer, opt, dry_run, notes)
+    rows = _rows(done["steps"], "pull", done["lock"], done["errors"])
 
     if not dry_run and dirs:
         present = _folders(root, dirs[0])
-        listed = [n for n in wanted if n in present] + [n for n in present if n not in wanted]
+        names = [s["name"] for s in offer["skills"]]
+        listed = [n for n in names if n in present] + [n for n in present if n not in names]
         refresh_skills(root, listed, dirs[0])
 
-    counts = {key: sum(s["status"] == key for s in skills) for key in STATUSES}
+    counts = {key: sum(r["status"] == key for r in rows) for key in STATUSES}
     message = _summary(counts, dry_run)
     inform(message)
-    for skill in skills:
-        if skill["status"] == "replaced":
-            inform(f"  replaced: {skill['name']} (old copy in {_BACKUPS})")
-        elif text := row_text(skill):
-            inform(f"  {skill['status']}: {skill['name']}. {text}")
+    for row in rows:
+        if row["status"] == "replaced":
+            inform(f"  replaced: {row['name']} (old copy in {_BACKUPS})")
+        elif text := row_text(row):
+            inform(f"  {row['status']}: {row['name']}. {text}")
     for note in notes:
         inform(note)
     return {
-        "source": source,
+        "source": offer["source"],
         "dry_run": dry_run,
-        "skills": skills,
+        "skills": [_public(r) for r in rows],
+        "steps": [dict(s) for s in done["steps"]],
         "counts": counts,
         "message": message,
         "notes": notes,
     }
 
 
+# Upgrade and new projects --------------------------------------------------------------------
+
+
+def upgrade_skills(root: Path, dirs: list[str], names: list[str]) -> dict[str, Any]:
+    """What ``upgrade()`` does to the built-in skills: the package's copy of each named
+    skill, planned as pull plans it (``scope`` builtin: your own skills are left out,
+    and a built-in last updated from Cloud is kept). Returns ``rows``, ``steps``, and
+    ``apply`` (carries the plan out; returns the paths it declined)."""
+    from framework.skill_sync import _lock, _read, _save_changed, package_source
+
+    offer = {"source": "package", "skills": [package_source(n) for n in names]}
+    opt = {
+        "command": "upgrade",
+        "dirs": list(dirs),
+        "overwrite": False,
+        "offline": False,
+        "scope": "builtin",
+    }
+    lock, _ = _read(root)
+    before = copy.deepcopy(lock)
+    wanted = [f"{d}/{n}" for n in names for d in dirs]
+    disk, errors = _scan(root, [*_tracked_paths(lock), *wanted], list(dirs))
+    plan = planner.plan(disk, lock, offer, opt)
+    plan.steps = [s for s in plan.steps if s["status"] != "removed"]
+    rows = _rows(plan.steps, "upgrade", lock, errors, verb="upgrade")
+
+    def apply() -> list[str]:
+        with _lock(root):
+            steps, final, _ = _apply(root, plan, lock, _sources(offer), disk)
+            _save_changed(root, before, final)
+        return [s["path"] for s in steps if s["status"] in ("edited", "failed")]
+
+    return {"rows": [_public(r) for r in rows], "steps": plan.steps, "apply": apply}
+
+
+def install_setup_skills(root: Path, skills: dict[str, Any], dirs: list[str]) -> list[str]:
+    """Install a new project's setup skills into its assistant folders and record them
+    in the lock. Returns the paths that hold the setup's copy (an existing edited copy,
+    or one another skill tracks, is left alone)."""
+    from framework.skill_sync import _lock
+
+    sources = [_setup_source(n, e) for n, e in skills.items() if isinstance(e, dict)]
+    offer: dict[str, Any] = {"source": "cloud", "skills": sources, "by_identity": {}}
+    # Planned as pull plans it; folders the setup doesn't name are not listed
+    opt = {"command": "upgrade", "dirs": list(dirs), "overwrite": False, "scope": "all"}
+    with _lock(root):
+        done = _pull_run(root, offer, opt, False)
+    held = {
+        s["path"]
+        for s in done["steps"]
+        if s["status"] in ("added", "restored", "updated", "current", "replaced")
+    }
+    return [f"{d}/{s['name']}" for s in sources for d in dirs if f"{d}/{s['name']}" in held]
+
+
+# Push --------------------------------------------------------------------------------------
+
 _REFUSED = "Cloud has a newer version than this project pulled."
 
 
-def push_text(row: dict[str, Any], force: str = "push_skills(force=True)") -> str:
-    """A push row's message, from its reason and hint, in the shared wording."""
-    status, reason, hint = row["status"], str(row.get("reason") or ""), row.get("hint")
-    if status == "refused":
-        return f"{reason} {force} pushes it anyway."
-    if status == "missing":
-        last = row.get("skill_id")
-        return reason + (f" Its last pushed version is Cloud skill {last}." if last else "")
-    if status == "untracked":
-        return f"{reason} To add it as its own skill: {hint}"
-    if status == "failed" and hint:
-        if reason.endswith("missing."):
-            return f"{reason} Copy it over: {hint}"
-        return f"{reason} Pick one and copy it over the other: {hint}"
-    return reason
+def _push_login() -> tuple[str, str]:
+    """The server push sends to, and your login token for it."""
+    from framework.cloud import _require_token, cloud_server
+
+    server = cloud_server().url.rstrip("/")
+    return server, _require_token(server)
 
 
-def _push_edited(
-    root: Path,
-) -> list[tuple[dict[str, Any], list[str], tuple[str, str, str | None] | None]]:
-    """Tracked skills whose files changed since the last pull, with their present paths,
-    and why each can't be pushed (None when it can be tried).
-
-    A skill whose tracked copies differ, or with one tracked copy missing, is diverged and
-    can't be pushed; nor can one whose files can't be read. Reads only the project;
-    checking the rest against Cloud needs your login.
-    """
-    from framework.skill_sync import _load, diverged_parts
-
-    edited: list[tuple[dict[str, Any], list[str], tuple[str, str, str | None] | None]] = []
-    for entry in _load(root)["skills"].values():
-        paths = list(entry["paths"])
-        try:
-            hashes = [_hash_at(root, p) for p in paths]
-        except (ValueError, OSError, FrameworkError) as error:
-            edited.append((entry, paths, ("failed", str(error), None)))
-            continue
-        present = [p for p, h in zip(paths, hashes, strict=True) if h is not None]
-        existing = [h for h in hashes if h is not None]
-        if not present:
-            if paths:
-                edited.append((entry, paths, ("missing", _GONE, None)))
-            continue
-        if None in hashes or len(set(existing)) > 1:
-            edited.append((entry, present, ("failed", *diverged_parts(paths, hashes))))
-        elif any(h != entry.get("hash") for h in existing):
-            edited.append((entry, present, None))
-    return edited
-
-
-def _push_apply(root: Path, plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Push each planned skill; its status becomes pushed, refused, or failed."""
-    from framework.skill_sync import skills_sync
-
-    for plan in plans:
-        if plan["status"] != "push":
-            continue
-        try:
-            result = skills_sync(
-                plan["path"],
-                root,
-                direction="push",
-                resolve="local" if plan["forced"] else None,
-            )
-        except Exception as error:
-            plan.update(status="failed", reason=str(error), hint=None)
-            continue
-        if result["action"] == "push":
-            plan.update(status="pushed", version=result.get("version"))
-        else:
-            plan.update(status="refused", reason=_REFUSED, hint="push_skills(force=True)")
-    return plans
-
-
-def _push_plan(root: Path, force: bool) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Locally edited tracked skills and what pushing each would do, and untracked folders."""
-    from framework.ai import _installed_spec
-    from framework.skill_sync import _load, skills_sync
-
-    state = _load(root)
-    tracked = {p for e in state["skills"].values() for p in e["paths"]}
-    plans: list[dict[str, Any]] = []
-    for entry, paths, problem in _push_edited(root):
-        name = Path(paths[0]).name
-        builtin = not entry.get("skill_id") or str(entry["skill_id"]).startswith("framework:")
-        if problem:
-            status, reason, hint = problem
-            plans.append(
-                {
-                    "name": name,
-                    "path": paths[0],
-                    "status": status,
-                    "reason": reason,
-                    "hint": hint,
-                    **(_last_pushed(entry) if status == "missing" else {}),
-                }
-            )
-            continue
-        try:
-            action = skills_sync(paths[0], root, direction="status")["action"]
-        except Exception as error:
-            plans.append(
-                {
-                    "name": name,
-                    "path": paths[0],
-                    "status": "failed",
-                    "reason": str(error),
-                    "hint": None,
-                }
-            )
-            continue
-        if action == "push" or (action == "conflict" and force):
-            plans.append(
-                {
-                    "name": name,
-                    "path": paths[0],
-                    "status": "push",
-                    "builtin": builtin,
-                    "forced": action == "conflict",
-                }
-            )
-        elif action == "conflict":
-            plans.append(
-                {
-                    "name": name,
-                    "path": paths[0],
-                    "status": "refused",
-                    "reason": _REFUSED,
-                    "hint": "push_skills(force=True)",
-                }
-            )
-    untracked = [
-        {
-            "name": name,
-            "path": f"{folder}/{name}",
-            "status": "untracked",
-            "reason": f"{folder}/{name} isn't tracked, so push left it alone.",
-            "hint": f'skills_sync("{folder}/{name}")',
-        }
-        for folder in _skill_dirs(root, _installed_spec(root))
-        for name in _folders(root, folder)
-        if f"{folder}/{name}" not in tracked
+def _edited_keys(lock: dict[str, Any], disk: Disk) -> list[str]:
+    """Entries with a present copy that differs from its record."""
+    return [
+        key
+        for key, entry in lock["skills"].items()
+        if any(
+            present(disk.get(p)) and disk.get(p) != (r or {}).get("hash")
+            for p, r in entry["copies"].items()
+        )
     ]
-    return plans, untracked
 
 
-def _warning(plan: dict[str, Any]) -> str:
-    name = plan["name"]
-    if plan["builtin"]:
+def _push_remote(
+    root: Path, lock: dict[str, Any], keys: list[str], server: str, token: str | None
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Cloud's head for each entry about to be pushed (``version``, ``hash``,
+    ``skill_id``), and why any couldn't be read. A built-in Cloud never published has
+    no head."""
+    from framework.cloud import CloudConflictError, api
+    from framework.skill_sync import bundle_hash
+
+    heads: dict[str, Any] = {}
+    errors: dict[str, str] = {}
+    if token is None:
+        return heads, errors
+    for key in keys:
+        entry = lock["skills"][key]
+        identity, base = entry["identity"], entry.get("base") or {}
+        if identity["kind"] == "cloud":
+            path = f"{quote(identity['skill_id'], safe='')}?variant={identity['variant']}"
+            where = str(identity.get("server") or server)
+        elif identity["kind"] == "builtin" and base.get("hash"):
+            path = (
+                f"{quote(identity['skill_id'], safe='')}?variant={identity['variant']}"
+                f"&hash={base['hash']}"
+            )
+            where = server
+        else:
+            continue
+        try:
+            remote = api(f"/api/v1/skills/sync/{path}", token, where)
+            if bundle_hash(remote["bundle"]) != remote["hash"]:
+                raise ValueError("Cloud skill verification failed")
+        except CloudConflictError:
+            continue  # A built-in Cloud never published: an edited one is a new skill
+        except Exception as error:
+            errors[key] = str(error)
+            continue
+        heads[key] = {
+            "version": remote["version"],
+            "hash": remote["hash"],
+            "skill_id": remote["skill_id"],
+            "system": bool(remote.get("system")),
+            "server": where,
+        }
+    return heads, errors
+
+
+def _push_prepare(root: Path, force: bool, server: str, token: str | None) -> dict[str, Any]:
+    """Plan a push: each tracked skill with local edits, and what pushing it would do."""
+    from framework.ai import _installed_spec
+    from framework.skill_sync import _read
+
+    lock, _ = _read(root)
+    dirs = _skill_dirs(root, _installed_spec(root))
+    disk, errors = _scan(root, _tracked_paths(lock), dirs)
+    remote, failures = _push_remote(root, lock, _edited_keys(lock, disk), server, token)
+    plan = planner.plan(
+        disk, lock, {"remote": remote}, {"command": "push", "dirs": dirs, "force": force}
+    )
+    for step in plan.steps:
+        if step["entry"] in failures and step["status"] in ("pushed", "refused"):
+            step.update(action="none", status="failed", reason_code=None, hint=None)
+            step["error"] = failures[step["entry"]]
+    return {
+        "lock": lock,
+        "disk": disk,
+        "plan": plan,
+        "remote": remote,
+        "errors": errors,
+        "server": server,
+        "token": token,
+    }
+
+
+def _push_send(root: Path, prep: dict[str, Any]) -> list[dict[str, Any]]:
+    """Push each planned skill; its steps become pushed or failed. Saves the lock."""
+    from framework.skill_sync import _lock, _path, _save_changed, bundle_hash, post_push, scan
+
+    plan: Plan = prep["plan"]
+    steps = [dict(s) for s in plan.steps]
+    lock = copy.deepcopy(plan.lock_after)
+    with _lock(root):
+        for key in dict.fromkeys(s["entry"] for s in steps if s["action"] == "push"):
+            mine = [s for s in steps if s["entry"] == key]
+            entry = lock["skills"][key]
+            identity, base = entry["identity"], entry.get("base") or {}
+            head = prep["remote"].get(key)
+            forced = any(s.get("forced") for s in mine) or not base
+            if identity["kind"] == "builtin":
+                skill_id = head["skill_id"] if head else None
+                expected = head["version"] if head else 0
+            elif identity["kind"] == "cloud":
+                skill_id = identity["skill_id"]
+                expected = (head["version"] if head else 0) if forced else base.get("version")
+            else:
+                skill_id, expected = None, 0
+            try:
+                first = sorted(entry["copies"])[0]
+                files = scan(_path(root, first))
+                local = bundle_hash(files)
+                if local != mine[0]["hash"]:
+                    raise ValueError(f"{first} changed while the push ran")
+                server = str(identity.get("server") or prep["server"])
+                response = post_push(
+                    root,
+                    lock,
+                    key,
+                    files,
+                    local,
+                    int(expected or 0),
+                    skill_id,
+                    identity["variant"],
+                    server,
+                    prep["token"],
+                )
+                if response.get("bundle") is not None and (
+                    bundle_hash(response["bundle"]) != response["hash"]
+                ):
+                    raise ValueError("Cloud skill verification failed")
+            except Exception as error:
+                for s in mine:
+                    s.update(action="none", status="failed", reason_code=None, hint=None)
+                    s["error"] = str(error)
+                continue
+            lock = planner.after_push(
+                lock,
+                key,
+                {
+                    "skill_id": response["skill_id"],
+                    "version": response["version"],
+                    "hash": response["hash"],
+                    "server": response.get("server") or server,
+                },
+            )
+            for s in mine:
+                s["version"] = response["version"]
+        _save_changed(root, prep["lock"], lock)
+    return steps
+
+
+def _warning(row: dict[str, Any]) -> str:
+    name = row["name"]
+    steps = row["steps"]
+    if any(s.get("fork") for s in steps):
         return f"This saves {name} as your own skill; the built-in Framework skill stays as it is."
-    if plan["forced"]:
+    if any(s.get("forced") for s in steps):
         return (
             f"Cloud has a newer version of {name} than this project pulled. Pushing replaces it "
             "as the latest version; the Cloud changes stay in its history."
         )
     return f"This replaces the current version of {name}, used wherever it's attached."
+
+
+PUSH_STATUSES = ("pushed", "refused", "untracked", "missing", "cancelled", "failed")
 
 
 def push_skills(
@@ -1075,14 +1019,17 @@ def push_skills(
 ) -> dict[str, Any]:
     """Send locally edited skills to Framework Cloud as new versions of your own skills.
 
-    Each skill tracked in ``.framework/skills.lock.json`` whose files changed since the
-    last pull goes up through ``skills_sync()``. A skill that changed on Cloud since then
+    Each skill tracked in ``.framework/skills.lock.json`` with a copy that differs from
+    the hash the last sync wrote there is pushed. A skill that changed on Cloud since then
     is refused with "Pull first"; ``force=True`` pushes it anyway, as the latest version.
-    A built-in Framework skill is never changed: an edited one is saved as your own copy.
-    Skills not tracked are listed; ``skills_sync()`` adds one. Needs ``fw.cloud_login()``.
-    A skill whose copies in several assistant folders differ, or with a tracked copy
-    missing, fails with the ``skills_copy()`` call that makes them agree; so does one
-    whose files can't be read. The other skills are pushed.
+    So is a skill retargeted with ``skills_move()``, which has no version to push onto
+    yet. A built-in Framework skill is never changed: an edited one is saved as your own
+    skill, and the lock tracks it as that skill from then on. Folders the lock doesn't
+    track are listed with the ``skills_sync()`` call that adds one, or, when a tracked
+    copy's folder is gone, the ``skills_move()`` call that records a move. Needs
+    ``fw.cloud_login()``. A skill whose copies in several assistant folders differ, or
+    with a tracked copy missing, fails with the ``skills_copy()`` call that makes them
+    agree; so does one whose files can't be read. The other skills are pushed.
 
     Before pushing, a warning names what each new version affects, then asks to continue.
     Without a console, pass ``confirm=True``.
@@ -1094,26 +1041,29 @@ def push_skills(
         dry_run: Report what would be pushed and send nothing.
 
     Returns:
-        A dict: ``dry_run``, ``skills`` (each with ``name``, ``status``, and ``paths``;
-        status is pushed, refused, untracked, cancelled, or failed), ``counts`` by status,
-        and ``message`` (the summary line).
+        A dict: ``dry_run``, ``skills`` (each with ``name``, ``status``, ``paths``,
+        ``reason``, ``hint``, ``reason_code``, ``hint_key``, and ``hint_args``; status is
+        pushed, refused, untracked, missing, cancelled, or failed), ``steps``, ``counts``
+        by status, and ``message`` (the summary line).
 
     Raises:
         CloudError: When not signed in to Framework Cloud.
         FrameworkError: Without a console and without ``confirm=True``.
     """
     from framework._log import inform, show_messages
-    from framework.cloud import _require_token, cloud_server
 
     show_messages()
     root = _root(project_path).resolve()
-    _require_token(cloud_server().url)
-    plans, untracked = _push_plan(root, force)
-    pushes = [p for p in plans if p["status"] == "push"]
+    server, token = _push_login()
+    prep = _push_prepare(root, force, server, token)
+    steps = prep["plan"].steps
+    planned = _rows(steps, "push", prep["lock"], prep["errors"], verb="push")
+    pushes = [r for r in planned if r["status"] == "pushed"]
 
+    if pushes:
+        for row in pushes:
+            inform(_warning(row))
     if pushes and not dry_run:
-        for plan in pushes:
-            inform(_warning(plan))
         if confirm is None:
             if not sys.stdin.isatty():
                 raise FrameworkError(
@@ -1121,17 +1071,15 @@ def push_skills(
                 )
             confirm = input("Continue? [y/n] ").strip().lower() in ("y", "yes")
         if not confirm:
-            for plan in pushes:
-                plan["status"] = "cancelled"
+            steps = [dict(s) for s in steps]
+            planner.cancel(steps)
         else:
-            _push_apply(root, plans)
-    elif pushes:
-        for plan in pushes:
-            inform(_warning(plan))
+            steps = _push_send(root, prep)
+    elif not dry_run and any(s["action"] == "record" for s in steps):
+        steps = _push_send(root, prep)  # Cloud already has the edits: record them
 
-    skills = [push_row(p, dry_run) for p in plans + untracked]
-    keys = ("pushed", "refused", "untracked", "missing", "cancelled", "failed")
-    counts = {key: sum(s["status"] == key for s in skills) for key in keys}
+    rows = _rows(steps, "push", prep["lock"], prep["errors"], verb="push")
+    counts = {key: sum(r["status"] == key for r in rows) for key in PUSH_STATUSES}
     labels = {
         "pushed": "to push" if dry_run else "pushed",
         "refused": "refused (pull first)",
@@ -1140,29 +1088,20 @@ def push_skills(
         "cancelled": "cancelled",
         "failed": "failed",
     }
-    parts = [f"{counts[k]} {labels[k]}" for k in keys if counts[k]]
+    parts = [f"{counts[k]} {labels[k]}" for k in PUSH_STATUSES if counts[k]]
     prefix = "Skills (dry run, nothing sent): " if dry_run else "Skills pushed: "
     message = prefix + (", ".join(parts) or "nothing to push")
     inform(message)
-    for skill in skills:
-        if skill["status"] not in ("pushed",):
-            inform(f"  {skill['status']}: {skill['name']}. {push_text(skill)}")
-    return {"dry_run": dry_run, "skills": skills, "counts": counts, "message": message}
-
-
-def push_row(plan: dict[str, Any], dry_run: bool = True) -> dict[str, Any]:
-    """A push plan as a result row: ``push`` is reported as ``pushed`` (a dry run says so
-    with dry_run=True), and every other status carries ``reason`` and ``hint``."""
-    status = "pushed" if plan["status"] == "push" else plan["status"]
-    row = {"name": plan["name"], "status": status, "paths": [plan["path"]]}
-    if status != "pushed":
-        row["reason"] = plan.get("reason") or (
-            "The push was cancelled." if status == "cancelled" else ""
-        )
-        row["hint"] = plan.get("hint")
-        if plan.get("skill_id"):
-            row["skill_id"] = plan["skill_id"]
-    return row
+    for row in rows:
+        if row["status"] not in ("pushed", "current"):
+            inform(f"  {row['status']}: {row['name']}. {row_text(row)}")
+    return {
+        "dry_run": dry_run,
+        "skills": [_public(r) for r in rows],
+        "steps": steps,
+        "counts": counts,
+        "message": message,
+    }
 
 
 _RESERVED = ".framework"  # Framework's own state: the skill lock, sync lock, and backups
@@ -1272,80 +1211,6 @@ def _skill_names(root: Path, folder: str) -> list[str]:
             if entry.is_dir(follow_symlinks=False) and _is_skill(Path(entry.path), relative):
                 names.append(entry.name)
     return sorted(names)
-
-
-def _copy_plan(
-    root: Path,
-    source: str,
-    targets: list[str],
-    names: list[str],
-    everything: bool,
-    state: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    """Scan every source and target copy, and what copying does to each, before any write.
-    Skills only a target has are listed, not read."""
-    from framework.skill_sync import _path, bundle_hash, on_disk, scan
-
-    sources = {name: scan(_path(root, f"{source}/{name}")) for name in names}
-    available = set(_skill_names(root, source))
-    plans: list[dict[str, Any]] = []
-    for folder in targets:
-        present = _skill_names(root, folder) if _kind(root, folder) == "dir" else []
-        copies: list[Path] = []
-        for name in names:
-            # An existing target folder keeps its on-disk spelling (alpha for Alpha)
-            relative = on_disk(root, f"{folder}/{name}")
-            dest = _path(root, relative)
-            kind = _kind(root, relative)
-            current = None
-            if state is not None:
-                from framework.skill_sync import entry_for
-
-                theirs = entry_for(state, relative)[0]
-                mine = entry_for(state, f"{source}/{name}")[0]
-                # A copy another skill tracks is never replaced, nor its path moved. An
-                # untracked copy may still fill a tracked path whose copy is gone.
-                if theirs is not None and theirs != mine and (mine is not None or kind == "dir"):
-                    raise FrameworkError(
-                        f"{relative} belongs to another skill in the lock, so skills_copy() "
-                        "won't replace it. Nothing was copied."
-                    )
-            if kind == "other" or (kind == "dir" and not _is_skill(dest, relative)):
-                raise FrameworkError(
-                    f"{relative} exists but is not a skill folder (no SKILL.md file). "
-                    "Move it, then copy again."
-                )
-            if kind == "dir":
-                current = bundle_hash(scan(dest))
-                copies.append(dest)
-            files = sources[name]
-            plans.append(
-                {
-                    "name": name,
-                    "status": "current" if current == bundle_hash(files) else "copied",
-                    "from": f"{source}/{name}",
-                    "to": relative,
-                    "backup": None,
-                    "_files": files,
-                    "_current": current,
-                }
-            )
-        if everything:
-            # Compared by identity, as the copy found them: on a case-insensitive volume
-            # alpha and Alpha are one folder, and one row
-            plans += [
-                {
-                    "name": n,
-                    "status": "missing",
-                    "from": None,
-                    "to": f"{folder}/{n}",
-                    "backup": None,
-                }
-                for n in present
-                if n not in available
-                and not any((root / folder / n).samefile(dest) for dest in copies)
-            ]
-    return plans
 
 
 def _copy_apply(root: Path, plans: list[dict[str, Any]], finish: Any = None) -> None:
@@ -1473,7 +1338,7 @@ def skills_copy(
         ValueError: When another skill sync holds the project's skill lock.
     """
     from framework._log import inform, show_messages
-    from framework.skill_sync import _lock, assistant_folders, on_disk
+    from framework.skill_sync import _lock, _read, _save_changed, assistant_folders, on_disk
 
     show_messages()
     for name, directory, label in ((from_, from_dir, "from_"), (to, to_dir, "to")):
@@ -1557,29 +1422,71 @@ def skills_copy(
             if unknown:
                 raise FrameworkError(f"Not skills in {source}: {', '.join(unknown)}.")
         # The lock is read and checked before any write: an unreadable one stops here
-        from framework.skill_sync import _load, join_paths
+        lock, _ = _read(root)
+        before = copy.deepcopy(lock)
+        disk = Disk()
+        from framework.skill_sync import _path, bundle_hash, scan
 
-        state = _load(root)
-        plans = _copy_plan(root, source, targets, names, everything=skills is None, state=state)
-        if not dry_run:
-
-            def record() -> None:
-                # The copies are the source's skill: each target joins its lock entry
-                # (when it has one), so pull and push treat them as one skill from now on
-                for name in names:
-                    join_paths(
-                        root,
-                        f"{source}/{name}",
-                        [
-                            p["to"]
-                            for p in plans
-                            if p["name"] == name and p["status"] in ("copied", "current")
-                        ],
+        for relative in [f"{source}/{n}" for n in names]:
+            disk.hashes[relative] = bundle_hash(scan(_path(root, relative)))
+        for folder in targets:
+            present_skills = _skill_names(root, folder) if _kind(root, folder) == "dir" else []
+            disk.children[folder] = present_skills
+            for name in names:
+                relative = f"{folder}/{name}"
+                dest = root / relative
+                kind = _kind(root, relative)
+                if kind == "other" or (kind == "dir" and not _is_skill(dest, relative)):
+                    raise FrameworkError(
+                        f"{relative} exists but is not a skill folder (no SKILL.md file). "
+                        "Move it, then copy again."
                     )
+        for folder in targets:
+            for name in names:
+                # An existing target folder keeps its on-disk spelling (alpha for Alpha)
+                relative = on_disk(root, f"{folder}/{name}")
+                if relative != f"{folder}/{name}":
+                    disk.spelling[f"{folder}/{name}"] = relative
+                kind = _kind(root, relative)
+                disk.hashes[relative] = (
+                    bundle_hash(scan(_path(root, relative))) if kind == "dir" else ABSENT
+                )
+        plan = planner.plan(
+            disk,
+            lock,
+            None,
+            {
+                "command": "copy",
+                "from_dir": source,
+                "to_dirs": targets,
+                "names": names,
+                "names_is_all": skills is None,
+            },
+        )
+        copies = [
+            {
+                "name": s["name"],
+                "status": s["status"],
+                "from": s.get("from"),
+                "to": s["path"],
+                "backup": None,
+                "_files": scan(_path(root, s["from"])) if s["action"] == "copy" else None,
+                "_current": None if disk.get(s["path"]) == ABSENT else disk.get(s["path"]),
+            }
+            for s in plan.steps
+        ]
+        if not dry_run:
+            _copy_apply(root, copies, lambda: _save_changed(root, before, plan.lock_after))
 
-            _copy_apply(root, plans, record)
-
-    results = [{k: v for k, v in p.items() if not k.startswith("_")} for p in plans]
+    results = [
+        {
+            **{k: v for k, v in c.items() if not k.startswith("_")},
+            "paths": [c["to"]],
+            "reason_code": None,
+            "hint": None,
+        }
+        for c in copies
+    ]
     keys = ("copied", "current", "missing")
     counts = {key: sum(r["status"] == key for r in results) for key in keys}
     labels = {
@@ -1603,6 +1510,152 @@ def skills_copy(
         "from": source,
         "to": targets,
         "skills": results,
+        "steps": [dict(s) for s in plan.steps],
         "counts": counts,
+        "message": message,
+    }
+
+
+# Move --------------------------------------------------------------------------------------
+
+
+def _move_path(value: str, side: str) -> str:
+    """An assistant folder name ("claude", "agents") as its skills folder, else a
+    project-relative path, checked as written."""
+    from framework.skill_sync import assistant_folders, relative_parts
+
+    folders = assistant_folders()
+    if value in folders:
+        return folders[value]
+    try:
+        relative = "/".join(relative_parts(value))
+    except ValueError:
+        relative = ""
+    if not relative:
+        raise FrameworkError(
+            f'{side} must be an assistant folder ("claude", "agents") or a path inside '
+            f"the project: {value!r}"
+        )
+    return relative
+
+
+def skills_move(
+    from_: str,
+    to: str | None = None,
+    *,
+    skill_id: str | None = None,
+    variant: str | None = None,
+    builtin: str | None = None,
+    project_path: str | Path = ".",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Move a tracked skill to another folder, or switch the skill it tracks.
+
+    ``.framework/skills.lock.json`` records where each copy of a skill lives. After a
+    folder is moved (``.claude/skills`` to ``.agents/skills`` when you switch
+    assistants), ``skills_move()`` moves the copies and their lock entries together, so
+    pull and push keep treating them as the same skill with the same edits. A folder you
+    already renamed by hand is recorded where it is now.
+
+    With ``skill_id``, ``variant``, or ``builtin``, the copy is retargeted: the lock
+    tracks it as that skill from then on (your fork of a built-in, say, or the r variant
+    of a Cloud skill). Its unedited copies stay unedited, so the next ``pull_skills()``
+    updates them to that skill's version. Its edited copies stay edited, and
+    ``push_skills()`` refuses them until ``force=True``, since the new skill has no
+    version this project pulled. ``pull_skills()`` gives the call to make when the
+    setup names another skill than the one a folder tracks.
+
+    Everything is checked before anything moves: a target folder that already exists,
+    a target another skill tracks, or a copy the lock doesn't track stops the move. A
+    dry run moves nothing and leaves the lock alone.
+
+    Examples:
+        >>> fw.skills_move("claude", "agents")
+        >>> fw.skills_move(".claude/skills/team-style", ".agents/skills/team-style")
+        >>> fw.skills_move(".claude/skills/framework-data", skill_id="5d0c2a7e-...")
+        >>> fw.skills_move(".claude/skills/mine", variant="r")
+
+    Args:
+        from_: The copy to move (a project-relative skill folder), or a skills folder,
+            whose tracked copies all move: a path, or an assistant folder name
+            ("claude" for ``.claude/skills``, "agents" for ``.agents/skills``).
+        to: Where it goes, named the same way. A skills folder keeps each skill's
+            folder name. Leave it out to retarget only.
+        skill_id: Retarget to this Cloud skill ID on your current server
+            (``framework:<name>`` names a built-in).
+        variant: Retarget to this variant: "r", "python", or "stata". Default: the
+            copy's current variant.
+        builtin: Retarget to this built-in Framework skill, such as "framework-data".
+        project_path: The project's root directory. Default: the current directory.
+        dry_run: Report the move and change nothing.
+
+    Returns:
+        A dict: ``dry_run``, ``skills`` (one row per moved or retargeted copy, each with
+        ``name``, ``status`` "moved", ``paths``, ``reason``, and ``reason_code``:
+        path_moved, lock_moved, or retargeted), ``steps``, and ``message``.
+
+    Raises:
+        SkillPlanError: When the move is refused; its ``code`` is move_untracked,
+            move_target_owned, move_target_exists, move_nothing, or
+            move_identity_exists. Nothing changes then.
+        ProjectNotFoundError: When the folder is not a Framework project.
+        ValueError: When another skill sync holds the project's skill lock.
+    """
+    from framework._log import inform, show_messages
+    from framework.skill_sync import _lock, _read, _save_changed, on_disk
+
+    show_messages()
+    if variant is not None and variant not in ("r", "python", "stata"):
+        raise FrameworkError('variant must be "r", "python", or "stata".')
+    if skill_id is not None and builtin is not None:
+        raise FrameworkError("Give skill_id or builtin, not both.")
+    source = _move_path(from_, "from_")
+    target = _move_path(to, "to") if to is not None else None
+    if target is None and skill_id is None and variant is None and builtin is None:
+        raise FrameworkError("Name where to move it (to=), or the skill to track (skill_id=).")
+    root = _root(project_path)
+    identity: dict[str, Any] | None = None
+    if skill_id is not None or variant is not None or builtin is not None:
+        identity = {"skill_id": skill_id, "variant": variant, "builtin": builtin}
+        if skill_id and not skill_id.startswith(("framework:", "inline:")):
+            from framework.cloud import cloud_server
+
+            identity["server"] = cloud_server().url.rstrip("/")
+
+    with _lock(root) if not dry_run else nullcontext():
+        source = on_disk(root, source)
+        target = on_disk(root, target) if target is not None else None
+        lock, _ = _read(root)
+        before = copy.deepcopy(lock)
+        tracked = _tracked_paths(lock)
+        paths = {*tracked, source}
+        if target is not None:
+            paths.add(target)
+            paths |= {
+                f"{target}/{posixpath.basename(p)}"
+                for p in tracked
+                if posixpath.dirname(p) == source
+            }
+        disk, _ = _scan(root, paths, [])
+        plan = planner.plan(
+            disk,
+            lock,
+            None,
+            {"command": "move", "from": source, "to": target, "identity": identity},
+        )
+        steps = plan.steps
+        if not dry_run:
+            steps, final, _ = _apply(root, plan, lock, {}, disk)
+            _save_changed(root, before, final)
+    rows = _rows(steps, "move", plan.lock_after)
+    prefix = "Skills (dry run, nothing moved): " if dry_run else "Skills: "
+    message = prefix + (f"{len(rows)} moved" if rows else "none")
+    inform(message)
+    for row in rows:
+        inform(f"  {row['reason']}")
+    return {
+        "dry_run": dry_run,
+        "skills": [_public(r) for r in rows],
+        "steps": [dict(s) for s in steps],
         "message": message,
     }

@@ -93,12 +93,12 @@ class Cloud:
             entry = next(
                 e
                 for e in _load(Path.cwd())["skills"].values()
-                if target.relative_to(Path.cwd()).as_posix() in e["paths"]
+                if target.relative_to(Path.cwd()).as_posix() in e["copies"]
             )
             return {
                 "skill_id": identity,
                 "version": 3,
-                "hash": entry["origin"]["hash"],
+                "hash": entry["base"]["hash"],
                 "bundle": self._original(identity),
                 "system": True,
             }
@@ -124,6 +124,26 @@ def cloud(project: Path, monkeypatch: pytest.MonkeyPatch) -> Cloud:
     monkeypatch.setattr(module, "api", server.api)
     monkeypatch.setattr(module, "cloud_server", lambda *a, **k: SimpleNamespace(url=SERVER))
     return server
+
+
+def view(entry: dict[str, Any]) -> dict[str, Any]:
+    """A v2 lock entry in the terms these tests check: its copies' paths, and the Cloud
+    skill and version it was last synced with (``skill_id`` None for a package copy)."""
+    identity, base = entry["identity"], entry.get("base") or {}
+    on_cloud = identity["kind"] == "cloud" or base.get("channel") == "cloud"
+    return {
+        **entry,
+        "paths": sorted(entry["copies"]),
+        "skill_id": identity.get("skill_id") if on_cloud else None,
+        "version": base.get("version"),
+        "hash": base.get("hash"),
+        "variant": identity["variant"],
+        "server": identity.get("server"),
+    }
+
+
+def views(project: Path) -> list[dict[str, Any]]:
+    return [view(e) for e in _load(project)["skills"].values()]
 
 
 def statuses(result: dict[str, Any]) -> dict[str, str]:
@@ -178,9 +198,7 @@ def test_pull_adds_updates_keeps_and_reports(cloud: Cloud, project: Path, capsys
         in agents
     )
     assert agents.endswith("## Project Notes\n\nmine\n")
-    entry = next(
-        e for e in _load(project)["skills"].values() if ".claude/skills/team-style" in e["paths"]
-    )
+    entry = next(e for e in views(project) if ".claude/skills/team-style" in e["paths"])
     assert entry["version"] == 2 and entry["skill_id"] == "team-id"
 
 
@@ -309,11 +327,7 @@ def test_push_saves_an_edited_builtin_as_your_own(
     result = fw.push_skills(project, confirm=True)
     assert statuses(result)["framework-data"] == "pushed"
     assert "own-id" in cloud.heads
-    entry = next(
-        e
-        for e in _load(project)["skills"].values()
-        if ".claude/skills/framework-data" in e["paths"]
-    )
+    entry = next(e for e in views(project) if ".claude/skills/framework-data" in e["paths"])
     assert entry["skill_id"] == "own-id"
     # The project's token names the project, so Cloud lists the copy in its setup
     assert cloud.posts[-1]["project_token"] == "fw_project"
@@ -364,7 +378,7 @@ def test_pull_keeps_a_newer_pushed_version_when_signed_out(
     result = fw.pull_skills(project)
     assert statuses(result)["team-style"] == "current"
     assert skill_text(project, "team-style") == mine
-    entry = next(e for e in _load(project)["skills"].values() if e.get("skill_id") == "team-id")
+    entry = next(e for e in views(project) if e.get("skill_id") == "team-id")
     assert entry["version"] == 2
 
 
@@ -430,17 +444,17 @@ def test_pull_keeps_a_copy_edited_between_planning_and_installing(
     fw.pull_skills(project)
     cloud.skills = {"team-style": cloud_entry(2, "Version two")}
     edited = project / ".agents/skills/team-style/SKILL.md"
-    real = skill_pull._plan
+    real = skill_pull.planner.plan
 
-    def plan(root: Path, name: str, entry: Any, relative: str, overwrite: bool) -> Any:
-        result = real(root, name, entry, relative, overwrite)
-        if relative == ".agents/skills/team-style":
-            edited.write_text(edited.read_text() + "Edited mid-pull\n")
+    def plan(*args: Any) -> Any:
+        result = real(*args)
+        edited.write_text(edited.read_text() + "Edited mid-pull\n")
         return result
 
-    monkeypatch.setattr(skill_pull, "_plan", plan)
+    monkeypatch.setattr(skill_pull.planner, "plan", plan)
     result = fw.pull_skills(project)
-    assert statuses(result)["team-style"] == "edited"
+    found = next(s for s in result["skills"] if s["name"] == "team-style")
+    assert found["status"] == "edited" and found["reason_code"] == "changed_during_pull"
     assert "Version two" in skill_text(project, "team-style")
     assert "Version one" in edited.read_text() and "Edited mid-pull" in edited.read_text()
 
@@ -462,12 +476,10 @@ def test_pull_refuses_a_skills_folder_that_is_a_file(
 
 
 def team_entry(project: Path) -> dict[str, Any]:
-    return next(
-        e for e in _load(project)["skills"].values() if ".claude/skills/team-style" in e["paths"]
-    )
+    return next(e for e in views(project) if ".claude/skills/team-style" in e["paths"])
 
 
-def test_pull_leaves_a_skill_with_a_missing_copy_alone(
+def test_pull_restores_a_missing_copy_beside_an_unedited_one(
     cloud: Cloud, project: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
 ) -> None:
     two_assistants(project)
@@ -487,14 +499,15 @@ def test_pull_leaves_a_skill_with_a_missing_copy_alone(
     shutil.rmtree(project / ".agents/skills/team-style")
 
     result = fw.pull_skills(project)
+    # v2: nothing edited would be lost, so the absent copy is restored. The setup's v1 is
+    # older than the project's v2, so it is copied from the project's copy, never v1.
     found = next(s for s in result["skills"] if s["name"] == "team-style")
-    assert found["status"] == "diverged"
-    assert 'skills_copy(from_="claude", to="agents", skills=["team-style"])' in found["hint"]
-    assert result["counts"]["diverged"] == 1
-    assert "diverged: team-style." in capsys.readouterr().err
-    # Nothing written for it, and the lock stays at v2
-    assert not (project / ".agents/skills/team-style").exists()
-    assert "Version two" in skill_text(project, "team-style")
+    assert found["status"] == "restored"
+    assert result["counts"]["diverged"] == 0
+    capsys.readouterr()
+    restored = (project / ".agents/skills/team-style/SKILL.md").read_text()
+    assert "Version two" in restored and "Version two" in skill_text(project, "team-style")
+    # Its record was already v2's: the lock doesn't change
     assert (project / ".framework/skills.lock.json").read_text() == lock
 
 
@@ -512,18 +525,24 @@ def test_pull_leaves_differing_tracked_copies_alone(cloud: Cloud, project: Path)
         assert team_entry(project)["version"] == 1
 
 
-def test_push_fails_a_skill_with_a_missing_tracked_copy(
+def test_push_fails_an_edited_skill_with_a_missing_tracked_copy(
     cloud: Cloud, project: Path, signed_in: None
 ) -> None:
     two_assistants(project)
     pulled(cloud, project)
     shutil.rmtree(project / ".agents/skills/team-style")
+    # v2: nothing is edited, so there is nothing to push (pull restores the copy)
+    result = fw.push_skills(project, confirm=True)
+    assert "team-style" not in statuses(result)
+    assert result["message"] == "Skills pushed: nothing to push"
+    # Edited beside the missing copy: failed, with the copy hint
+    claude = project / ".claude/skills/team-style/SKILL.md"
+    claude.write_text(claude.read_text() + "Edit\n")
     result = fw.push_skills(project, confirm=True)
     found = next(s for s in result["skills"] if s["name"] == "team-style")
     assert found["status"] == "failed"
     assert found["reason"].endswith("is missing.")
     assert found["hint"] == 'skills_copy(from_="claude", to="agents", skills=["team-style"])'
-    assert result["message"] != "Skills pushed: nothing to push"
     assert cloud.posts == []
 
 
@@ -542,7 +561,7 @@ def test_push_fails_only_the_skill_with_an_unreadable_copy(
     assert found["framework-data"]["status"] == "pushed"
 
 
-def test_pull_keeps_a_personal_skill_out_of_a_new_assistant_folder(
+def test_pull_keeps_a_personal_skill_when_a_new_assistant_folder_gets_the_builtin(
     cloud: Cloud, project: Path, signed_in: None
 ) -> None:
     pulled(cloud, project)
@@ -551,23 +570,26 @@ def test_pull_keeps_a_personal_skill_out_of_a_new_assistant_folder(
     assert statuses(fw.push_skills(project, confirm=True))["framework-data"] == "pushed"
 
     def owner() -> str:
-        return next(
-            e
-            for e in _load(project)["skills"].values()
-            if ".claude/skills/framework-data" in e["paths"]
-        )["skill_id"]
+        return next(e for e in views(project) if ".claude/skills/framework-data" in e["paths"])[
+            "skill_id"
+        ]
 
     assert owner() == "own-id"
     (project / ".agents/skills").mkdir(parents=True)
     two_assistants(project)  # A newly enabled assistant
     for overwrite in (False, True):
         result = fw.pull_skills(project, overwrite=overwrite)
-        found = next(s for s in result["skills"] if s["name"] == "framework-data")
-        assert found["status"] == "diverged"
-        assert (
-            'skills_copy(from_="claude", to="agents", skills=["framework-data"])' in (found["hint"])
+        rows = {r["paths"][0]: r for r in result["skills"] if r["name"] == "framework-data"}
+        # v2: the pushed copy is your own skill now, a different identity from the
+        # built-in the setup names: kept, with the call that retargets it. The new folder
+        # has no copy of either, so it gets the setup's built-in.
+        kept = rows[".claude/skills/framework-data"]
+        assert kept["status"] == "kept" and kept["reason_code"] == "other_identity"
+        assert kept["hint"] == (
+            'skills_move(".claude/skills/framework-data", builtin="framework-data", '
+            'variant="python")'
         )
-        assert not (project / ".agents/skills/framework-data").exists()
+        assert rows[".agents/skills/framework-data"]["status"] in ("added", "current")
         assert skill_text(project, "framework-data") == mine
         assert owner() == "own-id"
     # Unedited built-ins still go to the new folder
@@ -590,31 +612,26 @@ def test_installers_never_replace_a_cloud_identity_or_go_back_a_version(
     cloud: Cloud, project: Path
 ) -> None:
     from framework.ai import _shipped
-    from framework.skill_sync import _install_cloud, _install_package, _save
+    from tests.conftest import install_skill
 
     fw.pull_skills(project)
-    state = _load(project)
-    key = next(k for k, e in state["skills"].items() if ".claude/skills/team-style" in e["paths"])
-    state["skills"][key]["version"] = 5
-    data = next(
-        k for k, e in state["skills"].items() if ".claude/skills/framework-data" in e["paths"]
+    team = project / ".claude/skills/team-style/SKILL.md"
+    team.write_text(team.read_text() + "Version five\n")
+    own(project, ".claude/skills/team-style", "team-id", 5)
+    data = project / ".claude/skills/framework-data/SKILL.md"
+    data.write_text(data.read_text() + "Mine\n")
+    own(project, ".claude/skills/framework-data", "own-id", 1)
+    # The setup names v1: older than the project's v5, so never written, even with overwrite
+    result = fw.pull_skills(project, overwrite=True)
+    assert statuses(result)["team-style"] == "current"
+    assert "Version five" in team.read_text()
+    assert lock_entry(project, ".claude/skills/team-style")["version"] == 5
+    # The package's copy never replaces a copy tracked as another skill
+    assert not install_skill(
+        _shipped("framework-data"), project, ".claude/skills/framework-data", force=True
     )
-    state["skills"][data]["skill_id"] = "own-id"
-    _save(project, state)
-    entry = cloud_entry(1, "Version one")
-    assert _install_cloud(project, ".claude/skills/team-style", entry, force=True) is False
-    assert (
-        _install_package(
-            _shipped("framework-data"),
-            project,
-            ".agents/skills/framework-data",
-            "framework-data",
-            force=True,
-        )
-        is False
-    )
-    assert _load(project)["skills"][data]["skill_id"] == "own-id"
-    assert not (project / ".agents/skills/framework-data").exists()
+    assert "Mine" in data.read_text()
+    assert lock_entry(project, ".claude/skills/framework-data")["skill_id"] == "own-id"
 
 
 def test_overwrite_replaces_an_edited_builtin_in_every_folder_including_a_new_one(
@@ -630,13 +647,9 @@ def test_overwrite_replaces_an_edited_builtin_in_every_folder_including_a_new_on
     claude = (project / ".claude/skills/framework-data/SKILL.md").read_text()
     assert claude != "my notes\n"
     assert (project / ".agents/skills/framework-data/SKILL.md").read_text() == claude
-    entry = next(
-        e
-        for e in _load(project)["skills"].values()
-        if ".claude/skills/framework-data" in e["paths"]
-    )
+    entry = next(e for e in views(project) if ".claude/skills/framework-data" in e["paths"])
     assert ".agents/skills/framework-data" in entry["paths"]
-    assert "skill_id" not in entry
+    assert entry["skill_id"] is None
     # An unedited Cloud skill named by the setup at the same version fills the new folder too
     assert (project / ".agents/skills/team-style/SKILL.md").read_text() == skill_text(
         project, "team-style"
@@ -648,22 +661,20 @@ def test_overwrite_replaces_an_edited_builtin_in_every_folder_including_a_new_on
 
 
 def lock_entry(project: Path, path: str) -> dict[str, Any]:
-    return next(e for e in _load(project)["skills"].values() if path in e["paths"])
+    return next(e for e in views(project) if path in e["paths"])
 
 
 def own(project: Path, path: str, skill_id: str, version: int) -> None:
-    """Tie a tracked copy to a Cloud skill, as a push or a Cloud pull would."""
+    """Tie a tracked copy's entry to a Cloud skill at a version, as a push or a Cloud pull
+    would: its base and every copy's record become the copy's current hash."""
+    from framework._skill_plan import after_push
     from framework.skill_sync import _save, scan
 
     state = _load(project)
-    key = next(k for k, e in state["skills"].items() if path in e["paths"])
-    state["skills"][key].update(
-        skill_id=skill_id,
-        version=version,
-        server=SERVER,
-        hash=bundle_hash(scan(project / path)),
-    )
-    _save(project, state)
+    key = next(k for k, e in state["skills"].items() if path in e["copies"])
+    digest = bundle_hash(scan(project / path))
+    response = {"skill_id": skill_id, "version": version, "hash": digest, "server": SERVER}
+    _save(project, after_push(state, key, response))
 
 
 def test_inline_setup_content_never_replaces_a_personal_skill(
@@ -683,7 +694,7 @@ def test_inline_setup_content_never_replaces_a_personal_skill(
     for overwrite in (False, True):
         result = fw.pull_skills(project, overwrite=overwrite)
         found = next(s for s in result["skills"] if s["name"] == "framework-data")
-        assert found["status"] == "kept" and found["hint"] is None
+        assert found["status"] == "kept" and found["hint_key"] == "retarget"
         assert found["reason"] == (
             ".claude/skills/framework-data belongs to a different skill (own-id), so pull left "
             "it alone."
@@ -776,36 +787,27 @@ def test_a_new_path_joins_the_skills_one_lock_entry(cloud: Cloud, project: Path)
     two_assistants(project)  # A newly enabled assistant
     fw.pull_skills(project)
     for name in ("team-style", "framework-data"):
-        entries = [
-            e
-            for e in _load(project)["skills"].values()
-            if any(Path(p).name == name for p in e["paths"])
-        ]
+        entries = [e for e in views(project) if any(Path(p).name == name for p in e["paths"])]
         assert len(entries) == 1
         assert sorted(entries[0]["paths"]) == [f".agents/skills/{name}", f".claude/skills/{name}"]
 
 
 def test_package_installers_decline_any_cloud_identity(cloud: Cloud, project: Path) -> None:
     from framework.ai import _shipped
-    from framework.skill_sync import _install_package, package_status
+    from tests.conftest import install_skill
 
     fw.pull_skills(project)
     path = ".claude/skills/framework-data"
     (project / path / "SKILL.md").write_text("---\nname: framework-data\ndescription: x\n---\nv7\n")
     own(project, path, "framework:framework-data", 7)
-    assert package_status(_shipped("framework-data"), project, path, "framework-data") == (
-        "current"
-    )
+    lock = (project / ".framework/skills.lock.json").read_text()
+    # Last updated from Cloud: the package's copy is kept out, unedited or edited
+    assert not install_skill(_shipped("framework-data"), project, path, force=True)
     (project / path / "SKILL.md").write_text("edited\n")
-    assert package_status(_shipped("framework-data"), project, path, "framework-data") == (
-        "account"
-    )
-    assert (
-        _install_package(_shipped("framework-data"), project, path, "framework-data", force=True)
-        is False
-    )
+    assert not install_skill(_shipped("framework-data"), project, path, force=True)
     assert (project / path / "SKILL.md").read_text() == "edited\n"
     assert lock_entry(project, path)["skill_id"] == "framework:framework-data"
+    assert (project / ".framework/skills.lock.json").read_text() == lock
 
 
 @pytest.mark.parametrize("newer", [False, True])
@@ -842,20 +844,17 @@ def test_overwrite_resets_your_cloud_skill_to_its_own_cloud_version(
 
 
 def entries_for(project: Path, name: str) -> list[dict[str, Any]]:
-    return [
-        e
-        for e in _load(project)["skills"].values()
-        if any(Path(p).name == name for p in e["paths"])
-    ]
+    return [e for e in views(project) if any(Path(p).name == name for p in e["paths"])]
 
 
-def test_identical_bytes_still_take_the_setups_cloud_identity(cloud: Cloud, project: Path) -> None:
+def test_identical_bytes_never_switch_a_copys_identity(cloud: Cloud, project: Path) -> None:
     from framework.ai import _shipped
     from framework.skill_sync import _source_files, validate
 
     fw.pull_skills(project)
     path = ".claude/skills/framework-data"
-    assert "skill_id" not in lock_entry(project, path)
+    assert lock_entry(project, path)["skill_id"] is None
+    lock = (project / ".framework/skills.lock.json").read_text()
     before = (project / path / "SKILL.md").stat().st_mtime_ns
     files = validate(_source_files(_shipped("framework-data")))
     cloud.skills = {
@@ -871,10 +870,15 @@ def test_identical_bytes_still_take_the_setups_cloud_identity(cloud: Cloud, proj
             },
         }
     }
+    # v2: only push and skills_move() change an identity. The copy is kept, with the call
+    # that retargets it, even with the same bytes.
     result = fw.pull_skills(project)
-    assert statuses(result)["framework-data"] == "current"
-    entry = lock_entry(project, path)
-    assert entry["skill_id"] == "own-id" and entry["version"] == 1
+    found = next(s for s in result["skills"] if s["name"] == "framework-data")
+    assert found["status"] == "kept" and found["reason_code"] == "other_identity"
+    assert found["hint"] == (
+        'skills_move(".claude/skills/framework-data", skill_id="own-id", variant="python")'
+    )
+    assert (project / ".framework/skills.lock.json").read_text() == lock
     assert (project / path / "SKILL.md").stat().st_mtime_ns == before
     assert not (project / ".framework/skills-backups").exists()
 
@@ -920,8 +924,9 @@ def test_restore_puts_back_every_tracked_path_it_can_and_hints_the_rest(
     two_assistants(project)  # A newly enabled assistant
     fw.pull_skills(project)
     state = _load(project)
-    key = next(k for k, e in state["skills"].items() if ".claude/skills/team-style" in e["paths"])
-    state["skills"][key]["paths"].append("team/skills/team-style")
+    key = next(k for k, e in state["skills"].items() if ".claude/skills/team-style" in e["copies"])
+    copies = state["skills"][key]["copies"]
+    copies["team/skills/team-style"] = dict(copies[".claude/skills/team-style"])
     _save(project, state)
     (project / "team/skills").mkdir(parents=True)
     # Both assistant copies gone, and .agents/skills (Codex disabled again) with them
@@ -933,14 +938,15 @@ def test_restore_puts_back_every_tracked_path_it_can_and_hints_the_rest(
     capsys.readouterr()
     result = fw.pull_skills(project)
     found = next(s for s in result["skills"] if s["name"] == "team-style")
-    assert found["status"] == "restored"
-    assert found["restored"] == [".claude/skills/team-style", "team/skills/team-style"]
+    restored = [s["path"] for s in result["steps"] if s["status"] == "restored"]
+    assert restored == [".claude/skills/team-style", "team/skills/team-style"]
     assert (project / "team/skills/team-style/SKILL.md").read_text() == skill_text(
         project, "team-style"
     )
-    assert ".agents/skills/team-style is tracked too" in found["reason"]
-    assert found["hint"] == 'skills_copy(from_="claude", to="agents", skills=["team-style"])'
-    assert "restored: team-style. Restored .claude/skills/team-style" in capsys.readouterr().err
+    # v2: the row's status is its worst copy's: the copy whose folder is gone is missing
+    assert found["status"] == "missing" and found["reason_code"] == "folder_gone"
+    assert found["reason"] == ".agents/skills/team-style is tracked, and its folder is gone."
+    assert "missing: team-style. .agents/skills/team-style is tracked" in capsys.readouterr().err
 
 
 def test_a_split_lock_from_an_older_release_is_merged(
@@ -950,12 +956,22 @@ def test_a_split_lock_from_an_older_release_is_merged(
 
     two_assistants(project)
     pulled(cloud, project)
-    # As older releases wrote it: one Cloud skill, two entries
-    state = _load(project)
-    key = next(k for k, e in state["skills"].items() if ".claude/skills/team-style" in e["paths"])
-    entry = state["skills"][key]
-    state["skills"][key] = {**entry, "paths": [".claude/skills/team-style"]}
-    state["skills"]["split"] = {**entry, "paths": [".agents/skills/team-style"]}
+    # As older releases wrote it (v1): one Cloud skill, two entries
+    entry = team_entry(project)
+    old = {
+        "variant": "python",
+        "server": SERVER,
+        "skill_id": "team-id",
+        "version": entry["version"],
+        "hash": entry["hash"],
+    }
+    state = {
+        "schema": 1,
+        "skills": {
+            f"account:{SERVER}:team-id:python": {**old, "paths": [".claude/skills/team-style"]},
+            "split": {**old, "paths": [".agents/skills/team-style"]},
+        },
+    }
     path = project / ".framework/skills.lock.json"
     path.write_text(json.dumps(state))
     [merged] = entries_for(project, "team-style")
@@ -1076,17 +1092,16 @@ def test_a_renamed_copy_gets_an_explanation_not_a_command(cloud: Cloud, project:
     (project / ".agents/skills").mkdir(parents=True)
     two_assistants(project)  # A newly enabled assistant
     fw.pull_skills(project)
-    # An adoption under another folder name: one entry, two names
+    # An adoption under another folder name: one entry, two names, the other one absent
     state = _load(project)
-    key = next(k for k, e in state["skills"].items() if ".claude/skills/team-style" in e["paths"])
-    state["skills"][key]["paths"].append(".agents/skills/house-style")
+    key = next(k for k, e in state["skills"].items() if ".claude/skills/team-style" in e["copies"])
+    copies = state["skills"][key]["copies"]
+    copies[".agents/skills/house-style"] = copies.pop(".agents/skills/team-style")
     _save(project, state)
-    shutil.copytree(project / ".claude/skills/team-style", project / ".agents/skills/house-style")
     shutil.rmtree(project / ".agents/skills/team-style")
-    state = _load(project)
-    state["skills"][key]["paths"].remove(".agents/skills/team-style")
-    _save(project, state)
-    shutil.rmtree(project / ".agents/skills/house-style")
+    # Edited beside the absent copy: diverged (unedited, it would just be restored)
+    claude = project / ".claude/skills/team-style/SKILL.md"
+    claude.write_text(claude.read_text() + "Edit\n")
     found = next(s for s in fw.pull_skills(project)["skills"] if s["name"] == "team-style")
     assert found["status"] == "diverged"
     assert found["hint"] is None
@@ -1132,7 +1147,7 @@ def test_two_independent_skills_with_one_name_are_not_diverged(
 
 
 def test_variants_of_one_cloud_skill_never_merge() -> None:
-    from framework.skill_sync import _merge_split
+    from framework._skill_plan import migrate
 
     base = {"skill_id": "team-id", "server": SERVER, "hash": "h", "version": 1}
     state = {
@@ -1148,8 +1163,11 @@ def test_variants_of_one_cloud_skill_never_merge() -> None:
             },
         },
     }
-    _merge_split(state)
-    assert sorted(state["skills"]) == ["other-server", "py", "r"]
+    assert sorted(migrate(state)["skills"]) == [
+        f"{SERVER}/team-id@python",
+        f"{SERVER}/team-id@r",
+        "https://other.example/team-id@python",
+    ]
 
 
 def test_switching_assistants_still_moves_every_tracked_copy(cloud: Cloud, project: Path) -> None:
@@ -1200,9 +1218,30 @@ def test_a_case_alias_source_still_joins_the_entry(cloud: Cloud, project: Path) 
 # Round 10: per entry, end to end
 
 
+def independent_row(row: dict[str, Any]) -> bool:
+    """Whether a row is an independent entry's: your own skill (own-id) or a folder
+    skills_sync() tracks, never the setup's skill."""
+    entry = str(row.get("entry") or "")
+    return "own-id" in entry or entry.startswith("local:")
+
+
+def local_entry(path: str, record: str = "x") -> dict[str, Any]:
+    """A v2 entry for a folder skills_sync() started tracking, not yet on Cloud."""
+    return {
+        "identity": {"kind": "local", "variant": "python"},
+        "base": None,
+        "known": [],
+        "copies": {path: {"hash": record}},
+    }
+
+
 def setup_row(result: dict[str, Any], name: str) -> dict[str, Any]:
-    """The setup's skill's row (not an independent entry's)."""
-    return next(s for s in result["skills"] if s["name"] == name and "entry" not in s)
+    """The setup's skill's row (not an independent entry's, nor an untracked folder's)."""
+    return next(
+        s
+        for s in result["skills"]
+        if s["name"] == name and not independent_row(s) and s["status"] != "untracked"
+    )
 
 
 def test_a_hand_made_untracked_copy_is_left_alone(cloud: Cloud, project: Path) -> None:
@@ -1247,7 +1286,7 @@ def test_a_diverged_independent_pair_never_blocks_the_setups_skill(
     result = fw.pull_skills(project)
     assert setup_row(result, "team-style")["status"] == "updated"
     assert "Version two" in skill_text(project, "team-style")
-    lab_row = next(s for s in result["skills"] if s.get("entry"))
+    lab_row = next(s for s in result["skills"] if independent_row(s))
     assert lab_row["status"] == "diverged"
     assert sorted(lab_row["paths"]) == ["lab/skills/team-style", "lab2/skills/team-style"]
     assert "Lab edit" in (lab / "SKILL.md").read_text()
@@ -1283,11 +1322,12 @@ def test_two_independent_skills_with_one_name(
     assert "skills_copy(from" not in (row.get("hint") or "")
     assert "Version two" in skill_text(project, "team-style")
     if case == "delete-one":
-        assert not theirs.exists()  # Never refilled with the setup's skill
+        # v2: signed in, restored from its own Cloud skill, never the setup's
+        assert "Theirs" in (theirs / "SKILL.md").read_text()
     else:
         assert "Version two" not in (theirs / "SKILL.md").read_text()
     if case == "diverge-one":
-        assert any(s.get("entry") and s["status"] == "diverged" for s in result["skills"])
+        assert any(independent_row(s) and s["status"] == "diverged" for s in result["skills"])
     assert lock_entry(project, ".claude/skills/team-style")["version"] == 2
 
 
@@ -1298,11 +1338,11 @@ def test_an_unreadable_entry_fails_alone(cloud: Cloud, project: Path) -> None:
     (project / "lab/skills/broken").mkdir(parents=True)
     (project / "lab/skills/broken/notes.md").write_text("no SKILL.md here\n")
     state = _load(project)
-    state["skills"]["lab"] = {"paths": ["lab/skills/broken"], "variant": "python", "hash": "x"}
+    state["skills"]["local:lab/skills/broken"] = local_entry("lab/skills/broken")
     _save(project, state)
     cloud.skills = {"team-style": cloud_entry(2, "Version two")}
     result = fw.pull_skills(project)
-    broken = next(s for s in result["skills"] if s.get("entry") == "lab")
+    broken = next(s for s in result["skills"] if s.get("entry") == "local:lab/skills/broken")
     assert broken["status"] == "failed" and "SKILL.md" in broken["reason"]
     assert setup_row(result, "team-style")["status"] == "updated"
     # The setup's own skill failing to read fails just that skill
@@ -1338,7 +1378,7 @@ def test_a_case_alias_target_is_recorded_as_spelled_on_disk(
 
 
 def test_builtin_origins_merge_only_within_a_variant() -> None:
-    from framework.skill_sync import _merge_split
+    from framework._skill_plan import migrate
 
     origin = {"skill_id": "framework:framework-data", "hash": "h"}
     state = {
@@ -1353,9 +1393,9 @@ def test_builtin_origins_merge_only_within_a_variant() -> None:
             "py2": {"origin": origin, "variant": "python", "paths": ["lab/framework-data"]},
         },
     }
-    _merge_split(state)
-    assert sorted(state["skills"]) == ["py", "r"]
-    assert sorted(state["skills"]["py"]["paths"]) == [
+    merged = migrate(state)["skills"]
+    assert sorted(merged) == ["framework:framework-data@python", "framework:framework-data@r"]
+    assert sorted(merged["framework:framework-data@python"]["copies"]) == [
         ".claude/skills/framework-data",
         "lab/framework-data",
     ]
@@ -1402,23 +1442,26 @@ def test_a_tracked_folder_gone_after_a_switch_is_missing_and_the_copy_untracked(
     result = fw.pull_skills(project)
     rows = [s for s in result["skills"] if s["name"] == "team-style"]
     assert {r["status"] for r in rows} == {"missing", "untracked"}
+    # v2: both rows give the skills_move() call that records the move
+    move = 'skills_move(".claude/skills/team-style", ".agents/skills/team-style")'
     missing = next(r for r in rows if r["status"] == "missing")
     assert missing["paths"] == [".claude/skills/team-style"]
-    assert missing["reason"] == "Every tracked copy is gone." and missing["hint"] is None
+    assert missing["reason"] == ".claude/skills/team-style is tracked, and its folder is gone."
+    assert missing["hint"] == move
     kept = next(r for r in rows if r["status"] == "untracked")
     assert kept["paths"] == [".agents/skills/team-style"]
     assert kept["reason"] == ".agents/skills/team-style isn't tracked, so pull left it alone."
-    assert 'skills_copy(from_="agents", to="claude", skills=["team-style"])' in kept["hint"]
+    assert kept["hint"] == move
     assert "Version one" in (project / ".agents/skills/team-style/SKILL.md").read_text()
     err = capsys.readouterr().err
-    assert "missing: team-style. Every tracked copy is gone." in err
+    assert "missing: team-style. .claude/skills/team-style is tracked" in err
     assert "untracked: team-style. .agents/skills/team-style isn't tracked" in err
-    assert "To track it with this skill: skills_copy(" in err
-    # The hint does what it says: copy it back, record it, and both copies are tracked
-    fw.skills_copy(from_="agents", to="claude", skills=["team-style"], project_path=project)
-    fw.skills_copy(from_="claude", to="agents", skills=["team-style"], project_path=project)
+    assert f"If it was moved by hand, record the move: {move}" in err
+    # The hint does what it says: the lock follows the folder, and pull finds it current
+    fw.skills_move(".claude/skills/team-style", ".agents/skills/team-style", project_path=project)
     [entry] = entries_for(project, "team-style")
-    assert sorted(entry["paths"]) == [".agents/skills/team-style", ".claude/skills/team-style"]
+    assert entry["paths"] == [".agents/skills/team-style"]
+    assert setup_row(fw.pull_skills(project), "team-style")["status"] == "current"
 
 
 def test_another_cloud_skill_under_the_same_name_is_kept_not_current(
@@ -1433,7 +1476,9 @@ def test_another_cloud_skill_under_the_same_name_is_kept_not_current(
         result = fw.pull_skills(project, overwrite=overwrite)
         row = setup_row(result, "team-style")
         assert row["status"] == "kept"
-        assert row["hint"] is None
+        assert row["hint"] == (
+            'skills_move(".claude/skills/team-style", skill_id="acct-2", variant="python")'
+        )
         assert row["reason"] == (
             ".claude/skills/team-style belongs to a different skill (team-id), so pull left "
             "it alone."
@@ -1454,18 +1499,26 @@ def test_a_deleted_personal_fork_is_restored_from_its_own_cloud_skill(
     data.write_text(mine)
     assert statuses(fw.push_skills(project, confirm=True))["framework-data"] == "pushed"
     shutil.rmtree(data.parent)
-    # Signed out: missing, and the hint names what restores it
+    # Signed out: missing, and the hint names what restores it. The folder tracks your
+    # skill, so the setup's built-in is kept out of it.
     monkeypatch.delenv("FW_CLOUD_TOKEN")
-    row = setup_row(fw.pull_skills(project), "framework-data")
+    result = fw.pull_skills(project)
+    kept, row = sorted(
+        (r for r in result["skills"] if r["name"] == "framework-data"),
+        key=lambda r: r["status"],
+    )
+    assert kept["status"] == "kept" and kept["reason_code"] == "other_identity"
     assert row["status"] == "missing"
     assert row["reason"] == "Every tracked copy is gone." and row["skill_id"] == "own-id"
     assert row_text(row) == (
-        "Every tracked copy is gone. Its last pushed version is Cloud skill own-id."
+        "Every tracked copy is gone. Its last pushed version is Cloud skill own-id. "
+        "After cloud_login(), pull can get it from Cloud."
     )
     assert not data.exists()
     # Signed in: restored from own-id, never from the package
     monkeypatch.setenv("FW_CLOUD_TOKEN", "fw_user")
-    row = setup_row(fw.pull_skills(project), "framework-data")
+    rows = fw.pull_skills(project)["skills"]
+    row = next(r for r in rows if independent_row(r) and r["status"] != "kept")
     assert row["status"] == "restored"
     assert data.read_text() == mine
     assert lock_entry(project, ".claude/skills/framework-data")["skill_id"] == "own-id"
@@ -1515,7 +1568,7 @@ def run_hints(project: Path, hint: str) -> None:
         eval(f"fw.skills_copy({call}, project_path=project)", {"fw": fw, "project": project})
 
 
-def test_a_deleted_skill_outside_the_setup_is_missing_and_never_promised(
+def test_a_deleted_skill_outside_the_setup_is_missing_then_restored_by_identity(
     cloud: Cloud, project: Path, signed_in: None, capsys: Any
 ) -> None:
     pulled(cloud, project)
@@ -1530,13 +1583,12 @@ def test_a_deleted_skill_outside_the_setup_is_missing_and_never_promised(
         "missing: team-style. Every tracked copy is gone. Its last pushed version is Cloud "
         "skill own-id." in err
     )
+    # v2: signed in, pull fetches your skill by its own identity and restores it
     result = fw.pull_skills(project)
-    row = next(s for s in result["skills"] if s.get("entry") and s["status"] == "missing")
+    row = next(s for s in result["skills"] if independent_row(s))
     assert row["paths"] == ["lab/skills/team-style"]
-    assert row["reason"] == "Every tracked copy is gone." and row["hint"] is None
-    assert row["skill_id"] == "own-id"
-    assert result["counts"]["missing"] >= 1
-    assert not lab.exists()
+    assert row["status"] == "restored"
+    assert "Theirs" in (lab / "SKILL.md").read_text()
 
 
 @pytest.mark.skipif(
@@ -1549,7 +1601,7 @@ def test_an_unreadable_custom_folder_fails_only_its_entry(cloud: Cloud, project:
     (project / "lab/skills/team-x").mkdir(parents=True)
     (project / "lab/skills/team-x/SKILL.md").write_text("x\n")
     state = _load(project)
-    state["skills"]["lab"] = {"paths": ["lab/skills/team-x"], "variant": "python", "hash": "x"}
+    state["skills"]["local:lab/skills/team-x"] = local_entry("lab/skills/team-x")
     _save(project, state)
     (project / "lab").chmod(0)
     try:
@@ -1557,7 +1609,10 @@ def test_an_unreadable_custom_folder_fails_only_its_entry(cloud: Cloud, project:
         result = fw.pull_skills(project)
     finally:
         (project / "lab").chmod(0o755)
-    assert next(s for s in result["skills"] if s.get("entry") == "lab")["status"] == "failed"
+    assert (
+        next(s for s in result["skills"] if s.get("entry") == "local:lab/skills/team-x")["status"]
+        == "failed"
+    )
     assert setup_row(result, "team-style")["status"] == "updated"
 
 
@@ -1583,7 +1638,7 @@ def test_the_kept_hint_for_another_skill_states_the_situation(cloud: Cloud, proj
     other["sync"] = {**other["sync"], "skill_id": "acct-2"}
     cloud.skills = {"team-style": other}
     row = setup_row(fw.pull_skills(project), "team-style")
-    assert row["hint"] is None
+    assert row["hint_key"] == "retarget" and row["hint_args"]["identity"]["skill_id"] == "acct-2"
     assert "belongs to a different skill (team-id), so pull left it alone." in row["reason"]
 
 
@@ -1597,7 +1652,8 @@ def test_running_a_three_copy_hint_once_reconciles_every_copy(cloud: Cloud, proj
     row = setup_row(fw.pull_skills(project), "team-style")
     assert row["status"] == "diverged"
     run_hints(project, row["hint"])
-    assert statuses(fw.pull_skills(project))["team-style"] == "current"
+    # v2: each copy takes the edited source's record, so all three are one edit, kept
+    assert statuses(fw.pull_skills(project))["team-style"] == "edited"
     texts = {
         (project / f / "team-style/SKILL.md").read_text()
         for f in (".claude/skills", ".agents/skills", "lab/skills")
@@ -1638,10 +1694,14 @@ def test_another_variant_or_server_is_another_skill(
     from framework.skill_sync import _save
 
     fw.pull_skills(project)
+    from framework._skill_plan import key_of
+
     state = _load(project)
-    key = next(k for k, e in state["skills"].items() if ".claude/skills/team-style" in e["paths"])
+    key = next(k for k, e in state["skills"].items() if ".claude/skills/team-style" in e["copies"])
     mine = {"variant": "r", "server": "https://other.example"}[field]
-    state["skills"][key][field] = mine
+    entry = state["skills"].pop(key)
+    entry["identity"][field] = mine
+    state["skills"][key_of(entry["identity"])] = entry
     _save(project, state)
     other = cloud_entry(2, "Version two")
     if field == "variant":
@@ -1695,19 +1755,16 @@ def test_direct_sync_never_reuses_a_key_or_overwrites_an_entry(
     pulled(cloud, project)
     # An unrelated entry whose key is the path about to be synced
     state = _load(project)
-    state["skills"]["lab/skills/notes"] = {
-        "paths": [".claude/skills/team-style-old"],
-        "variant": "python",
-        "hash": "x",
-    }
+    state["skills"]["local:lab/skills/notes"] = local_entry(".claude/skills/team-style-old")
     _save(project, state)
     lab = project / "lab/skills/notes"
     lab.mkdir(parents=True)
     (lab / "SKILL.md").write_text("---\nname: notes\ndescription: x\n---\nNotes\n")
     fw.skills_sync("lab/skills/notes", project)
     skills = _load(project)["skills"]
-    assert skills["lab/skills/notes"]["paths"] == [".claude/skills/team-style-old"]
-    assert skills["lab/skills/notes#2"]["paths"] == ["lab/skills/notes"]
+    assert list(skills["local:lab/skills/notes"]["copies"]) == [".claude/skills/team-style-old"]
+    # Pushed as a new skill: tracked under that skill's key
+    assert list(skills[f"{SERVER}/own-id@python"]["copies"]) == ["lab/skills/notes"]
     # An explicit skill_id that the lock tracks: the path joins that entry
     shutil.copytree(project / ".claude/skills/team-style", project / "lab/skills/team-style")
     result = fw.skills_sync("lab/skills/team-style", project, skill_id="team-id")

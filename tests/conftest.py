@@ -124,3 +124,49 @@ def save_login(server: str = "https://framework.pub") -> None:
     from framework.config_home import ensure_config_dir
 
     _yaml.write(ensure_config_dir() / "cloud.yml", {"server": server})
+
+
+def install_skill(
+    source: Any, root: Path, relative: str, name: str | None = None, *, force: bool = False
+) -> bool:
+    """Install a package-style skill folder (``source``) at ``relative`` as pull would,
+    through the skills planner, and record it in the lock. True when the path then holds
+    the source's copy. ``force`` replaces an edited copy (``overwrite``)."""
+    import posixpath
+
+    from framework.skill_pull import _pull_run
+    from framework.skill_sync import _lock, _shipped_history, _source_files, bundle_hash, validate
+
+    name = name or posixpath.basename(relative)
+    files = validate(_source_files(source))
+    digest = bundle_hash(files)
+    known = set((_shipped_history().get(name) or {}).get("python") or []) | {digest}
+    offer = {
+        "source": "package",
+        "skills": [
+            {
+                "name": name,
+                "identity": {
+                    "kind": "builtin",
+                    "skill_id": f"framework:{name}",
+                    "variant": "python",
+                },
+                "channel": "package",
+                "version": None,
+                "server": None,
+                "hash": digest,
+                "known": sorted(known),
+                "bundle": files,
+            }
+        ],
+    }
+    opt = {
+        "command": "upgrade",
+        "dirs": [posixpath.dirname(relative)],
+        "scope": "all",
+        "overwrite": force,
+    }
+    with _lock(Path(root)):
+        done = _pull_run(Path(root), offer, opt, False)
+    held = ("added", "restored", "updated", "current", "replaced")
+    return any(s["path"] == relative and s["status"] in held for s in done["steps"])

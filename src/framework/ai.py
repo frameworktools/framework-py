@@ -116,14 +116,6 @@ def _shipped(name: str) -> Traversable:
     return resources.files("framework").joinpath(f"templates/skills/{name}")
 
 
-def _copy_tree(source: Traversable, root: Path, target: str) -> None:
-    for entry in source.iterdir():
-        if entry.is_dir():
-            _copy_tree(entry, root, f"{target}/{entry.name}")
-        else:
-            _write(root, f"{target}/{entry.name}", entry.read_text(encoding="utf-8"))
-
-
 def write_ai_files(root: Path, spec: dict[str, Any]) -> list[str]:
     """Write AGENTS.md, assistant stubs, skills, and (for sensitive projects) agent guards."""
     written = []
@@ -139,24 +131,13 @@ def write_ai_files(root: Path, spec: dict[str, Any]) -> list[str]:
         _write(root, stub, "@AGENTS.md\n" if stub == "CLAUDE.md" else pointer_stub(spec["name"]))
         written.append(stub)
 
-    for name, entry in (spec.get("skills") or {}).items():
-        for folder in folders:
-            target = f"{folder}/{name}"
-            if entry.get("package") is True:
-                from framework.skill_sync import install_package
+    skills = {n: e for n, e in (spec.get("skills") or {}).items() if isinstance(e, dict)}
+    if skills:
+        from framework.skill_pull import install_setup_skills
 
-                if not install_package(_shipped(name), root, target, name):
-                    continue  # Declined (an existing edited or Cloud copy): not written
-            elif entry.get("sync") and entry.get("bundle"):
-                from framework.skill_sync import install_cloud
-
-                if not install_cloud(root, target, entry):
-                    continue
-            else:
-                _write(root, f"{target}/SKILL.md", entry["content"])
-                for relative, content in (entry.get("files") or {}).items():
-                    _write(root, f"{target}/{relative}", content)
-            written.append(target)
+        # Recorded in .framework/skills.lock.json; an existing edited copy, or one another
+        # skill tracks, is left alone and not listed
+        written += install_setup_skills(root, skills, folders)
 
     if spec_sensitive(spec):
         guard = write_agent_guards(root, spec)

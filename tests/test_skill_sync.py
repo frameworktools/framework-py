@@ -9,11 +9,10 @@ import pytest
 from framework.skill_sync import (
     _load,
     bundle_hash,
-    install_package,
-    package_status,
     scan,
     skills_sync,
 )
+from tests.conftest import install_skill as install_package
 
 
 def write_skill(root, text="First"):
@@ -88,7 +87,11 @@ def test_text_files_hash_with_lf_and_binary_files_hash_raw(tmp_path):
     assert install_package(source, tmp_path, ".agents/skills/example", "example")
     installed = tmp_path / ".agents/skills/example/SKILL.md"
     installed.write_bytes(installed.read_bytes().replace(b"\n", b"\r\n"))
-    assert package_status(source, tmp_path, ".agents/skills/example", "example") == "current"
+    lock = (tmp_path / ".framework/skills.lock.json").read_bytes()
+    assert install_package(source, tmp_path, ".agents/skills/example", "example")
+    # Current: nothing to write or record
+    assert (tmp_path / ".framework/skills.lock.json").read_bytes() == lock
+    assert installed.read_bytes().count(b"\r\n") > 0
 
 
 def test_push_pull_conflict_status_and_timeout_retry(tmp_path, cloud):
@@ -138,7 +141,7 @@ def test_safe_package_refresh_aliases_and_symlinks(tmp_path):
     (source / "SKILL.md").write_text("New package version\n")
     assert not install_package(source, tmp_path, ".agents/skills/example", "example")
     assert "Personal edit" in installed.read_text()
-    assert len(next(iter(_load(tmp_path)["skills"].values()))["paths"]) == 2
+    assert len(next(iter(_load(tmp_path)["skills"].values()))["copies"]) == 2
     (tmp_path / ".agents/skills/example/link").symlink_to(source / "SKILL.md")
     with pytest.raises(ValueError, match="symlink"):
         scan(installed.parent)

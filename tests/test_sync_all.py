@@ -323,38 +323,48 @@ def test_pull_stata_leaves_packages_alone(cloud: Cloud, project: Path) -> None:
 def edited_skill(
     monkeypatch: pytest.MonkeyPatch, pushed: list[str], signed_in: bool = True
 ) -> None:
-    """An edited skill to push, without reaching Cloud."""
+    """An edited skill to push, without reaching Cloud: a Cloud skill tracked in the lock
+    whose copy differs from its record."""
     import framework.cloud as module
     import framework.skill_pull as skill_pull
 
     save_login(SERVER)
+    root = Path.cwd()
+    folder = root / ".claude/skills/analysis"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "SKILL.md").write_text("---\nname: analysis\n---\nEdited\n")
+    pulled = "0" * 64
+    key = f"{SERVER}/analysis-id@python"
+    lock = {
+        "schema": 2,
+        "skills": {
+            key: {
+                "identity": {
+                    "kind": "cloud",
+                    "skill_id": "analysis-id",
+                    "variant": "python",
+                    "server": SERVER,
+                },
+                "base": {"channel": "cloud", "hash": pulled, "version": 1, "server": SERVER},
+                "known": [pulled],
+                "copies": {".claude/skills/analysis": {"hash": pulled}},
+            }
+        },
+    }
+    (root / ".framework").mkdir(exist_ok=True)
+    (root / ".framework/skills.lock.json").write_text(json.dumps(lock))
 
     monkeypatch.setattr(module, "cloud_token", lambda url: "fw_user" if signed_in else None)
+    head = {"version": 1, "hash": pulled, "skill_id": "analysis-id", "system": False}
     monkeypatch.setattr(
-        skill_pull, "_push_edited", lambda root: [({}, [".claude/skills/analysis"], None)]
-    )
-    monkeypatch.setattr(
-        skill_pull,
-        "_push_plan",
-        lambda root, force: (
-            [
-                {
-                    "name": "analysis",
-                    "path": ".claude/skills/analysis",
-                    "status": "push",
-                    "builtin": False,
-                    "forced": False,
-                }
-            ],
-            [],
-        ),
+        skill_pull, "_push_remote", lambda *args: ({key: {**head, "server": SERVER}}, {})
     )
 
-    def apply(root: Path, plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def send(root: Path, prep: dict[str, Any]) -> list[dict[str, Any]]:
         pushed.append("analysis")
-        return [{**p, "status": "pushed"} for p in plans]
+        return [{**s, "status": "pushed"} for s in prep["plan"].steps]
 
-    monkeypatch.setattr(skill_pull, "_push_apply", apply)
+    monkeypatch.setattr(skill_pull, "_push_send", send)
 
 
 def test_push_previews_every_part_asks_once_and_pushes(
@@ -541,13 +551,18 @@ def test_pull_lists_a_deleted_skill_outside_the_setup_as_missing(
     cloud.entries = [entry("inputs.raw.survey", "inputs/raw/survey.csv")]
     fw.pull_skills()
     state = _load(project)
-    state["skills"]["lab"] = {"paths": ["lab/skills/gone"], "variant": "python", "hash": "x"}
+    state["skills"]["local:lab/skills/gone"] = {
+        "identity": {"kind": "local", "variant": "python"},
+        "base": None,
+        "known": ["x"],
+        "copies": {"lab/skills/gone": {"hash": "x"}},
+    }
     _save(project, state)
     result = fw.pull_all(dry_run=True)
     assert result["message"] != "Project is up to date with Framework Cloud."
     assert "missing: gone. Every tracked copy is gone." in result["message"]
     assert "gone missing" in result["failed"]["skills"]
-    rows = [s for s in result["skills"]["skills"] if s.get("entry") == "lab"]
+    rows = [s for s in result["skills"]["skills"] if s.get("entry") == "local:lab/skills/gone"]
     assert [r["status"] for r in rows] == ["missing"]
 
 

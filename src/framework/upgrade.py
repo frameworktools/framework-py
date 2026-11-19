@@ -1011,7 +1011,6 @@ def _step_skills(plan: _Plan) -> None:
     framework-sensitive-data."""
     from framework._private import settings_sensitive
     from framework.ai import _shipped
-    from framework.skill_sync import install_package, package_status
     from framework.spec.resolve import package_defaults
 
     settings = _settings_raw(plan)
@@ -1056,53 +1055,35 @@ def _step_skills(plan: _Plan) -> None:
         )
     else:
         dirs = existing
-    edited = []
-    # A diverged lock entry (a copy missing, or copies that differ) is one unit: upgrade()
-    # writes nothing for it, so it never refills one copy beside an edited one
-    from framework.skill_pull import _entry_problems, row_text
-    from framework.skill_sync import _load, entry_for
+    from framework.skill_pull import row_text, upgrade_skills
 
+    names = [skill for skill in skills if _shipped(skill).is_dir()]
     try:
-        state = _load(plan.root)
-        problems = _entry_problems(plan.root, state)
-    except Exception:
-        state, problems = {"skills": {}}, {}
-    diverged: dict[str, str] = {}
-    for skill in skills:
-        source = _shipped(skill)
-        if not source.is_dir():
-            continue
-        for folder in dirs:
-            relative = f"{folder}/{skill}"
-            key, _ = entry_for(state, relative)
-            if key is not None and problems.get(key, ("",))[0] == "diverged":
-                _, reason, hint = problems[key]
-                diverged.setdefault(
-                    skill, row_text({"status": "diverged", "reason": reason, "hint": hint})
-                )
-                continue
-            try:
-                status = package_status(source, plan.root, relative, skill)
-            except Exception:
-                status = "edited"
-            if status in ("create", "update"):
-                change = "add" if status == "create" else "update (an unedited older version)"
-                plan.actions.append({"step": "skills", "path": relative, "change": change})
-
-                def run(src: Any = source, rel: str = relative, name: str = skill) -> Any:
-                    # The path when the installer declined it, else None
-                    return None if install_package(src, plan.root, rel, name) else rel
-
-                plan.skills.append(run)
-            elif status in ("edited", "account"):
-                edited.append(relative)
+        planned = upgrade_skills(plan.root, dirs, names)
+    except Exception as error:
+        plan.note(f"Skills weren't checked ({error}).")
+        return
+    changes = {
+        "added": "add",
+        "restored": "add",
+        "updated": "update (an unedited older version)",
+        "replaced": "replace",
+    }
+    writes = [s for s in planned["steps"] if s["action"] in ("write", "copy", "record")]
+    for step in writes:
+        change = changes.get(step["status"], "record in .framework/skills.lock.json")
+        plan.actions.append({"step": "skills", "path": step["path"], "change": change})
+    if writes:
+        plan.skills.append(planned["apply"])
+    edited = [p for r in planned["rows"] if r["status"] in ("edited", "kept") for p in r["paths"]]
     if edited:
         plan.note(
             "Skills kept because they were edited (or come from your account): "
             f"{', '.join(edited)}. ai_skills_update() leaves them too."
         )
-    for skill, hint in diverged.items():
-        plan.note(f"Skill kept, not upgraded: {skill}. {hint}")
+    for row in planned["rows"]:
+        if row["status"] in ("diverged", "failed", "missing", "unavailable", "untracked"):
+            plan.note(f"Skill kept, not upgraded: {row['name']}. {row_text(row)}")
 
 
 def _step_quarto(plan: _Plan) -> None:
@@ -1552,7 +1533,7 @@ def upgrade(
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
-    declined = [path for install in plan.skills if (path := install())]
+    declined = [path for install in plan.skills for path in install()]
     if declined:
         # A declined install was never added or updated: say so, in the result too
         kept = result.actions["path"].isin(declined) & (result.actions["step"] == "skills")
@@ -1562,7 +1543,8 @@ def upgrade(
         )
         result.notes.append(note)
         inform(note)
-    result.applied = bool(plan.pending) or len(declined) < len(plan.skills)
+    skill_paths = set(actions.loc[actions["step"] == "skills", "path"])
+    result.applied = bool(plan.pending) or bool(skill_paths - set(declined))
     where = (
         f". Backups: {result.backup_location.relative_to(root).as_posix()}"
         if result.backup_location

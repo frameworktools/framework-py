@@ -454,6 +454,9 @@ def test_never_deletes_skills_missing_from_the_source(project: Path, capsys: Any
         "from": None,
         "to": ".agents/skills/only-here",
         "backup": None,
+        "paths": [".agents/skills/only-here"],
+        "reason_code": None,
+        "hint": None,
     }
     assert (project / ".agents/skills/only-here/SKILL.md").is_file()
     assert "  Not in .claude/skills (kept): .agents/skills/only-here" in capsys.readouterr().err
@@ -873,10 +876,10 @@ def test_an_unreadable_lock_stops_the_copy_before_any_write(project: Path) -> No
     make_skill(project, ".claude/skills", "alpha", "new")
     make_skill(project, ".agents/skills", "alpha", "old")
     (project / ".framework").mkdir()
-    (project / ".framework/skills.lock.json").write_text('{"schema": 2, "skills": {}}')
+    (project / ".framework/skills.lock.json").write_text('{"schema": 7, "skills": {}}')
     before = tree(project / ".agents")
     for dry_run in (True, False):
-        with pytest.raises(ValueError, match="Unsupported skill lock file"):
+        with pytest.raises(ValueError, match="uses schema 7"):
             fw.skills_copy(from_="claude", dry_run=dry_run, project_path=project)
     assert tree(project / ".agents") == before
     assert backups(project) == []
@@ -890,7 +893,7 @@ def test_a_failed_join_undoes_the_copy(project: Path, monkeypatch: pytest.Monkey
     def broken(*args: Any) -> None:
         raise OSError("lock write failed")
 
-    monkeypatch.setattr(skill_sync, "join_paths", broken)
+    monkeypatch.setattr(skill_sync, "_save_changed", broken)
     with pytest.raises(OSError, match="lock write failed"):
         fw.skills_copy(from_="claude", project_path=project)
     assert tree(project / ".agents") == before

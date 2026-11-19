@@ -1,81 +1,162 @@
 {
-  "schema": 1,
+  "schema": 2,
   "skills": {
-    "package:framework-workflow": {
-      "paths": [
-        ".agents/skills/framework-workflow"
-      ],
-      "variant": "python",
-      "hash": "99a7468e83b88221e263caa2c65c6b160790cfa6b59701b43d9922b16c7a498b",
-      "origin": {
-        "skill_id": "framework:framework-workflow",
-        "hash": "99a7468e83b88221e263caa2c65c6b160790cfa6b59701b43d9922b16c7a498b"
-      }
-    },
-    "package:framework-data": {
-      "paths": [
-        ".agents/skills/framework-data"
-      ],
-      "variant": "python",
-      "hash": "f023459703635800f30e11b45921265326afd97b993faea815353fd4f6697857",
-      "origin": {
-        "skill_id": "framework:framework-data",
-        "hash": "f023459703635800f30e11b45921265326afd97b993faea815353fd4f6697857"
-      }
-    },
-    "package:framework-packages": {
-      "paths": [
-        ".agents/skills/framework-packages"
-      ],
-      "variant": "python",
-      "hash": "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4",
-      "origin": {
-        "skill_id": "framework:framework-packages",
-        "hash": "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4"
-      }
-    },
-    "package:framework-outputs": {
-      "paths": [
-        ".agents/skills/framework-outputs"
-      ],
-      "variant": "python",
-      "hash": "a3a0edd5f9fd08e80330dcb899239f66d339fbb4e01c9383316260ed8fb89df5",
-      "origin": {
-        "skill_id": "framework:framework-outputs",
-        "hash": "a3a0edd5f9fd08e80330dcb899239f66d339fbb4e01c9383316260ed8fb89df5"
-      }
-    },
-    "package:framework-cache": {
-      "paths": [
-        ".agents/skills/framework-cache"
-      ],
-      "variant": "python",
-      "hash": "1b4cfbbc9d08f4e378762a65343724ad656e8cbc599c3bca09fd06e2218fd8f9",
-      "origin": {
+    "framework:framework-cache@python": {
+      "identity": {
+        "kind": "builtin",
         "skill_id": "framework:framework-cache",
-        "hash": "1b4cfbbc9d08f4e378762a65343724ad656e8cbc599c3bca09fd06e2218fd8f9"
+        "variant": "python"
+      },
+      "base": {
+        "channel": "package",
+        "hash": "1b4cfbbc9d08f4e378762a65343724ad656e8cbc599c3bca09fd06e2218fd8f9",
+        "version": null,
+        "server": null
+      },
+      "known": [
+        "1b4cfbbc9d08f4e378762a65343724ad656e8cbc599c3bca09fd06e2218fd8f9"
+      ],
+      "copies": {
+        ".agents/skills/framework-cache": {
+          "hash": "1b4cfbbc9d08f4e378762a65343724ad656e8cbc599c3bca09fd06e2218fd8f9"
+        }
       }
     },
-    "package:framework-databases": {
-      "paths": [
-        ".agents/skills/framework-databases"
+    "framework:framework-data@python": {
+      "identity": {
+        "kind": "builtin",
+        "skill_id": "framework:framework-data",
+        "variant": "python"
+      },
+      "base": {
+        "channel": "package",
+        "hash": "f023459703635800f30e11b45921265326afd97b993faea815353fd4f6697857",
+        "version": null,
+        "server": null
+      },
+      "known": [
+        "05c8d581592e4d82d7b74e232e48e7465317f6ce07e92befb5257e5eb30ff2c4",
+        "38f3d303eae847ae42cd09bce2b6c238ba180b3c8fbf075cb50139cafbbb72d8",
+        "ba731c42ed7356dfbf1803136761b877feaeddf31512fbc1e270a031d1d7c7fa",
+        "cd79a0e67fed6a3b49da10432dc5446ef8857dc154d953e6364da16038358eda",
+        "f023459703635800f30e11b45921265326afd97b993faea815353fd4f6697857"
       ],
-      "variant": "python",
-      "hash": "dc2806773311111ad8d8156caf410d53d83cbb4b95c878f6c93f058f2382d8bb",
-      "origin": {
+      "copies": {
+        ".agents/skills/framework-data": {
+          "hash": "f023459703635800f30e11b45921265326afd97b993faea815353fd4f6697857"
+        }
+      }
+    },
+    "framework:framework-databases@python": {
+      "identity": {
+        "kind": "builtin",
         "skill_id": "framework:framework-databases",
-        "hash": "dc2806773311111ad8d8156caf410d53d83cbb4b95c878f6c93f058f2382d8bb"
+        "variant": "python"
+      },
+      "base": {
+        "channel": "package",
+        "hash": "dc2806773311111ad8d8156caf410d53d83cbb4b95c878f6c93f058f2382d8bb",
+        "version": null,
+        "server": null
+      },
+      "known": [
+        "dc2806773311111ad8d8156caf410d53d83cbb4b95c878f6c93f058f2382d8bb"
+      ],
+      "copies": {
+        ".agents/skills/framework-databases": {
+          "hash": "dc2806773311111ad8d8156caf410d53d83cbb4b95c878f6c93f058f2382d8bb"
+        }
       }
     },
-    "package:framework-publishing": {
-      "paths": [
-        ".agents/skills/framework-publishing"
+    "framework:framework-outputs@python": {
+      "identity": {
+        "kind": "builtin",
+        "skill_id": "framework:framework-outputs",
+        "variant": "python"
+      },
+      "base": {
+        "channel": "package",
+        "hash": "a3a0edd5f9fd08e80330dcb899239f66d339fbb4e01c9383316260ed8fb89df5",
+        "version": null,
+        "server": null
+      },
+      "known": [
+        "28150f006fd54cb6dc6b056b3d649a7c17ff37e3547a25b1a64a194cfabf036e",
+        "a3a0edd5f9fd08e80330dcb899239f66d339fbb4e01c9383316260ed8fb89df5",
+        "b3d376853821f6d23c1577d619f85c53967ddf4558881940d32d03081ca011df",
+        "b5c2f50171c33c480046fd1bf2686f37652f97a1f1d81aa740f66489077ccc93"
       ],
-      "variant": "python",
-      "hash": "5c297ad381113f9b6c2ecc3707d10344143931c2e62895185529035d1ad1ef0c",
-      "origin": {
+      "copies": {
+        ".agents/skills/framework-outputs": {
+          "hash": "a3a0edd5f9fd08e80330dcb899239f66d339fbb4e01c9383316260ed8fb89df5"
+        }
+      }
+    },
+    "framework:framework-packages@python": {
+      "identity": {
+        "kind": "builtin",
+        "skill_id": "framework:framework-packages",
+        "variant": "python"
+      },
+      "base": {
+        "channel": "package",
+        "hash": "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4",
+        "version": null,
+        "server": null
+      },
+      "known": [
+        "011e70e6f8ab46e405d5b3eb8f3603f73846dea4a1656defaf57c46bfb133809",
+        "1ed8d71791717ae4c978796f601508dc033151e4e92e396311b32065f3b99186",
+        "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4"
+      ],
+      "copies": {
+        ".agents/skills/framework-packages": {
+          "hash": "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4"
+        }
+      }
+    },
+    "framework:framework-publishing@python": {
+      "identity": {
+        "kind": "builtin",
         "skill_id": "framework:framework-publishing",
-        "hash": "5c297ad381113f9b6c2ecc3707d10344143931c2e62895185529035d1ad1ef0c"
+        "variant": "python"
+      },
+      "base": {
+        "channel": "package",
+        "hash": "5c297ad381113f9b6c2ecc3707d10344143931c2e62895185529035d1ad1ef0c",
+        "version": null,
+        "server": null
+      },
+      "known": [
+        "5c297ad381113f9b6c2ecc3707d10344143931c2e62895185529035d1ad1ef0c"
+      ],
+      "copies": {
+        ".agents/skills/framework-publishing": {
+          "hash": "5c297ad381113f9b6c2ecc3707d10344143931c2e62895185529035d1ad1ef0c"
+        }
+      }
+    },
+    "framework:framework-workflow@python": {
+      "identity": {
+        "kind": "builtin",
+        "skill_id": "framework:framework-workflow",
+        "variant": "python"
+      },
+      "base": {
+        "channel": "package",
+        "hash": "99a7468e83b88221e263caa2c65c6b160790cfa6b59701b43d9922b16c7a498b",
+        "version": null,
+        "server": null
+      },
+      "known": [
+        "3f45c2641971fee8c7e5cfd5f826f332c9002c9c42461c423fcd565b08fd2085",
+        "40494d0a6696b6ae9abd1499b6d195f65f6c5c92151c763fe7a8ac1865faa1fa",
+        "99a7468e83b88221e263caa2c65c6b160790cfa6b59701b43d9922b16c7a498b"
+      ],
+      "copies": {
+        ".agents/skills/framework-workflow": {
+          "hash": "99a7468e83b88221e263caa2c65c6b160790cfa6b59701b43d9922b16c7a498b"
+        }
       }
     }
   }
