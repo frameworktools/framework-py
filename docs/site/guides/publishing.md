@@ -176,6 +176,61 @@ fw.publish(az.plot_forest(idata), to="cloud", slug="heavy-penguins-forest")
 
 Each publish creates a new artifact version. Metadata arguments include `title`, `description`, `kind`, `password` (minimum 8 characters), and `visibility` (`"public"`, `"unlisted"`, or `"private"`). New string-slug artifacts default to `"unlisted"`, existing artifacts retain their visibility unless `visibility` is set, `slug=True` enables a public slug derived from the filename, and `slug=False` reverts to unlisted. Public artifacts resolve at `/@handle/project/slug` once a handle is set under **Account > Account details**.
 
+### Code snippets
+
+A code snippet holds a cell's code and the text it printed: standard output, standard error, results, and errors. Plots and other images are left out. Blog posts and reports embed snippets beside the results the code produced. Framework Cloud highlights the code, shows ANSI colors, and folds output longer than 12 lines.
+
+In Jupyter, VS Code, and Quarto notebooks, load the extension once, then mark a cell with the `%%fw_snippet` cell magic:
+
+```python
+%load_ext framework
+```
+
+```python
+%%fw_snippet fit-ols --link notebook=https://example.org/analysis
+model = smf.ols("score ~ income", data=df).fit()
+print(model.summary())
+```
+
+The magic runs the cell, shows its outputs as usual, and publishes the cell's code and outputs. Standard output and results become output blocks, and standard error becomes a message block. A data frame is recorded as its plain-text form. An output that carries an image, such as a matplotlib figure, is skipped whole. A result hidden with a trailing `;` is not recorded. When the cell raises an error, the snippet ends with the traceback, is published, and the cell fails with the error. The `%%fw_snippet` line and Quarto `#|` option lines are left out of the code.
+
+A notebook that was run and saved publishes without running again, through the `fw` command line tool. The cell is found by tag or by its Quarto `#| label:` line:
+
+```sh
+fw snippet publish notebooks/analysis.ipynb --cell fit-ols
+```
+
+In a script, `fw.snippet()` publishes a `with` block's code and what it printed:
+
+```python
+with fw.snippet("fit-ols"):
+    model = smf.ols("score ~ income", data=df).fit()
+    print(model.summary())
+```
+
+A script shows no expression values, so none are recorded. When the block raises an error, the snippet ends with the traceback, is published, and the error continues.
+
+The magic and `fw.snippet()` take these options:
+
+| Magic option | `fw.snippet()` argument | Effect |
+|--------------|-------------------------|--------|
+| `--no-output` | `output=False` | Publishes the code without its output |
+| `--folded`, `--unfolded` | `folded=True`, `folded=False` | Folds or opens the output blocks |
+| `--link notebook=URL`, `--link model=SLUG` | `links={"notebook": "https://...", "model": "model-slug"}` | Links shown with the snippet; a model is a slug in the same project or an https URL |
+| `--slug`, `--title` | `slug`, `title` | Default to the label |
+| `--repository URL` | `repository` | Repository URL to name in the snippet |
+| `--to`, `--visibility`, `--collection` | `to`, `visibility`, `collection` | As in `publish()` |
+| `--no-publish` | `publish=False` | Runs and records without publishing |
+
+The snippet names its file (from the git repository's top, else the project root), the label, and the commit checked out. A script snippet and a Quarto cell also name their lines. The magic finds its notebook through VS Code or Jupyter. Elsewhere it looks for `%%fw_snippet LABEL` in the notebooks of the working folder, and `--file` names the notebook. The snippet names the repository only when it is passed or `publish.repository` is set in `settings.yml`:
+
+```yaml
+publish:
+  repository: https://github.com/owner/study
+```
+
+With a GitHub repository, Framework Cloud links the snippet to its lines at that commit. Each run publishes again. When the snippet matches its newest version, Framework Cloud adds no version and Framework reports `Unchanged, still version N`.
+
 ### Collection attachment
 
 Pass `collection` (slug or ID) to attach a published artifact to an existing Framework Cloud collection:

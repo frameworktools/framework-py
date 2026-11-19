@@ -1269,7 +1269,10 @@ def cloud_publish(
     if response.is_error:
         raise _error(response, "Publish")
     result = response.json()
-    if result.get("version") is not None:
+    if result.get("unchanged") and result.get("version") is not None:
+        # Cloud keeps the newest version when nothing changed (code snippets)
+        inform(f"Unchanged, still version {result['version']}: {result.get('url')}")
+    elif result.get("version") is not None:
         inform(f"Published version {result['version']}: {result.get('url')}")
     else:
         inform(f"Published: {result.get('url')}")

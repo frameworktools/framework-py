@@ -214,6 +214,12 @@ python = "config_dir"
 status = "renamed"
 note = "The module name already says framework"
 
+[functions.fw_snippet]
+python = "snippet"
+status = "renamed"
+usage = "with snippet(label): ..."
+note = "A with block in place of a code argument"
+
 [functions.git_add]
 status = "omitted"
 note = "R wraps the git command for RStudio console users. Python users run git directly"
@@ -438,6 +444,11 @@ status = "ported"
 [functions.publish_notebook]
 python = "publish_notebook"
 status = "ported"
+
+[functions.publish_snippet]
+python = "snippet"
+status = "folded"
+note = "In Jupyter and Quarto, the %%fw_snippet cell magic runs and publishes a cell. fw snippet publish publishes a cell of a saved notebook"
 
 [functions.quarto_generate_all]
 python = "quarto_generate_all"
