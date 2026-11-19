@@ -1,5 +1,5 @@
 {
-  "commit": "920c684da409ff400925c329ee01811443f79674",
+  "commit": "7392ffee6760eda2547c5f94a18b6c997c3539b7",
   "files": {
     "docs/docs-site.md": {
       "sha256": "be34e19dacbe77390e41986e47bac11d95ace1e458e6fec868e2b279a9e7c497",
@@ -50,15 +50,15 @@
       "source": "inst/schema/docs-reference.v1.json"
     },
     "src/framework/_assets/schema/layer.v1.json": {
-      "sha256": "7ef0260c22cf970763c7550ff04c23ecf6527a4190d265bf035c501835148061",
+      "sha256": "2f403177e5340e1fdd1c36bbfd0f68420002dc2b1f8b3f8e866d407ef9c5f449",
       "source": "inst/schema/layer.v1.json"
     },
     "src/framework/_assets/schema/layers.v1.json": {
-      "sha256": "5d80c9898374c64d80072adbd85a153f521b99bbfc027799d08cd43aecb48eec",
+      "sha256": "9d80faabc8f4001e9160b6b648ea69939a706fd1e55dc87d93bd77207528ab55",
       "source": "inst/schema/layers.v1.json"
     },
     "src/framework/_assets/schema/spec.v1.json": {
-      "sha256": "a7081a513da0752b57d87c84a0a832583b2627e391eef50189dee0898bf1fb18",
+      "sha256": "1a4bd871d0e2cb5719ba915d37fc4b47253d60f1200731699a114590adec3780",
       "source": "inst/schema/spec.v1.json"
     },
     "src/framework/_assets/sets/packages/bayes-r.json": {
@@ -230,7 +230,7 @@
       "source": "tests/integration/sqlserver/init.sql"
     },
     "tests/shared/NAMESPACE": {
-      "sha256": "ac07f3f622cc41b9199e4b09dd8c7e4ca5491478625ed3b3b53002a5a1702ab1",
+      "sha256": "2536e2d76e9b352a47d6f2c93845fa12c09c4f8fe068b2f823529f7be7e3b638",
       "source": "NAMESPACE"
     },
     "tests/shared/conformance/README.md": {
@@ -573,6 +573,10 @@
       "sha256": "29924101cb9fcb4e38af2bc7249bdf6e79ada244f106c5f8e19eb853a90073d3",
       "source": "inst/conformance/skills/push-cancelled.json"
     },
+    "tests/shared/conformance/skills/push-cloud-has-bytes.json": {
+      "sha256": "3866a2a566529d00cef4a5cf3304c0613e61cfcc2ff78b80aa4e8ca1afd7f848",
+      "source": "inst/conformance/skills/push-cloud-has-bytes.json"
+    },
     "tests/shared/conformance/skills/push-diverged.json": {
       "sha256": "5de69d547447028b7577cc0b432944bfcf2407b999ef2cd3c75d892b782a85c9",
       "source": "inst/conformance/skills/push-diverged.json"
@@ -638,6 +642,6 @@
       "source": "inst/conformance/skills/upgrade-diverged.json"
     }
   },
-  "ref": "920c684",
+  "ref": "7392ffe",
   "source": "framework (R package)"
 }
