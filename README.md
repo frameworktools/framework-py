@@ -71,6 +71,13 @@ When a skill's copies in `.claude/skills` and `.agents/skills` differ, copy the 
 fw.skills_copy(from_="claude", skills=["my-skill"])
 ```
 
+After moving a skills folder by hand, or to track a copy as another skill, record it in `.framework/skills.lock.json`:
+
+```python
+fw.skills_move("claude", "agents")
+fw.skills_move(".claude/skills/my-skill", skill_id="5d0c2a7e-...")
+```
+
 ## Development
 
 ```sh
