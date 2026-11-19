@@ -191,7 +191,8 @@ def on_disk(root: Path, relative: str) -> str:
         with os.scandir(here) as entries:
             for entry in entries:
                 if entry.name.casefold() == part.casefold():
-                    mine = entry.stat(follow_symlinks=False)
+                    # Not entry.stat(): on Windows its st_ino and st_dev are always 0
+                    mine = os.lstat(entry.path)
                     if (mine.st_dev, mine.st_ino) == (found.st_dev, found.st_ino):
                         real = entry.name
                         break
@@ -208,7 +209,17 @@ def lstat(path: Path) -> os.stat_result | None:
     where a folder should be) raise, so a lookup error is never taken for absence."""
     try:
         return path.lstat()
-    except FileNotFoundError:
+    except FileNotFoundError as e:
+        # Windows says "path not found" (not NotADirectoryError) below a file
+        if getattr(e, "winerror", None) == 3:
+            for parent in path.parents:
+                try:
+                    mode = parent.lstat().st_mode
+                except FileNotFoundError:
+                    continue
+                if not stat.S_ISDIR(mode) and not stat.S_ISLNK(mode):
+                    raise NotADirectoryError(str(path)) from None
+                break
         return None
 
 

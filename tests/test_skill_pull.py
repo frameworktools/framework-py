@@ -1479,7 +1479,10 @@ def test_skills_sync_refuses_a_symlinked_path_as_typed(
     (project / ".claude/skills/linked").symlink_to(
         project / ".claude/skills/team-style", target_is_directory=True
     )
-    for typed in (".claude/skills/linked", ".CLAUDE/skills/linked"):
+    typed_paths = [".claude/skills/linked"]
+    if case_insensitive(project):
+        typed_paths.append(".CLAUDE/skills/linked")
+    for typed in typed_paths:
         with pytest.raises(ValueError, match="symlinks"):
             fw.skills_sync(typed, project)
     assert cloud.posts == []
