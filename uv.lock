@@ -973,7 +973,7 @@ wheels = [
 
 [[package]]
 name = "framework-py"
-version = "0.1.0.dev27"
+version = "0.1.0.dev28"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
