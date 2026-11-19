@@ -136,6 +136,8 @@ fw.data_save(clean, "inputs.intermediate.survey_clean")
 
 When given a catalog key, `data_save()` matches the longest prefix against `directories` (`inputs.intermediate.survey_clean` resolves `inputs_intermediate` and writes `inputs/intermediate/survey_clean.parquet`) and registers the catalog entry automatically.
 
+A key that is already in the catalog is saved to its entry's `path`, in its entry's `type` and `delimiter`, and the entry is left as it is, so its `description` and other fields stay. A `type` or `delimiter` that differs from the entry's raises an error. Stata's `fw_save` saves to an existing entry the same way.
+
 Catalog saves default to Parquet. Pass `type="csv"` (and optional `delimiter`) or append `.csv` to the key (`inputs.final.analysis.csv`) to write CSV:
 
 ```python

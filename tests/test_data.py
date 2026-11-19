@@ -135,6 +135,106 @@ def test_dot_name_with_an_extension_is_a_catalog_name(
     pd.testing.assert_frame_equal(fw.data_read("inputs.intermediate.x"), FRAME)
 
 
+CATALOGED = (
+    "data:\n"
+    "  inputs:\n"
+    "    intermediate:\n"
+    "      clean:\n"
+    "        path: inputs/intermediate/clean.csv\n"
+    "        type: csv\n"
+    "        description: >-\n"
+    "          One row per student, with the\n"
+    "          analysis variables.\n"
+    "        notes: kept as written\n"
+)
+
+
+def test_save_by_name_uses_the_catalog_entry_and_leaves_it_alone(
+    data_project: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    catalog = data_project / "settings/data.yml"
+    catalog.write_text(CATALOGED, encoding="utf-8")
+    with caplog.at_level("INFO", logger="framework"):
+        fw.data_save(FRAME, "inputs.intermediate.clean")
+
+    # The entry's CSV, not a Parquet file built from the name
+    assert (data_project / "inputs/intermediate/clean.csv").is_file()
+    assert not (data_project / "inputs/intermediate/clean.parquet").exists()
+    # The entry is not rewritten, so its description and other fields survive
+    assert catalog.read_text(encoding="utf-8") == CATALOGED
+    assert "Data saved to: inputs/intermediate/clean.csv" in caplog.text
+    assert "Data spec added" not in caplog.text
+    record = db.get_data_record("inputs.intermediate.clean")
+    assert record is not None
+    assert (record.path, record.type) == ("inputs/intermediate/clean.csv", "csv")
+    pd.testing.assert_frame_equal(fw.data_read("inputs.intermediate.clean"), FRAME)
+
+    # The same name with the entry's extension is the same save
+    fw.data_save(FRAME, "inputs.intermediate.clean.csv")
+    assert catalog.read_text(encoding="utf-8") == CATALOGED
+
+
+def test_save_by_name_refuses_a_type_the_entry_does_not_have(data_project: Path) -> None:
+    (data_project / "settings/data.yml").write_text(CATALOGED, encoding="utf-8")
+    for call in (
+        lambda: fw.data_save(FRAME, "inputs.intermediate.clean", type="parquet"),
+        lambda: fw.data_save(FRAME, "inputs.intermediate.clean.parquet"),
+    ):
+        with pytest.raises(fw.FrameworkError, match=r"is a csv file in the data catalog"):
+            call()
+    assert not list((data_project / "inputs/intermediate").iterdir())
+
+
+def test_save_by_name_uses_the_entry_delimiter(data_project: Path) -> None:
+    (data_project / "settings/data.yml").write_text(
+        "data:\n  inputs.raw.visits:\n    path: inputs/raw/visits.csv\n    delimiter: semicolon\n",
+        encoding="utf-8",
+    )
+    fw.data_save(FRAME.head(1), "inputs.raw.visits")
+    assert (
+        (data_project / "inputs/raw/visits.csv")
+        .read_text(encoding="utf-8")
+        .startswith("id;score;group\n")
+    )
+    with pytest.raises(fw.FrameworkError, match="semicolon-delimited in the data catalog"):
+        fw.data_save(FRAME, "inputs.raw.visits", delimiter="tab")
+
+
+def test_save_by_name_changes_only_the_lock_of_an_entry(data_project: Path) -> None:
+    catalog = data_project / "settings/data.yml"
+    catalog.write_text(CATALOGED, encoding="utf-8")
+    fw.data_save(FRAME, "inputs.intermediate.clean", locked=True)
+    entry = _yaml.read(catalog)["data"]["inputs"]["intermediate"]["clean"]
+    assert entry == {
+        "path": "inputs/intermediate/clean.csv",
+        "type": "csv",
+        "description": "One row per student, with the analysis variables.",
+        "notes": "kept as written",
+        "locked": True,
+    }
+    assert "description: >-" in catalog.read_text(encoding="utf-8")
+
+    fw.data_save(FRAME.head(1), "inputs.intermediate.clean", unlock=True)
+    assert catalog.read_text(encoding="utf-8") == CATALOGED
+    record = db.get_data_record("inputs.intermediate.clean")
+    assert record is not None and not record.locked
+
+
+def test_add_to_an_existing_entry_keeps_its_other_fields(data_project: Path) -> None:
+    catalog = data_project / "settings/data.yml"
+    catalog.write_text(CATALOGED, encoding="utf-8")
+    (data_project / "inputs/intermediate/clean.tsv").write_text("a\tb\n1\t2\n", "utf-8")
+    fw.data_add("inputs/intermediate/clean.tsv", name="inputs.intermediate.clean", locked=True)
+    entry = _yaml.read(catalog)["data"]["inputs"]["intermediate"]["clean"]
+    assert entry == {
+        "path": "inputs/intermediate/clean.tsv",
+        "type": "tsv",
+        "description": "One row per student, with the analysis variables.",
+        "notes": "kept as written",
+        "locked": True,
+    }
+
+
 def test_relative_paths_start_at_the_project_root(
     data_project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

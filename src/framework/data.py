@@ -436,13 +436,39 @@ def data_read(
     return data
 
 
-def _save_target(path: str, type: str | None) -> tuple[Path, str, str | None]:
-    """The file to write, its type, and the catalog name (None when ``path`` is a file path).
+def _catalog_entry(name: str) -> DataInfo | None:
+    """The catalog entry ``name`` already has, or None."""
+    try:
+        data = settings_read().get("data")
+    except FrameworkError:
+        return None
+    if catalog_locate(name, data) is None:
+        return None
+    try:
+        return data_info(name)
+    except DataNotFoundError:
+        # An entry without a path is saved like a new name
+        return None
+
+
+def _delimiter_name(delimiter: str) -> str:
+    """``comma``, ``tab``, ``semicolon``, or ``space`` for a delimiter or its character."""
+    _separator(delimiter)
+    for key, character in DELIMITERS.items():
+        if delimiter in (key, character):
+            return key
+    return delimiter
+
+
+def _save_target(path: str, type: str | None) -> tuple[Path, str, str | None, DataInfo | None]:
+    """The file to write, its type, the catalog name (None when ``path`` is a file path),
+    and the catalog entry the name already has (None for a new name or a file path).
 
     A relative file path starts at the project root, as the catalog's paths do, so a
     notebook in ``notebooks/`` writes where a script in the root would. A dot name that
     ends in an extension, such as ``inputs.final.x.csv``, is the name ``inputs.final.x``
-    saved as that type.
+    saved as that type. A name already in the catalog is saved to its entry's file, in
+    its entry's type, as Stata's ``fw_save`` does.
     """
     has_slash = "/" in path or "\\" in path
     extension = re.search(r"\.(csv|parquet|rds)$", path, re.IGNORECASE)
@@ -458,7 +484,7 @@ def _save_target(path: str, type: str | None) -> tuple[Path, str, str | None]:
         if not path.lower().endswith(f".{type}"):
             path = f"{path}.{type}"
             inform(f"Note: Added .{type} extension to path")
-        return in_root(path, root), type, None
+        return in_root(path, root), type, None, None
 
     if extension:
         given = extension.group(1).lower()
@@ -466,6 +492,18 @@ def _save_target(path: str, type: str | None) -> tuple[Path, str, str | None]:
             raise FrameworkError(f"'{path}' ends in .{given}, but type is '{type}'.")
         type = given
         path = path[: extension.start()]
+
+    entry = _catalog_entry(path)
+    if entry is not None:
+        # tsv is delimited text with tabs, which data_save() writes as csv
+        entry_type = "csv" if entry.type == "tsv" else entry.type
+        if type is not None and type.lower() != entry_type:
+            raise FrameworkError(
+                f"'{path}' is a {entry.type} file in the data catalog "
+                f"({relative_to_root(entry.path, root)}), but type is '{type}'.\n"
+                "Leave type out to save it as its entry says, or save it under another name."
+            )
+        return entry.path, entry_type, path, entry
 
     parts = path.split(".")
     if len(parts) == 1 or not all(parts):
@@ -497,7 +535,7 @@ def _save_target(path: str, type: str | None) -> tuple[Path, str, str | None]:
         )
     type = type or "parquet"
     target = in_root(folder, root) / f"{'_'.join(parts[end:])}.{type}"
-    return target, type, path
+    return target, type, path, None
 
 
 def _in_settings_folder(folder: Path) -> bool:
@@ -598,7 +636,7 @@ def data_save(
     data: pd.DataFrame,
     path: str,
     type: str | None = None,
-    delimiter: str = "comma",
+    delimiter: str | None = None,
     locked: bool | None = None,
     force: bool = False,
     unlock: bool = False,
@@ -617,14 +655,20 @@ def data_save(
             file path with a ``/``, ending in ``.csv`` or ``.parquet``. A name's leading
             parts select a folder from ``directories``: the longest run that
             names a key, such as ``inputs_intermediate``, ``inputs_private_raw``, or a
-            course's ``data``. The rest becomes the file name. A name is also added to
-            the data catalog, so ``data_read()`` finds it. A name may end in
+            course's ``data``. The rest becomes the file name. A new name is also added
+            to the data catalog, so ``data_read()`` finds it. A name already in the
+            catalog is saved to its entry's file, in its entry's type and delimiter, and
+            the entry is left as it is (its description and other fields are kept). A
+            name may end in
             ``.csv`` or ``.parquet`` to choose the type: ``"inputs.final.x.csv"`` is
             the name ``inputs.final.x`` saved as CSV. A relative file path starts at the
             project root, wherever Python runs.
-        type: ``"parquet"`` or ``"csv"``. Default: from the file extension,
-            or Parquet for a catalog name.
-        delimiter: Delimiter for CSV files: comma, tab, semicolon, or space.
+        type: ``"parquet"`` or ``"csv"``. Default: the catalog entry's type, then the
+            file extension, then Parquet for a new catalog name. A type that differs
+            from the catalog entry's is an error.
+        delimiter: Delimiter for CSV files: comma, tab, semicolon, or space. Default:
+            the catalog entry's delimiter, else comma. A delimiter that differs from the
+            catalog entry's is an error.
         locked: Whether later reads must find the file unchanged. Default: unlocked, as
             in R, so a pipeline can save the data again. Pass ``locked=True`` to lock data
             you mean to keep as it is. Left out, a save keeps a lock the data already
@@ -648,14 +692,24 @@ def data_save(
     """
     if not isinstance(data, pd.DataFrame):
         raise FrameworkError("data_save() needs a pandas DataFrame")
-    target, file_type, name = _save_target(path, type)
+    target, file_type, name, entry = _save_target(path, type)
+    if entry is not None and entry.delimiter is not None and file_type == "csv":
+        if delimiter is not None and _delimiter_name(delimiter) != entry.delimiter:
+            raise FrameworkError(
+                f"'{name}' is {entry.delimiter}-delimited in the data catalog, but "
+                f"delimiter is '{delimiter}'. Leave delimiter out to save it as its entry "
+                "says, or save it under another name."
+            )
+        delimiter = entry.delimiter
+    delimiter = _delimiter_name(delimiter or "comma")
     if file_type == "rds":
         raise UnsupportedFormatError(
             "Python does not write .rds files. Save as 'parquet' or 'csv', which both "
             "languages read."
         )
     if file_type not in _SAVE_TYPES:
-        raise UnsupportedFormatError(f"data_save() writes csv or parquet, not {file_type}")
+        where = f" ('{name}' in the data catalog)" if entry is not None else ""
+        raise UnsupportedFormatError(f"data_save() writes csv or parquet, not {file_type}{where}")
 
     folder = target.parent
     # A missing folder is created when it is a settings folder or inside one (git
@@ -734,7 +788,21 @@ def data_save(
 
     ledger_push_quietly(key, digest, target)
 
-    if name is not None:
+    if name is not None and entry is not None:
+        # The entry already names this file. Only its lock can change, so the
+        # catalog's flag agrees with framework.db; everything else is left as it is.
+        if entry.locked != locked:
+            try:
+                _catalog_set(name, {"locked": True} if locked else {}, drop=("locked",))
+                inform(f"Data catalog entry {'locked' if locked else 'unlocked'}: {name}")
+            except FrameworkError as error:
+                warnings.warn(
+                    f"File saved but could not update the lock in the data catalog for "
+                    f"'{name}': {error}",
+                    FrameworkWarning,
+                    stacklevel=2,
+                )
+    elif name is not None:
         try:
             data_add(target, name=name, type=file_type, delimiter=delimiter, locked=locked)
         except FrameworkError as error:
@@ -768,11 +836,18 @@ def _derive_name(file_path: Path, config: dict[str, Any], root: Path) -> str:
     return file_path.stem
 
 
-def _catalog_set(name: str, entry: dict[str, Any]) -> None:
+def _catalog_set(name: str, entry: dict[str, Any], drop: Sequence[str] = ()) -> bool:
     """Write one catalog entry into settings.yml or the split file that holds ``data``.
 
-    The file is edited in place, so its comments and other entries keep their form.
+    An existing entry is updated, not replaced: the fields in ``entry`` are set, the
+    fields in ``drop`` that ``entry`` leaves out are removed, and every other field (a
+    description, notes, stata_names) is kept. The file is edited in place, so its
+    comments and other entries keep their form.
+
+    Returns:
+        Whether the entry already existed.
     """
+    existed = False
     settings_file = find_settings_file()
     if settings_file is None:
         raise SettingsError("Configuration file 'settings.yml' (or legacy config.yml) not found")
@@ -782,9 +857,20 @@ def _catalog_set(name: str, entry: dict[str, Any]) -> None:
 
     def set_entry(current: dict[str, Any]) -> None:
         # An entry already written with dotted keys is updated where it is.
+        nonlocal existed
         existing = catalog_locate(name, current)
         if existing is not None:
-            existing[0][existing[1]] = entry
+            existed = True
+            holder, key = existing
+            old = holder[key]
+            if not isinstance(old, dict):
+                # A bare path entry becomes a mapping
+                old = {"path": old} if isinstance(old, str) else {}
+                holder[key] = old
+            for field in drop:
+                if field not in entry:
+                    old.pop(field, None)
+            old.update(entry)
             return
         node = current
         parts = name.split(".")
@@ -810,7 +896,7 @@ def _catalog_set(name: str, entry: dict[str, Any]) -> None:
             return {"data": content}
 
         _yaml.update(in_root(source, settings_file.parent), in_split)
-        return
+        return existed
 
     def in_settings(raw: Any) -> Any:
         raw = raw if isinstance(raw, dict) else {}
@@ -821,6 +907,7 @@ def _catalog_set(name: str, entry: dict[str, Any]) -> None:
         return raw
 
     _yaml.update(settings_file, in_settings)
+    return existed
 
 
 def data_add(
@@ -889,7 +976,9 @@ def data_add(
     if locked:
         entry["locked"] = True
     if update_config:
-        _catalog_set(name, entry)
-        inform(f"Data spec added to config: {name}")
+        # An existing entry keeps its other fields (description, notes); the
+        # delimiter and lock follow this file
+        existed = _catalog_set(name, entry, drop=("delimiter", "locked"))
+        inform(f"Data spec {'updated in' if existed else 'added to'} config: {name}")
     inform(f'\nYou can now read this data with: data_read("{name}")')
     return entry
