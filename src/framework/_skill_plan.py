@@ -468,18 +468,19 @@ def _plan_pull(
             if owner == key:
                 continue
             if owner is not None:
+                accounted.add(p)
+                if disk.get(p) == ABSENT:
+                    continue  # The owner's entry plans it (restored or missing)
                 theirs, wanted = lock["skills"][owner]["identity"], source["identity"]
-                # The same skill in another variant (a Cloud skill on another server is
-                # another skill)
-                same_id = theirs.get("skill_id") == wanted.get("skill_id") and theirs.get(
-                    "server"
-                ) == wanted.get("server")
+                other_variant = theirs.get("skill_id") == wanted.get("skill_id") and theirs.get(
+                    "variant"
+                ) != wanted.get("variant")
                 plan.step(
                     p,
                     owner,
                     "none",
                     "kept",
-                    "other_variant" if same_id else "other_identity",
+                    "other_variant" if other_variant else "other_identity",
                     hint("retarget", path=p, identity=dict(source["identity"])),
                     source["name"],
                 )
@@ -859,7 +860,9 @@ def _plan_push(
             for c in copies:
                 plan.step(c.path, key, "record", "current")
             out = plan.lock_after["skills"][key]
-            server = head.get("server") or (base or {}).get("server")
+            server = (
+                head.get("server") or (base or {}).get("server") or entry["identity"].get("server")
+            )
             out["base"] = {
                 "channel": "cloud",
                 "hash": local,

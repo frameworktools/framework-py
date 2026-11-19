@@ -616,9 +616,6 @@ names = [
     "framework_template_path",
     "tools_available",
     "path",  # alias of project_path()
-    # Skills lock v2: R adds skills_move() on its skills-lock-v2 branch. Move it to
-    # [functions.skills_move] when the asset pin reaches the R release that exports it.
-    "skills_move",
 ]
 
 [functions.pull_all]
@@ -647,6 +644,11 @@ status = "ported"
 
 [functions.skills_copy]
 python = "skills_copy"
+status = "ported"
+note = "from_ in place of R's from, a Python keyword"
+
+[functions.skills_move]
+python = "skills_move"
 status = "ported"
 note = "from_ in place of R's from, a Python keyword"
 

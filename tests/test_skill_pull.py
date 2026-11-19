@@ -1500,14 +1500,10 @@ def test_a_deleted_personal_fork_is_restored_from_its_own_cloud_skill(
     assert statuses(fw.push_skills(project, confirm=True))["framework-data"] == "pushed"
     shutil.rmtree(data.parent)
     # Signed out: missing, and the hint names what restores it. The folder tracks your
-    # skill, so the setup's built-in is kept out of it.
+    # skill, so your skill's entry plans it, and the setup's built-in never claims it.
     monkeypatch.delenv("FW_CLOUD_TOKEN")
     result = fw.pull_skills(project)
-    kept, row = sorted(
-        (r for r in result["skills"] if r["name"] == "framework-data"),
-        key=lambda r: r["status"],
-    )
-    assert kept["status"] == "kept" and kept["reason_code"] == "other_identity"
+    [row] = [r for r in result["skills"] if r["name"] == "framework-data"]
     assert row["status"] == "missing"
     assert row["reason"] == "Every tracked copy is gone." and row["skill_id"] == "own-id"
     assert row_text(row) == (
@@ -1518,8 +1514,8 @@ def test_a_deleted_personal_fork_is_restored_from_its_own_cloud_skill(
     # Signed in: restored from own-id, never from the package
     monkeypatch.setenv("FW_CLOUD_TOKEN", "fw_user")
     rows = fw.pull_skills(project)["skills"]
-    row = next(r for r in rows if independent_row(r) and r["status"] != "kept")
-    assert row["status"] == "restored"
+    [row] = [r for r in rows if r["name"] == "framework-data"]
+    assert row["status"] == "restored" and independent_row(row)
     assert data.read_text() == mine
     assert lock_entry(project, ".claude/skills/framework-data")["skill_id"] == "own-id"
 
@@ -1787,3 +1783,21 @@ def test_an_edited_cloud_skill_is_never_added_to_a_newly_enabled_folder(
     assert lock_entry(project, ".claude/skills/team-style")["paths"] == [
         ".claude/skills/team-style"
     ]
+
+
+def test_known_hashes_from_the_setup_mark_an_older_copy_unedited(
+    cloud: Cloud, project: Path
+) -> None:
+    # A copy of version one with no lock record (restored from git, say)
+    old = cloud_entry(1, "Version one")
+    folder = project / ".claude/skills/team-style"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(old["content"])
+    newer = cloud_entry(2, "Version two")
+    cloud.skills = {"team-style": newer}
+    assert statuses(fw.pull_skills(project, dry_run=True))["team-style"] == "edited"
+    # Cloud lists every version's hash: the copy is an older, unedited version
+    newer["sync"]["known_hashes"] = [old["sync"]["hash"], newer["sync"]["hash"]]
+    assert statuses(fw.pull_skills(project))["team-style"] == "updated"
+    assert "Version two" in skill_text(project, "team-style")
+    assert old["sync"]["hash"] in lock_entry(project, ".claude/skills/team-style")["known"]
