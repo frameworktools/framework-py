@@ -44,6 +44,9 @@ ASSETS: dict[str, str] = {
     "inst/conformance/merge/*.json": "tests/shared/conformance/merge",
     "inst/conformance/create/python/*.json": "tests/shared/conformance/create/python",
     "inst/conformance/adopt/*.json": "tests/shared/conformance/adopt",
+    # Skill sync scenarios for skills lock v2 (tests/test_skill_scenarios.py).
+    "inst/conformance/skills/*.json": "tests/shared/conformance/skills",
+    "inst/conformance/skills/README.md": "tests/shared/conformance/skills",
     "NAMESPACE": "tests/shared",
     # The servers for tests/integration, with the seed script for each.
     "tests/integration/compose.yml": "tests/integration",

@@ -1,5 +1,5 @@
 {
-  "commit": "4364c8485131ab3206e19a6fb9c5d1226c503c12",
+  "commit": "920c684da409ff400925c329ee01811443f79674",
   "files": {
     "docs/docs-site.md": {
       "sha256": "be34e19dacbe77390e41986e47bac11d95ace1e458e6fec868e2b279a9e7c497",
@@ -234,7 +234,7 @@
       "source": "NAMESPACE"
     },
     "tests/shared/conformance/README.md": {
-      "sha256": "32cfb46db670436e474bf96f099e7d205f105ae8395f8a3206c083db008a7512",
+      "sha256": "e8a1b720f2cd72d08da870946a50af16d5f0b62e4ed552b76a3862de06954b4b",
       "source": "inst/conformance/README.md"
     },
     "tests/shared/conformance/adopt/case-insensitive.json": {
@@ -380,8 +380,264 @@
     "tests/shared/conformance/merge/tools-and-core-files.json": {
       "sha256": "48d949b3212e8a8e640164ebaa8921e4d63a649dd7dfef57133198b8bb3454ed",
       "source": "inst/conformance/merge/tools-and-core-files.json"
+    },
+    "tests/shared/conformance/skills/README.md": {
+      "sha256": "39a8c014c38bf699aee9035a6f7f2f52a48d88ce824e91f5603687fdfbbe96a2",
+      "source": "inst/conformance/skills/README.md"
+    },
+    "tests/shared/conformance/skills/assistant-add-clean.json": {
+      "sha256": "b2622fd56e19a88929a2e978e8041c416316092098bd10f66a383437dd63df17",
+      "source": "inst/conformance/skills/assistant-add-clean.json"
+    },
+    "tests/shared/conformance/skills/assistant-add-edited-overwrite.json": {
+      "sha256": "5f527abc88124e24fc67ddbe7c8c9094e39f125dc851ef4ed3bd7b979f4e4de8",
+      "source": "inst/conformance/skills/assistant-add-edited-overwrite.json"
+    },
+    "tests/shared/conformance/skills/assistant-add-edited.json": {
+      "sha256": "9d935cc43c629b45a52dd6a8b112b0d3ca9d8fdf4941acc14cbec8b36710a300",
+      "source": "inst/conformance/skills/assistant-add-edited.json"
+    },
+    "tests/shared/conformance/skills/assistant-add-loose-copy.json": {
+      "sha256": "8134c85fb8e214da7fdcf184ff29a4fdfe930e352db4438217a32d3af666a712",
+      "source": "inst/conformance/skills/assistant-add-loose-copy.json"
+    },
+    "tests/shared/conformance/skills/assistant-add-setup-older.json": {
+      "sha256": "52e1ee71b39c6bae02dc5a3358ebfc5e72a4348f7ef4916caeec78c19abf3486",
+      "source": "inst/conformance/skills/assistant-add-setup-older.json"
+    },
+    "tests/shared/conformance/skills/assistant-switch-independent-copy.json": {
+      "sha256": "0cf3409da0ce87b5d5a84f8aac847be7298778158279bd3ff1e39f3a1b0820b3",
+      "source": "inst/conformance/skills/assistant-switch-independent-copy.json"
+    },
+    "tests/shared/conformance/skills/copies-absent-beside-clean.json": {
+      "sha256": "9652a160a22a482b4beec58e8680ec4ecd16cfb055f1e64ebc6ffc480887027e",
+      "source": "inst/conformance/skills/copies-absent-beside-clean.json"
+    },
+    "tests/shared/conformance/skills/copies-absent-beside-edited.json": {
+      "sha256": "02f8d4c7c233916b492039283c3e0cdd03aab1439d05957b3815c9035849bff5",
+      "source": "inst/conformance/skills/copies-absent-beside-edited.json"
+    },
+    "tests/shared/conformance/skills/copies-clean-different-versions.json": {
+      "sha256": "bc7c03be5e3c14cc4387306112b7008becffb3780a3d6dcf140cd1572f535b9a",
+      "source": "inst/conformance/skills/copies-clean-different-versions.json"
+    },
+    "tests/shared/conformance/skills/copies-diverged-both.json": {
+      "sha256": "0675efe74bf1e0fbfac8bd5320a8ad672adb3a569e83d9f381525d3d0209ee87",
+      "source": "inst/conformance/skills/copies-diverged-both.json"
+    },
+    "tests/shared/conformance/skills/copies-edited-one-overwrite.json": {
+      "sha256": "8779deca44163f0ebf3a58c741b4db8dc90a59d7a5e68ed91da70cf5b75643a2",
+      "source": "inst/conformance/skills/copies-edited-one-overwrite.json"
+    },
+    "tests/shared/conformance/skills/copies-edited-one.json": {
+      "sha256": "96932765771f75c4824fae84c9d22493d753f79444fe11219963dc57b88d9c9f",
+      "source": "inst/conformance/skills/copies-edited-one.json"
+    },
+    "tests/shared/conformance/skills/copies-edited-same.json": {
+      "sha256": "5e3f608d6d43311b355a0c4a6b9460ed959b1baf22dd0e63100bf900e891b01c",
+      "source": "inst/conformance/skills/copies-edited-same.json"
+    },
+    "tests/shared/conformance/skills/copies-folder-gone.json": {
+      "sha256": "bfc0cd3d4cd9eb07f9681872f81f67cfbd8db83bd90f092330c1c315c82a6741",
+      "source": "inst/conformance/skills/copies-folder-gone.json"
+    },
+    "tests/shared/conformance/skills/copy-edited-to-new-folder.json": {
+      "sha256": "2c84d5f3d323eedb32e602b3405c4948c4035d2c2c51a73a0341c2a50d72bbeb",
+      "source": "inst/conformance/skills/copy-edited-to-new-folder.json"
+    },
+    "tests/shared/conformance/skills/copy-target-owned.json": {
+      "sha256": "e89caf3c91415f5773dfe956b1025b67297bebc4db398b1567e86b7e48749ec9",
+      "source": "inst/conformance/skills/copy-target-owned.json"
+    },
+    "tests/shared/conformance/skills/identity-inline-recorded.json": {
+      "sha256": "f8beacfd67a39588adc4bd4a7b638b900ed74ea528adcd9f0d2cfe2d897476d1",
+      "source": "inst/conformance/skills/identity-inline-recorded.json"
+    },
+    "tests/shared/conformance/skills/identity-inline-vs-framework.json": {
+      "sha256": "3bdc6df936657bd31e229ab1b6baff38b911e69246ff282916ce6d94dabd9e88",
+      "source": "inst/conformance/skills/identity-inline-vs-framework.json"
+    },
+    "tests/shared/conformance/skills/identity-variant-mismatch.json": {
+      "sha256": "66e9a16d572a6d5a0f2ef9f931306eaacb6401b2ac8f6f507da1e738d9e0ca72",
+      "source": "inst/conformance/skills/identity-variant-mismatch.json"
+    },
+    "tests/shared/conformance/skills/metadata-channel-switch.json": {
+      "sha256": "239cff6f35a2c5f057aca7bbdfb54d54a7e0d94f82923a15a679e876b4113f6e",
+      "source": "inst/conformance/skills/metadata-channel-switch.json"
+    },
+    "tests/shared/conformance/skills/metadata-pull-all.json": {
+      "sha256": "9c544ed7636786765fe38125e8bbffd42bff4bb67ef9a6edfbccbb2756b99442",
+      "source": "inst/conformance/skills/metadata-pull-all.json"
+    },
+    "tests/shared/conformance/skills/metadata-version-bump.json": {
+      "sha256": "3d182b5713056a04d2dcd294e94def1e4ebb1774cdce99fc180d1727183db19a",
+      "source": "inst/conformance/skills/metadata-version-bump.json"
+    },
+    "tests/shared/conformance/skills/migrate-v1-cloud-pending-push.json": {
+      "sha256": "8810eb04093d98d31fe0ece407d5a7b50c90a99d6342b31293794b33598039ab",
+      "source": "inst/conformance/skills/migrate-v1-cloud-pending-push.json"
+    },
+    "tests/shared/conformance/skills/migrate-v1-framework-cloud.json": {
+      "sha256": "ac4a4e303bbaa0966cdb7c76b3538aa1eab4aff6498a15e8c52da4ab62141c79",
+      "source": "inst/conformance/skills/migrate-v1-framework-cloud.json"
+    },
+    "tests/shared/conformance/skills/migrate-v1-merge-duplicates.json": {
+      "sha256": "8bd5bfad75621654e9b2ef8462711fb0fcb0a985cd3b803d755360513df2b6b6",
+      "source": "inst/conformance/skills/migrate-v1-merge-duplicates.json"
+    },
+    "tests/shared/conformance/skills/migrate-v1-unchanged.json": {
+      "sha256": "1d3208ace8fe75d6e0e71a84264bac435ec9349dfca4d73465f90e073116968f",
+      "source": "inst/conformance/skills/migrate-v1-unchanged.json"
+    },
+    "tests/shared/conformance/skills/migrate-v1-update.json": {
+      "sha256": "5eea51e9aa2d07b0b1f8fa880c0b161659ab51bdd70388aa023b1d9c304ad296",
+      "source": "inst/conformance/skills/migrate-v1-update.json"
+    },
+    "tests/shared/conformance/skills/move-lock-only.json": {
+      "sha256": "b86f13f59a2b1de06c532fd5f3d7c3688df7183126fca2fa8067bfa8ceb7493c",
+      "source": "inst/conformance/skills/move-lock-only.json"
+    },
+    "tests/shared/conformance/skills/move-on-disk.json": {
+      "sha256": "e46a4c6d197072fb22f8e644c81fbde4c41c6a345b811d8999159bcec9035c27",
+      "source": "inst/conformance/skills/move-on-disk.json"
+    },
+    "tests/shared/conformance/skills/move-retarget-to-fork.json": {
+      "sha256": "72fe7b1ed92ff718f6305289f3a77fa80092b613201ba3329920fd0c28912065",
+      "source": "inst/conformance/skills/move-retarget-to-fork.json"
+    },
+    "tests/shared/conformance/skills/move-target-exists.json": {
+      "sha256": "6df0008ac644e01728365b7f0b0a7eabfa8834ad89b928ea11a5a3b769b05c24",
+      "source": "inst/conformance/skills/move-target-exists.json"
+    },
+    "tests/shared/conformance/skills/offline-builtin-tracked-on-cloud.json": {
+      "sha256": "46c668da1cbc6b0cf45a3d5cdbe43c186afd43816403df0802123fdb8dd0eb48",
+      "source": "inst/conformance/skills/offline-builtin-tracked-on-cloud.json"
+    },
+    "tests/shared/conformance/skills/offline-personal-reported.json": {
+      "sha256": "af4a429bd121958369c9798cfd064ee44dd053653bd8c64e4cb2639e459a0de4",
+      "source": "inst/conformance/skills/offline-personal-reported.json"
+    },
+    "tests/shared/conformance/skills/pull-add-cloud-skill.json": {
+      "sha256": "8f24c0b98c8cc395d5c7e234b55dd15e35534feacfab16914539d28f2f1c1f29",
+      "source": "inst/conformance/skills/pull-add-cloud-skill.json"
+    },
+    "tests/shared/conformance/skills/pull-adopt-known-before-lock.json": {
+      "sha256": "130831ff0cdef18efe1c72c68246dbc31b9c1056b95e626b0cdffb275d2ae7df",
+      "source": "inst/conformance/skills/pull-adopt-known-before-lock.json"
+    },
+    "tests/shared/conformance/skills/pull-after-retarget.json": {
+      "sha256": "438333479f7751fd8fe9ba3edc4da69e970d16296cdc73ff7b854d3baa2a2c1e",
+      "source": "inst/conformance/skills/pull-after-retarget.json"
+    },
+    "tests/shared/conformance/skills/pull-dry-run.json": {
+      "sha256": "45b2f7054a009f28f21db7ff4a056e16551a10d96239ae00ce557328c1920447",
+      "source": "inst/conformance/skills/pull-dry-run.json"
+    },
+    "tests/shared/conformance/skills/pull-edited-kept.json": {
+      "sha256": "6a2ef93d6bebcf979305d14d9fca1152a167ed5f799dd8eea57962c94633f69c",
+      "source": "inst/conformance/skills/pull-edited-kept.json"
+    },
+    "tests/shared/conformance/skills/pull-edited-overwrite.json": {
+      "sha256": "0942084875c088100f8f9dd3a9ae61d6f9291245decd76af386a8b0876e49f53",
+      "source": "inst/conformance/skills/pull-edited-overwrite.json"
+    },
+    "tests/shared/conformance/skills/pull-newer-in-project.json": {
+      "sha256": "487bac86de5c4764af6db7614f8d531840a02ab5f2f83ac43de2a41d6554c56c",
+      "source": "inst/conformance/skills/pull-newer-in-project.json"
+    },
+    "tests/shared/conformance/skills/pull-unknown-before-lock.json": {
+      "sha256": "8256f0e586b2c5231deee3570b124b7c614f9e6db1964ee41064c994e4d81591",
+      "source": "inst/conformance/skills/pull-unknown-before-lock.json"
+    },
+    "tests/shared/conformance/skills/pull-unreadable.json": {
+      "sha256": "c49c710d92dbc20906015cd48e059f138c81a914343ef624651c153681ae6b8f",
+      "source": "inst/conformance/skills/pull-unreadable.json"
+    },
+    "tests/shared/conformance/skills/pull-update-clean.json": {
+      "sha256": "2f7b90f6fd94e45070122bf64dd887f13c785f56d0c4f0b9bfc39c732f8500f4",
+      "source": "inst/conformance/skills/pull-update-clean.json"
+    },
+    "tests/shared/conformance/skills/push-after-rename.json": {
+      "sha256": "085afced9d4bd1fc233c784cb47bdfb4a5683a6af5b7cc990ccad29c47b360cc",
+      "source": "inst/conformance/skills/push-after-rename.json"
+    },
+    "tests/shared/conformance/skills/push-all-dry-run-failed.json": {
+      "sha256": "8d67706f377db9e03f0d2a5ae38fd9ebc78e1a3d8e6d68d3f8f05ccc52e22fe6",
+      "source": "inst/conformance/skills/push-all-dry-run-failed.json"
+    },
+    "tests/shared/conformance/skills/push-builtin-fork.json": {
+      "sha256": "f4d5eb79d3a756719d7459c1a68855f15f46f59317253a9cd56b03eb07b3f843",
+      "source": "inst/conformance/skills/push-builtin-fork.json"
+    },
+    "tests/shared/conformance/skills/push-cancelled.json": {
+      "sha256": "29924101cb9fcb4e38af2bc7249bdf6e79ada244f106c5f8e19eb853a90073d3",
+      "source": "inst/conformance/skills/push-cancelled.json"
+    },
+    "tests/shared/conformance/skills/push-diverged.json": {
+      "sha256": "5de69d547447028b7577cc0b432944bfcf2407b999ef2cd3c75d892b782a85c9",
+      "source": "inst/conformance/skills/push-diverged.json"
+    },
+    "tests/shared/conformance/skills/push-edited.json": {
+      "sha256": "acc8ba36307a085a05fda01f907b8bc1cba933ec20bddb019fa8ec8d26022d00",
+      "source": "inst/conformance/skills/push-edited.json"
+    },
+    "tests/shared/conformance/skills/push-no-base.json": {
+      "sha256": "8ef421841a5f6ce952f0f829b5f86aa1404bb8c40d5f84ece68a6729bfa65894",
+      "source": "inst/conformance/skills/push-no-base.json"
+    },
+    "tests/shared/conformance/skills/push-refused.json": {
+      "sha256": "524a9dc43ba4240559e13764ba6c25abd60a93c44b70a99b26920ab3a31b13ec",
+      "source": "inst/conformance/skills/push-refused.json"
+    },
+    "tests/shared/conformance/skills/push-untracked.json": {
+      "sha256": "40ba61deff9d11142027182afb337165582316c1a0a9fdaa8b3b64de20824ef8",
+      "source": "inst/conformance/skills/push-untracked.json"
+    },
+    "tests/shared/conformance/skills/removed-all-gone.json": {
+      "sha256": "95266597331f6e11ec47b8e24db2d4779aea6d335fcd7f20b09c4d8d98dd5be2",
+      "source": "inst/conformance/skills/removed-all-gone.json"
+    },
+    "tests/shared/conformance/skills/removed-diverged.json": {
+      "sha256": "966fef889f38a485ba49007c16603277232cf0bcc54e66f8b96d003cde59294d",
+      "source": "inst/conformance/skills/removed-diverged.json"
+    },
+    "tests/shared/conformance/skills/removed-plain.json": {
+      "sha256": "b6ed4d9f762aedb3da5633bcabccc65a07614ac405881c4cc0261c8b09cb59e0",
+      "source": "inst/conformance/skills/removed-plain.json"
+    },
+    "tests/shared/conformance/skills/removed-restore-by-identity.json": {
+      "sha256": "ca32b531454d2b594ceb4bdd12f3c1bf017d6a1530ada1e5fa6935aca5abd0e5",
+      "source": "inst/conformance/skills/removed-restore-by-identity.json"
+    },
+    "tests/shared/conformance/skills/rename-pull-before-move.json": {
+      "sha256": "435b6742ec816b46a553a903aceb9fc356db3654132b6205d2f89cf57cebb5c8",
+      "source": "inst/conformance/skills/rename-pull-before-move.json"
+    },
+    "tests/shared/conformance/skills/revert-equals-source.json": {
+      "sha256": "f5fd3989c24b32ba9344ed6b23a9090cfdb0e94566ab2e8913eae346213ee2f7",
+      "source": "inst/conformance/skills/revert-equals-source.json"
+    },
+    "tests/shared/conformance/skills/revert-kept.json": {
+      "sha256": "4a4eb6ba8837e709861763cc33e0a91c3dba32c5876fdbeab3d0d7161d104a84",
+      "source": "inst/conformance/skills/revert-kept.json"
+    },
+    "tests/shared/conformance/skills/schema-newer-rejected.json": {
+      "sha256": "2162a7f04cfab4ec352c245681c875d16373e406af297ac5722bd98883336d5f",
+      "source": "inst/conformance/skills/schema-newer-rejected.json"
+    },
+    "tests/shared/conformance/skills/upgrade-builtins-only.json": {
+      "sha256": "9ae91536330d0b9a9dc223a2ec0a4da90a3596e57ba08d2ed2867d44b97edd27",
+      "source": "inst/conformance/skills/upgrade-builtins-only.json"
+    },
+    "tests/shared/conformance/skills/upgrade-cloud-tracked.json": {
+      "sha256": "e056962d349e368604a7dee103d1323eff86f921bf07237b4686969a7609ffd4",
+      "source": "inst/conformance/skills/upgrade-cloud-tracked.json"
+    },
+    "tests/shared/conformance/skills/upgrade-diverged.json": {
+      "sha256": "ec0d8e20048fad3abb7bac7c082dd91e7b7e3f5584719744e90910b17b7839a1",
+      "source": "inst/conformance/skills/upgrade-diverged.json"
     }
   },
-  "ref": "v2.0.17",
+  "ref": "920c684",
   "source": "framework (R package)"
 }
