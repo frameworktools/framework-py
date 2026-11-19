@@ -1,5 +1,5 @@
 {
-  "commit": "21f3c218c6cb9689e9e586bfed15b71f6180881a",
+  "commit": "4364c8485131ab3206e19a6fb9c5d1226c503c12",
   "files": {
     "docs/docs-site.md": {
       "sha256": "be34e19dacbe77390e41986e47bac11d95ace1e458e6fec868e2b279a9e7c497",
@@ -306,51 +306,51 @@
       "source": "inst/conformance/create/python/bare-scripts.json"
     },
     "tests/shared/conformance/create/python/course-quarto.json": {
-      "sha256": "10d8e437f5e4213d3033e0363feabc384b0645104d2e3a8e144a78d0ede8594f",
+      "sha256": "356aa135912026b02ed8e8309107a026c45f59ce0a2ff8056950ff073ca40c86",
       "source": "inst/conformance/create/python/course-quarto.json"
     },
     "tests/shared/conformance/create/python/presentation-quarto.json": {
-      "sha256": "ea3f9ee687223af086abb3decf07b77a64c0543cab8270f8c7ba432d5b9193cb",
+      "sha256": "6bbb263546c53af7af6c881a36d90ec2734a789fe144facd9eb24cfe4535a09a",
       "source": "inst/conformance/create/python/presentation-quarto.json"
     },
     "tests/shared/conformance/create/python/project-jupyter-both.json": {
-      "sha256": "c74e33ae8e8eb40367b0d9ea7ebc58d465856af02cce22e4691f17fa806bdbf5",
+      "sha256": "02f8723ab18c8caf128388c2fbd2bdfc80f1966d26760fb31797818c0024541c",
       "source": "inst/conformance/create/python/project-jupyter-both.json"
     },
     "tests/shared/conformance/create/python/project-jupyter-no-agents.json": {
-      "sha256": "9214d90db07236652e709d711d169e055236dd529ee5079f13d9b555d7fadf87",
+      "sha256": "0482969470ff4adfd255be8cb06bbd7fa8e1e190b67b37415cfb62c9456275e1",
       "source": "inst/conformance/create/python/project-jupyter-no-agents.json"
     },
     "tests/shared/conformance/create/python/project-jupyter-none.json": {
-      "sha256": "98d96e6a50ef5a8c76786a1dd9663f1548a13b8a664e260b2f404e06b3af23c5",
+      "sha256": "15b84a3c0d2e4dd1f35a51096dac057ec22bb9befb05a5b83adfcd182d11462b",
       "source": "inst/conformance/create/python/project-jupyter-none.json"
     },
     "tests/shared/conformance/create/python/project-jupyter-rstudio.json": {
-      "sha256": "f291aa94726fa315747689d146a234406f7315fb09aab68382c9e439d45cac36",
+      "sha256": "0a19676a2d675c709c0abb8fcf64fce2d741291f440ccef4918b837bca03d7b8",
       "source": "inst/conformance/create/python/project-jupyter-rstudio.json"
     },
     "tests/shared/conformance/create/python/project-jupyter.json": {
-      "sha256": "d7a0288075f51aac469538003a3a57e8da3be95652f681a817fdef1eddb86133",
+      "sha256": "d9a74780043a4a3eb3dd40e54e9ac65a19e40ca39eff7d34594eedf301cd652d",
       "source": "inst/conformance/create/python/project-jupyter.json"
     },
     "tests/shared/conformance/create/python/project-quarto.json": {
-      "sha256": "5c2d2dec189509d078612c6e2b362fe51e0e3ed5ccfe54b5331cbd1a9f9b3c09",
+      "sha256": "8a77f715b76a3b6662c49436f6cb1a0890b4de0b1db1f45781059fa1ca5a44a0",
       "source": "inst/conformance/create/python/project-quarto.json"
     },
     "tests/shared/conformance/create/python/project-scripts.json": {
-      "sha256": "e9564d87032e32e6fe8f7179da08e3aed386fdde4604da23b2230cd1959d0cc6",
+      "sha256": "e2e5e0c66dfd068ddfabb08e1096f16efd059d98f68a2516a312a797f4e3b287",
       "source": "inst/conformance/create/python/project-scripts.json"
     },
     "tests/shared/conformance/create/python/project_sensitive-jupyter.json": {
-      "sha256": "d7fb2bddcaa612bb53759d0c97af0cf0687748e1b90b4da42a06478a4f1c57de",
+      "sha256": "5ae26ec67c6768290a45f1903b83a29d24b3fffe86ee53ca2a52791161d12b91",
       "source": "inst/conformance/create/python/project_sensitive-jupyter.json"
     },
     "tests/shared/conformance/create/python/project_sensitive-quarto.json": {
-      "sha256": "acd7c3fadedf43e84054fc53535413b5fe382639d9a38c35ff7cd3170445ea21",
+      "sha256": "c92cd4b3bc7bd4670ee0f8ca38b76d0636ee24602487ab9281b3f9964e8a5710",
       "source": "inst/conformance/create/python/project_sensitive-quarto.json"
     },
     "tests/shared/conformance/create/python/project_sensitive-scripts.json": {
-      "sha256": "617e8ef4bef36292daab6730a173b218b2bb48dacb12bbe88f1b70251db27a97",
+      "sha256": "5c58daf11920eaa05b5d07e13e6b5b9fc2566903a516563dcfe488fdaa6ca95f",
       "source": "inst/conformance/create/python/project_sensitive-scripts.json"
     },
     "tests/shared/conformance/merge/atomic-entries.json": {
@@ -382,6 +382,6 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     }
   },
-  "ref": "v2.0.15",
+  "ref": "v2.0.17",
   "source": "framework (R package)"
 }

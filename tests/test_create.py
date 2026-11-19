@@ -146,6 +146,25 @@ def test_editor_files_follow_scaffold_ide(tmp_path: Path, ide: str, written: boo
     assert not list(root.glob("*.Rproj"))
 
 
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+def test_created_folders_survive_git(tmp_path: Path) -> None:
+    """Empty folders get a .gitkeep, as in R, so a project pushed to GitHub (the
+    framework.pub scaffold action) keeps them. Private folders stay out of git."""
+    root = fw.project_create_from_layers(
+        GOLDEN / "project-sensitive" / "layers.json", tmp_path / "p"
+    )
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=root, check=True, capture_output=True, text=True
+    ).stdout.splitlines()
+    for folder in ("notebooks", "scripts", "functions", "docs", "inputs/public/raw"):
+        assert f"{folder}/.gitkeep" in tracked
+    assert not [path for path in tracked if "/private/" in f"/{path}"]
+    # Every created folder, private ones included, is kept on disk
+    assert (root / "inputs/private/raw/.gitkeep").is_file()
+
+
 def test_headless_needs_a_fresh_checkout(tmp_path: Path) -> None:
     layers = tmp_path / "layers.json"
     layers.write_text(

@@ -116,6 +116,21 @@ def _create_directories(root: Path, spec: Mapping[str, Any]) -> None:
             (root / path).mkdir(parents=True, exist_ok=True)
 
 
+_KEEP_SKIP = {".git", "renv", ".quarto", "_freeze", "node_modules", ".venv"}
+
+
+def _keep_folders(root: Path) -> None:
+    """Put a ``.gitkeep`` in every empty folder, as R's ``.spec_keep_folders()`` does,
+    so the folders creation made survive git, GitHub, and its Download ZIP. Folders a
+    project's ``.gitignore`` excludes (private ones) stay out of git anyway, and
+    ``scaffold()`` makes them again."""
+    for folder in sorted(root.rglob("*")):
+        if not folder.is_dir() or _KEEP_SKIP & set(folder.relative_to(root).parts):
+            continue
+        if not any(folder.iterdir()):
+            (folder / ".gitkeep").touch()
+
+
 def _sections(spec: Mapping[str, Any]) -> dict[str, Any]:
     """The settings sections a Python project writes, in the shared format."""
     scaffold = spec.get("scaffold") or {}
@@ -528,6 +543,7 @@ def project_create(
         )
     if not bare:
         db.ensure_db(root)
+    _keep_folders(root)
     _record(root, spec)
 
     if not headless:

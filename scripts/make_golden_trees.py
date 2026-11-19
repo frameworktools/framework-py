@@ -20,7 +20,9 @@ ROOT = Path(__file__).resolve().parent.parent
 GOLDEN = ROOT / "tests" / "golden"
 DATE = "2000-01-01"
 VERSION = "0.0.0-golden"
-SKIP = {"framework.db"}
+# .gitkeep files are empty, and the ones in private folders cannot be committed
+# (the golden .gitignore excludes them). The create conformance cases pin them.
+SKIP = {"framework.db", ".gitkeep"}
 
 
 def normalize(text: str) -> str:
