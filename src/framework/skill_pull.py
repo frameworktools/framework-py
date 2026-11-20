@@ -24,7 +24,16 @@ from typing import Any
 from urllib.parse import quote
 
 from framework import _skill_plan as planner
-from framework._skill_plan import ABSENT, UNREADABLE, Disk, Plan, identity_for, key_of, present
+from framework._skill_plan import (
+    ABSENT,
+    UNREADABLE,
+    Disk,
+    Plan,
+    SkillPlanError,
+    identity_for,
+    key_of,
+    present,
+)
 from framework.errors import FrameworkError
 from framework.skill_sync import _listed
 
@@ -141,7 +150,18 @@ def _latest(skills: dict[str, Any], server: str, notes: list[str]) -> None:
             skills[name] = {
                 **entry,
                 "bundle": remote["bundle"],
-                "sync": {**source, "version": remote["version"], "hash": remote["hash"]},
+                "sync": {
+                    **source,
+                    "version": remote["version"],
+                    "hash": remote["hash"],
+                    # Every version's hash, from the setup and from the snapshot
+                    "known_hashes": sorted(
+                        {
+                            *(source.get("known_hashes") or []),
+                            *(remote.get("known_hashes") or []),
+                        }
+                    ),
+                },
                 # The setup's version is a known hash too: a copy of it is unedited
                 "_setup_hash": source["hash"],
             }
@@ -264,7 +284,7 @@ def _fetch_by_identity(
             "version": remote["version"],
             "server": server,
             "hash": remote["hash"],
-            "known": [remote["hash"]],
+            "known": sorted({remote["hash"], *(remote.get("known_hashes") or [])}),
             "bundle": files,
         }
 
@@ -356,6 +376,34 @@ def _tracked_paths(lock: dict[str, Any]) -> list[str]:
 # Apply -----------------------------------------------------------------------------------
 
 
+def _apply_moves(root: Path, steps: list[dict[str, Any]]) -> None:
+    """Rename each moved folder. When one fails, the renames made are undone in reverse
+    order, and the error names any folder that couldn't be put back."""
+    from framework.skill_sync import _path
+
+    done: list[tuple[Path, Path]] = []
+    try:
+        for step in steps:
+            source, target = _path(root, step["from"]), _path(root, step["path"])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source.rename(target)
+            done.append((source, target))
+    except OSError as error:
+        stuck = []
+        for source, target in reversed(done):
+            try:
+                target.rename(source)
+            except OSError:
+                stuck.append(
+                    f"{target.relative_to(root).as_posix()} (belongs at "
+                    f"{source.relative_to(root).as_posix()})"
+                )
+        undone = (
+            f" Not moved back: {'; '.join(stuck)}." if stuck else " The moves made were undone."
+        )
+        raise FrameworkError(f"skills_move() failed ({error}).{undone}") from error
+
+
 def _apply(
     root: Path,
     plan: Plan,
@@ -370,19 +418,14 @@ def _apply(
     is left alone (``edited``, ``changed_during_pull``). A step that fails is ``failed``
     and the others go on. A declined copy keeps its old record, and its entry its old
     base; ``known`` still gains the source's hashes."""
-    from framework.skill_sync import SkillRestoreError, _install, _path, scan
+    from framework.skill_sync import SkillRestoreError, _install, _path, bundle_hash, scan
 
     steps = sorted((dict(s) for s in plan.steps), key=lambda s: s["path"].encode())
     declined: list[dict[str, Any]] = []
     backups: dict[str, str] = {}
+    _apply_moves(root, [s for s in steps if s["action"] == "move"])
     for step in steps:
         relative, action = step["path"], step["action"]
-        if action == "move":
-            source = _path(root, step["from"])
-            target = _path(root, relative)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            source.rename(target)
-            continue
         if action not in ("write", "copy"):
             continue
         now, _ = _hash_now(root, relative)
@@ -397,6 +440,16 @@ def _apply(
                 files = sources[step["entry"]]["bundle"]
             else:
                 files = scan(_path(root, step["from"]))
+                if bundle_hash(files) != disk.get(step["from"]):
+                    # The sibling it copies from changed since planning
+                    step.update(
+                        action="none",
+                        status="edited",
+                        reason_code="changed_during_pull",
+                        hint=None,
+                    )
+                    declined.append(step)
+                    continue
             installed = _install(root, [relative], files, None if now == ABSENT else now)
         except SkillRestoreError:
             raise
@@ -854,11 +907,21 @@ def install_setup_skills(root: Path, skills: dict[str, Any], dirs: list[str]) ->
 _REFUSED = "Cloud has a newer version than this project pulled."
 
 
-def _push_login() -> tuple[str, str]:
-    """The server push sends to, and your login token for it."""
-    from framework.cloud import _require_token, cloud_server
+def _project_server(root: Path) -> str:
+    """The server this project's skills sync with, found as pull finds it: the project's
+    ``.env`` (FW_CLOUD_URL) when it names a project token or server, else your login."""
+    from framework.cloud import _project_env, cloud_server
 
-    server = cloud_server().url.rstrip("/")
+    if _project_env("FW_PROJECT_TOKEN", root) or _project_env("FW_CLOUD_URL", root):
+        return cloud_server(scope="project", project_dir=root).url.rstrip("/")
+    return cloud_server().url.rstrip("/")
+
+
+def _push_login(root: Path) -> tuple[str, str]:
+    """The server push sends to (the project's), and your login token for it."""
+    from framework.cloud import _require_token
+
+    server = _project_server(root)
     return server, _require_token(server)
 
 
@@ -885,22 +948,21 @@ def _push_remote(
 
     heads: dict[str, Any] = {}
     errors: dict[str, str] = {}
-    if token is None:
-        return heads, errors
     for key in keys:
         entry = lock["skills"][key]
         identity, base = entry["identity"], entry.get("base") or {}
-        if identity["kind"] == "cloud":
-            path = f"{quote(identity['skill_id'], safe='')}?variant={identity['variant']}"
-            where = str(identity.get("server") or server)
-        elif identity["kind"] == "builtin" and base.get("hash"):
-            path = (
-                f"{quote(identity['skill_id'], safe='')}?variant={identity['variant']}"
-                f"&hash={base['hash']}"
-            )
-            where = server
-        else:
+        if identity["kind"] == "cloud" and identity.get("server") != server:
+            # Never send your token for this server to another one
+            errors[key] = f"It tracks a skill on another server ({identity.get('server')})."
             continue
+        if token is None or identity["kind"] not in ("cloud", "builtin"):
+            continue
+        path = f"{quote(identity['skill_id'], safe='')}?variant={identity['variant']}"
+        if identity["kind"] == "builtin" and base.get("channel") == "package":
+            # Cloud's copy of the version the package shipped, or 409 when Cloud never
+            # published it. A built-in last delivered by Cloud reads Cloud's head.
+            path += f"&hash={base['hash']}"
+        where = server
         try:
             remote = api(f"/api/v1/skills/sync/{path}", token, where)
             if bundle_hash(remote["bundle"]) != remote["hash"]:
@@ -949,12 +1011,27 @@ def _push_prepare(root: Path, force: bool, server: str, token: str | None) -> di
 
 def _push_send(root: Path, prep: dict[str, Any]) -> list[dict[str, Any]]:
     """Push each planned skill; its steps become pushed or failed. Saves the lock."""
-    from framework.skill_sync import _lock, _path, _save_changed, bundle_hash, post_push, scan
+    from framework._skill_plan import dump
+    from framework.skill_sync import (
+        _lock,
+        _path,
+        _read,
+        _save_changed,
+        bundle_hash,
+        post_push,
+        scan,
+    )
 
     plan: Plan = prep["plan"]
     steps = [dict(s) for s in plan.steps]
     lock = copy.deepcopy(plan.lock_after)
     with _lock(root):
+        if dump(_read(root)[0]) != dump(prep["lock"]):
+            raise SkillPlanError(
+                "lock_changed",
+                ".framework/skills.lock.json changed after this push was planned (another "
+                "skill command ran). Nothing was sent. Run the push again.",
+            )
         for key in dict.fromkeys(s["entry"] for s in steps if s["action"] == "push"):
             mine = [s for s in steps if s["entry"] == key]
             entry = lock["skills"][key]
@@ -978,7 +1055,7 @@ def _push_send(root: Path, prep: dict[str, Any]) -> list[dict[str, Any]]:
                 local = bundle_hash(files)
                 if local != mine[0]["hash"]:
                     raise ValueError(f"{first} changed while the push ran")
-                server = str(identity.get("server") or prep["server"])
+                server = prep["server"]
                 response = post_push(
                     root,
                     lock,
@@ -1000,6 +1077,8 @@ def _push_send(root: Path, prep: dict[str, Any]) -> list[dict[str, Any]]:
                     s.update(action="none", status="failed", reason_code=None, hint=None)
                     s["error"] = str(error)
                 continue
+            # Just before saving: the copies holding the pushed bytes now
+            holding = {p for p in entry["copies"] if _hash_now(root, p)[0] == response["hash"]}
             lock = planner.after_push(
                 lock,
                 key,
@@ -1030,7 +1109,7 @@ def _warning(row: dict[str, Any]) -> str:
     return f"This replaces the current version of {name}, used wherever it's attached."
 
 
-PUSH_STATUSES = ("pushed", "refused", "untracked", "missing", "cancelled", "failed")
+PUSH_STATUSES = ("pushed", "current", "refused", "untracked", "missing", "cancelled", "failed")
 
 
 def push_skills(
@@ -1065,7 +1144,8 @@ def push_skills(
     Returns:
         A dict: ``dry_run``, ``skills`` (each with ``name``, ``status``, ``paths``,
         ``reason``, ``hint``, ``reason_code``, ``hint_key``, and ``hint_args``; status is
-        pushed, refused, untracked, missing, cancelled, or failed), ``steps``, ``counts``
+        pushed, current (Cloud already has it), refused, untracked, missing, cancelled, or
+        failed), ``steps``, ``counts``
         by status, and ``message`` (the summary line).
 
     Raises:
@@ -1076,7 +1156,7 @@ def push_skills(
 
     show_messages()
     root = _root(project_path).resolve()
-    server, token = _push_login()
+    server, token = _push_login(root)
     prep = _push_prepare(root, force, server, token)
     steps = prep["plan"].steps
     planned = _rows(steps, "push", prep["lock"], prep["errors"], verb="push")
@@ -1104,6 +1184,7 @@ def push_skills(
     counts = {key: sum(r["status"] == key for r in rows) for key in PUSH_STATUSES}
     labels = {
         "pushed": "to push" if dry_run else "pushed",
+        "current": "already on Framework Cloud",
         "refused": "refused (pull first)",
         "untracked": "not tracked",
         "missing": "missing (every copy gone)",
@@ -1447,19 +1528,28 @@ def skills_copy(
         before = copy.deepcopy(lock)
         from framework.skill_sync import _path, bundle_hash, scan
 
-        def state(relative: str) -> str:
-            """A folder's hash, ABSENT, or UNREADABLE (not a skill folder). Errors reading
-            a skill folder (symlinks, permissions) propagate."""
+        def state(relative: str, side: str) -> str:
+            """A folder's hash, ABSENT, or UNREADABLE (not a skill folder). A skill folder
+            that can't be read (a symlink, an invalid file, permissions) stops the copy
+            with copy_source_unreadable or copy_target_unreadable."""
             kind = _kind(root, relative)
             if kind == "missing":
                 return ABSENT
             if kind == "other" or not _is_skill(root / relative, relative):
                 return UNREADABLE
-            return bundle_hash(scan(_path(root, relative)))
+            try:
+                return bundle_hash(scan(_path(root, relative)))
+            except (ValueError, OSError) as error:
+                raise SkillPlanError(
+                    f"copy_{side}_unreadable", f"{relative} can't be read ({error}).", relative
+                ) from error
 
         disk = Disk(case_insensitive=_case_insensitive(root))
         for name in names:
-            disk.hashes[f"{source}/{name}"] = state(f"{source}/{name}")
+            relative = on_disk(root, f"{source}/{name}")
+            if relative != f"{source}/{name}":
+                disk.spelling[f"{source}/{name}"] = relative
+            disk.hashes[relative] = state(relative, "source")
         for folder in targets:
             disk.children[folder] = (
                 _skill_names(root, folder) if _kind(root, folder) == "dir" else []
@@ -1469,7 +1559,7 @@ def skills_copy(
                 relative = on_disk(root, f"{folder}/{name}")
                 if relative != f"{folder}/{name}":
                     disk.spelling[f"{folder}/{name}"] = relative
-                disk.hashes[relative] = state(relative)
+                disk.hashes[relative] = state(relative, "target")
         plan = planner.plan(
             disk,
             lock,
@@ -1637,9 +1727,7 @@ def skills_move(
     if skill_id is not None or variant is not None or builtin is not None:
         identity = {"skill_id": skill_id, "variant": variant, "builtin": builtin}
         if skill_id and not skill_id.startswith(("framework:", "inline:")):
-            from framework.cloud import cloud_server
-
-            identity["server"] = cloud_server().url.rstrip("/")
+            identity["server"] = _project_server(root)
 
     with _lock(root) if not dry_run else nullcontext():
         source = on_disk(root, source)

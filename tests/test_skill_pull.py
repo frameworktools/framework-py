@@ -1830,3 +1830,127 @@ def test_two_setup_names_for_one_folder_stop_with_paths_alias(
         assert caught.value.code == "paths_alias"
     assert not (project / ".claude/skills").exists()
     assert not (project / ".framework/skills.lock.json").exists()
+
+
+def test_a_failed_move_undoes_the_renames_before_it(
+    cloud: Cloud, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fw.pull_skills(project)
+    lock = (project / ".framework/skills.lock.json").read_text()
+    before = sorted(p.name for p in (project / ".claude/skills").iterdir())
+    real = Path.rename
+    moved: list[Path] = []
+
+    def rename(self: Path, target: Any) -> Any:
+        if ".agents" in str(target) and len(moved) == 2:
+            raise OSError("disk full")
+        if ".agents" in str(target):
+            moved.append(self)
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+    with pytest.raises(fw.FrameworkError, match="The moves made were undone"):
+        fw.skills_move("claude", "agents", project_path=project)
+    assert sorted(p.name for p in (project / ".claude/skills").iterdir()) == before
+    assert not any((project / ".agents/skills").glob("*/SKILL.md"))
+    assert (project / ".framework/skills.lock.json").read_text() == lock
+
+
+def test_push_never_sends_a_token_to_another_server(
+    cloud: Cloud, project: Path, signed_in: None
+) -> None:
+    from framework._skill_plan import key_of
+    from framework.skill_sync import _save
+
+    pulled(cloud, project)
+    state = _load(project)
+    key = next(k for k, e in state["skills"].items() if ".claude/skills/team-style" in e["copies"])
+    entry = state["skills"].pop(key)
+    entry["identity"]["server"] = "https://elsewhere.example"
+    state["skills"][key_of(entry["identity"])] = entry
+    _save(project, state)
+    (project / ".claude/skills/team-style/SKILL.md").write_text(
+        "---\nname: team-style\ndescription: x\n---\nMine\n"
+    )
+    calls: list[str] = []
+    answer = cloud.api
+
+    def api(path: str, token: str, url: str, *args: Any, **kwargs: Any) -> Any:
+        calls.append(url)
+        return answer(path, token, url, *args, **kwargs)
+
+    import framework.cloud as module
+
+    module_api = module.api
+    module.api = api
+    try:
+        for dry_run in (True, False):
+            result = fw.push_skills(project, confirm=True, dry_run=dry_run)
+            found = next(s for s in result["skills"] if s["name"] == "team-style")
+            assert found["status"] == "failed" and "another server" in found["reason"]
+    finally:
+        module.api = module_api
+    assert "https://elsewhere.example" not in calls and cloud.posts == []
+
+
+def test_push_stops_when_the_lock_changed_after_planning(
+    cloud: Cloud, project: Path, signed_in: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import framework.skill_pull as skill_pull
+    from framework._skill_plan import SkillPlanError
+
+    pulled(cloud, project)
+    (project / ".claude/skills/team-style/SKILL.md").write_text(
+        "---\nname: team-style\ndescription: x\n---\nMine\n"
+    )
+    real = skill_pull._push_prepare
+
+    def prepare(*args: Any) -> Any:
+        prep = real(*args)
+        # Another command records a change after this push was planned
+        path = project / ".framework/skills.lock.json"
+        path.write_text(path.read_text().replace('"version": 1', '"version": 9'))
+        return prep
+
+    monkeypatch.setattr(skill_pull, "_push_prepare", prepare)
+    with pytest.raises(SkillPlanError, match="Run the push again") as caught:
+        fw.push_skills(project, confirm=True)
+    assert caught.value.code == "lock_changed" and cloud.posts == []
+
+
+def test_push_gives_the_move_hint_when_the_old_folder_still_exists(
+    cloud: Cloud, project: Path, signed_in: None
+) -> None:
+    pulled(cloud, project)
+    # Moved by hand to .agents/skills; .claude/skills still holds the other skills
+    (project / ".agents/skills").mkdir(parents=True)
+    (project / ".claude/skills/team-style").rename(project / ".agents/skills/team-style")
+    (project / "settings.yml").write_text(
+        "default:\n  project_type: project\n  ai: {assistants: [claude, codex]}\n"
+    )
+    result = fw.push_skills(project, confirm=True)
+    rows = {r["status"]: r for r in result["skills"] if r["name"] == "team-style"}
+    assert set(rows) == {"missing", "untracked"}
+    move = 'skills_move(".claude/skills/team-style", ".agents/skills/team-style")'
+    assert rows["missing"]["hint"] == rows["untracked"]["hint"] == move
+
+
+def test_a_builtin_last_delivered_by_cloud_reads_cloud_s_head(
+    cloud: Cloud, project: Path, signed_in: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pulled(cloud, project)
+    data = project / ".claude/skills/framework-data/SKILL.md"
+    own(project, ".claude/skills/framework-data", "framework:framework-data", 1)
+    data.write_text(data.read_text() + "Mine\n")
+    paths: list[str] = []
+    answer = cloud.api
+
+    def api(path: str, *args: Any, **kwargs: Any) -> Any:
+        paths.append(path)
+        return answer(path, *args, **kwargs)
+
+    monkeypatch.setattr("framework.cloud.api", api)
+    fw.push_skills(project, dry_run=True)
+    gets = [p for p in paths if "framework%3Aframework-data" in p]
+    # The head, never the hash-qualified copy of a package version
+    assert gets and all("hash=" not in p for p in gets)

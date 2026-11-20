@@ -450,15 +450,18 @@ def _plan_pull(
         entry = lock["skills"].get(key)
         extra = []
         for d in dirs:
-            p = disk.spelled(f"{d}/{source['name']}")
-            if claimed.get(disk.alias(p), p) != p:
+            # Collisions compare the spellings the setup asks for; the folder's own
+            # spelling on disk is what is planned
+            asked = f"{d}/{source['name']}"
+            if claimed.get(disk.alias(asked), asked) != asked:
                 raise SkillPlanError(
                     "paths_alias",
-                    f"{claimed[disk.alias(p)]} and {p} are one folder on this volume, and the "
-                    "setup names both. Rename one of the skills in the setup.",
-                    p,
+                    f"{claimed[disk.alias(asked)]} and {asked} are one folder on this volume, "
+                    "and the setup names both. Rename one of the skills in the setup.",
+                    asked,
                 )
-            claimed[disk.alias(p)] = p
+            claimed[disk.alias(asked)] = asked
+            p = disk.spelled(asked)
             owner = owner_of(lock, p)
             if owner == key:
                 continue
@@ -779,7 +782,8 @@ def _plan_copy(disk: Disk, lock: dict[str, Any], opt: dict[str, Any]) -> Plan:
     from_dir, names = opt["from_dir"], list(opt["names"])
     for t in opt["to_dirs"]:
         for n in names:
-            src, dst = f"{from_dir}/{n}", disk.spelled(f"{t}/{n}")
+            # Both as spelled on disk, so owners match by filesystem identity
+            src, dst = disk.spelled(f"{from_dir}/{n}"), disk.spelled(f"{t}/{n}")
             if disk.get(src) == ABSENT:
                 raise SkillPlanError("copy_source_missing", f"Not a skill in {from_dir}: {n}.", src)
             if disk.get(src) == UNREADABLE:
@@ -841,10 +845,10 @@ def _untracked_folders(disk: Disk, lock: dict[str, Any], dirs: list[str]) -> lis
 def _twin(
     disk: Disk, lock: dict[str, Any], entry: dict[str, Any], dirs: list[str]
 ) -> tuple[str, str] | None:
-    """A gone copy of an entry and an untracked folder of the same name in a configured
-    folder: the copy was moved by hand."""
+    """An absent copy of an entry and an untracked folder of the same name in a configured
+    folder: the copy was moved by hand, whether or not its old folder still exists."""
     for p in sorted(entry["copies"]):
-        if disk.get(p) != ABSENT or disk.folder_exists(_parent(p)):
+        if disk.get(p) != ABSENT:
             continue
         for d in dirs:
             q = f"{d}/{posixpath.basename(p)}"
@@ -958,9 +962,7 @@ def _plan_push(
             gone = [
                 q
                 for q in sorted(entry["copies"])
-                if posixpath.basename(q) == posixpath.basename(p)
-                and disk.get(q) == ABSENT
-                and not disk.folder_exists(_parent(q))
+                if posixpath.basename(q) == posixpath.basename(p) and disk.get(q) == ABSENT
             ]
             if gone:
                 twin = gone[0]
@@ -1064,11 +1066,14 @@ def _plan_move(disk: Disk, lock: dict[str, Any], opt: dict[str, Any]) -> Plan:
             )
         moved = plan.lock_after["skills"].pop(key)
         renamed = {b: a for a, b in pairs}
-        clean = {
-            r["hash"]
-            for p, r in moved["copies"].items()
-            if r.get("hash") and disk.get(renamed.get(p, p)) == r["hash"]
-        }
+
+        def held(p: str) -> str:
+            """A copy's bytes where they are now: at its new path, or at its old one when
+            the folder hasn't moved yet."""
+            found = disk.get(p)
+            return disk.get(renamed[p]) if found == ABSENT and p in renamed else found
+
+        clean = {r["hash"] for p, r in moved["copies"].items() if r.get("hash") == held(p)}
         plan.lock_after["skills"][new_key] = {
             "identity": identity,
             "base": None,

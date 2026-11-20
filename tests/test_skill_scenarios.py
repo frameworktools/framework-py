@@ -336,7 +336,7 @@ def run_command(
             assert len(responses) == 1, "one push per case"
             return next(iter(responses.values()))
 
-        monkeypatch.setattr(skill_pull, "_push_login", lambda: (SERVER, "token"))
+        monkeypatch.setattr(skill_pull, "_push_login", lambda root: (SERVER, "token"))
         monkeypatch.setattr(skill_pull, "_push_remote", heads)
         monkeypatch.setattr(cloud, "api", post)
         monkeypatch.setattr(cloud, "cloud_token", lambda *a, **k: "token")

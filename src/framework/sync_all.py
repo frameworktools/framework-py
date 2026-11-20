@@ -703,9 +703,10 @@ def _skills_push_plan(root: Path, force: bool) -> dict[str, Any]:
     login can't push them.
     """
     from framework._log import inform
-    from framework.cloud import CloudError, cloud_server, cloud_token, login_hint
+    from framework.cloud import CloudError, cloud_token, login_hint
     from framework.skill_pull import (
         _edited_keys,
+        _project_server,
         _public,
         _push_prepare,
         _push_send,
@@ -723,7 +724,7 @@ def _skills_push_plan(root: Path, force: bool) -> dict[str, Any]:
     server, token = "", None
     # Only edited skills need a server; with none chosen, NoServerError says how to pick one
     if edited:
-        server = cloud_server().url.rstrip("/")
+        server = _project_server(root)
         token = cloud_token(server)
         if token is None:
             names = ", ".join(
@@ -757,10 +758,7 @@ def _skills_push_plan(root: Path, force: bool) -> dict[str, Any]:
         bad = [r for r in done if r["status"] in ("refused", "failed")]
         if bad:
             why = "; ".join(
-                f"{r['name']} changed on Cloud since this project pulled it; "
-                "push_all(force=True) replaces it"
-                if r["status"] == "refused"
-                else f"{r['name']}: {str(r.get('reason')).rstrip('.')}"
+                f"{r['name']}: {push_text(r, force='push_all(force=True)').rstrip('.')}"
                 for r in bad
             )
             first = f"pushed {_names(pushed)}; " if pushed else ""

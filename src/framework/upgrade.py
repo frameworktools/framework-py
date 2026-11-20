@@ -1058,8 +1058,12 @@ def _step_skills(plan: _Plan) -> None:
     from framework.skill_pull import row_text, upgrade_skills
 
     names = [skill for skill in skills if _shipped(skill).is_dir()]
+    from framework._skill_plan import LockSchemaError, SkillPlanError
+
     try:
         planned = upgrade_skills(plan.root, dirs, names)
+    except (LockSchemaError, SkillPlanError):
+        raise  # A lock upgrade can't read, or rare states: stop before writing anything
     except Exception as error:
         plan.note(f"Skills weren't checked ({error}).")
         return

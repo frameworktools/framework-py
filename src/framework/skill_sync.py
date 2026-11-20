@@ -670,10 +670,13 @@ def skills_sync(
                 f"/api/v1/skills/sync/{quote(cloud_id, safe='')}?variant={variant}", token, server
             )
         elif identity["kind"] == "builtin" and base.get("hash"):
+            # A package base: Cloud's copy of the version the package shipped. A base
+            # Cloud delivered: Cloud's head, so a newer Cloud version is seen.
+            qualified = f"&hash={base['hash']}" if base.get("channel") == "package" else ""
             try:
                 remote = api(
                     f"/api/v1/skills/sync/{quote(identity['skill_id'], safe='')}"
-                    f"?variant={variant}&hash={base['hash']}",
+                    f"?variant={variant}{qualified}",
                     token,
                     server,
                 )

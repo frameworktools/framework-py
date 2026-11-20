@@ -315,8 +315,9 @@ def test_unreadable_source_folders_are_errors_and_leave_targets_intact(project: 
     before = tree(project / ".agents")
     (source / "refs").chmod(0)
     try:
-        with pytest.raises(PermissionError):
+        with pytest.raises(FrameworkError, match="Permission denied") as caught:
             fw.skills_copy(from_="claude", project_path=project)
+        assert caught.value.code == "copy_source_unreadable"
     finally:
         (source / "refs").chmod(0o755)
     assert tree(project / ".agents") == before
@@ -911,3 +912,39 @@ def test_an_existing_target_folder_keeps_its_on_disk_spelling(project: Path) -> 
     result = fw.skills_copy(from_="claude", project_path=project)
     assert [r["to"] for r in result["skills"]] == [".agents/skills/alpha"]
     assert sorted(p.name for p in (project / ".agents/skills").iterdir()) == ["alpha"]
+
+
+def test_a_case_alias_of_the_source_still_finds_its_owner(project: Path) -> None:
+    from framework._skill_plan import key_of
+    from framework.skill_sync import _save, bundle_hash, scan
+
+    claude = make_skill(project, ".claude/skills", "alpha", "new")
+    agents = make_skill(project, ".agents/skills", "alpha", "old")
+    if not (project / ".claude/skills/ALPHA").exists():
+        pytest.skip("case-sensitive file system")
+    lock = {"schema": 2, "skills": {}}
+    for folder, skill_id in ((claude, "one"), (agents, "two")):
+        identity = {
+            "kind": "cloud",
+            "skill_id": skill_id,
+            "variant": "python",
+            "server": "https://cloud.example",
+        }
+        digest = bundle_hash(scan(folder))
+        lock["skills"][key_of(identity)] = {
+            "identity": identity,
+            "base": {
+                "channel": "cloud",
+                "hash": digest,
+                "version": 1,
+                "server": "https://cloud.example",
+            },
+            "known": [digest],
+            "copies": {folder.relative_to(project).as_posix(): {"hash": digest}},
+        }
+    _save(project, lock)
+    before = tree(project / ".agents")
+    with pytest.raises(FrameworkError, match="belongs to another skill") as caught:
+        fw.skills_copy(from_="claude", to="agents", skills=["ALPHA"], project_path=project)
+    assert caught.value.code == "copy_target_owned"
+    assert tree(project / ".agents") == before
