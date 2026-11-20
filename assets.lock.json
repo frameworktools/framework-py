@@ -1,5 +1,5 @@
 {
-  "commit": "c42e771223834c3a1f1b9b86fd93f19c5690fdb4",
+  "commit": "b802721207d0f9f318301b008bc1c39c104620dc",
   "files": {
     "docs/docs-site.md": {
       "sha256": "be34e19dacbe77390e41986e47bac11d95ace1e458e6fec868e2b279a9e7c497",
@@ -738,6 +738,6 @@
       "source": "inst/conformance/skills/upgrade-diverged.json"
     }
   },
-  "ref": "c42e771",
+  "ref": "v2.1.0",
   "source": "framework (R package)"
 }
