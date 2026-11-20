@@ -1,5 +1,5 @@
 {
-  "commit": "8c2efb9e36c505c2e7b98d5da2e541c4e571f40e",
+  "commit": "c42e771223834c3a1f1b9b86fd93f19c5690fdb4",
   "files": {
     "docs/docs-site.md": {
       "sha256": "be34e19dacbe77390e41986e47bac11d95ace1e458e6fec868e2b279a9e7c497",
@@ -681,6 +681,14 @@
       "sha256": "8807320f5cbbcba02eb482963ba173befc5d477c0d7dad42739007fc47765464",
       "source": "inst/conformance/skills/push-renamed-in-folder.json"
     },
+    "tests/shared/conformance/skills/push-renamed-one-of-two-edited.json": {
+      "sha256": "ac8127dfb9cfa64ea01b307c2d0a59bc0411af684e023040176024160ae608f5",
+      "source": "inst/conformance/skills/push-renamed-one-of-two-edited.json"
+    },
+    "tests/shared/conformance/skills/push-renamed-one-of-two.json": {
+      "sha256": "9f7e744c8ae9df8ad6f896454b72162a7983f4cb01cbfdb05194cdd3aba68b55",
+      "source": "inst/conformance/skills/push-renamed-one-of-two.json"
+    },
     "tests/shared/conformance/skills/push-untracked.json": {
       "sha256": "40ba61deff9d11142027182afb337165582316c1a0a9fdaa8b3b64de20824ef8",
       "source": "inst/conformance/skills/push-untracked.json"
@@ -730,6 +738,6 @@
       "source": "inst/conformance/skills/upgrade-diverged.json"
     }
   },
-  "ref": "8c2efb9",
+  "ref": "c42e771",
   "source": "framework (R package)"
 }

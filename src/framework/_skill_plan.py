@@ -911,9 +911,8 @@ def _plan_push(
         holes = [c for c in copies if c.state == "absent"]
         if differ or holes:
             src = edited[0].path if len(edited) == 1 else None
-            moved = (
-                None if differ else next((t for c in holes if (t := copy_twin(key, c.path))), None)
-            )
+            # Its one absent copy, when that copy has a unique match
+            moved = copy_twin(key, holes[0].path) if not differ and len(holes) == 1 else None
             _all_rows(
                 plan,
                 key,
