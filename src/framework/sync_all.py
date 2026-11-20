@@ -142,11 +142,16 @@ def _lock_write(root: Path, revision: str, server: str) -> None:
 
 def _connection(root: Path) -> tuple[str, str]:
     """The project's server and token, or CloudError when it has no token."""
-    from framework.cloud import CloudError, cloud_server, project_token
+    from framework.cloud import (
+        PROJECT_NOT_LINKED,
+        ProjectNotLinkedError,
+        cloud_server,
+        project_token,
+    )
 
     token = project_token(root)
     if token is None:
-        raise CloudError("no project token in FW_PROJECT_TOKEN or the project's .env")
+        raise ProjectNotLinkedError(f"{PROJECT_NOT_LINKED} Nothing changed.")
     return cloud_server(scope="project", project_dir=root).url, token
 
 
@@ -318,12 +323,17 @@ def _partial(function: str, done: str, outcome: dict[str, Any]) -> str:
 
 def _setup(root: Path) -> tuple[str, str, dict[str, Any]]:
     """The project's server, token, and package list; errors change nothing."""
-    from framework.cloud import CloudError, ProjectServerMissingError, _request
+    from framework.cloud import (
+        CloudError,
+        ProjectNotLinkedError,
+        ProjectServerMissingError,
+        _request,
+    )
 
     try:
         server, token = _connection(root)
         setup = _request("/api/v1/projects/setup", token, server).json()
-    except ProjectServerMissingError:
+    except (ProjectServerMissingError, ProjectNotLinkedError):
         raise
     except CloudError as error:
         raise _unreachable(error) from error

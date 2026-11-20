@@ -292,7 +292,9 @@ def test_offline_refused_older_server_and_no_token(
     with pytest.raises(CloudError, match="no data registry endpoint yet"):
         fw.pull_data_registry()
     (project / ".env").write_text(f"FW_CLOUD_URL={SERVER}\n")
-    with pytest.raises(CloudError, match="no project token"):
+    with pytest.raises(
+        CloudError, match=r"isn't linked to Framework Cloud.*fw project link --from SLUG.*Nothing"
+    ):
         fw.pull_data_registry()
 
 

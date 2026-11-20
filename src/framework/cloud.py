@@ -94,6 +94,18 @@ class ProjectServerMissingError(CloudError):
     """
 
 
+class ProjectNotLinkedError(CloudError):
+    """A project call found no project token, in the environment or the project's ``.env``.
+
+    A cloned repository has no ``.env``, so it stays unlinked until ``fw project link``.
+    """
+
+
+PROJECT_NOT_LINKED = (
+    "This project isn't linked to Framework Cloud (no FW_PROJECT_TOKEN in the environment "
+    "or .env). Link it with: fw project link --from SLUG. fw projects list shows the slugs."
+)
+
 PROJECT_SERVER_MISSING = (
     "This project's .env has FW_PROJECT_TOKEN but no FW_CLOUD_URL, so it does not say which "
     "Framework Cloud server issued the token. Add FW_CLOUD_URL=<server> to .env, or pass "
@@ -376,10 +388,7 @@ def project_token(project_dir: str | Path | None = None) -> str | None:
 def _require_project_token() -> str:
     token = project_token()
     if token is None:
-        raise CloudError(
-            "No project token found (FW_PROJECT_TOKEN / .env). "
-            "Create the project with framework.new() while logged in."
-        )
+        raise ProjectNotLinkedError(PROJECT_NOT_LINKED)
     return token
 
 

@@ -139,10 +139,11 @@ def _cloud_pages_url(root: Path) -> tuple[bool, str | None, str | None]:
     One call to ``/api/v1/me`` with the project token. Not known when there is
     no project token or the call fails.
     """
-    from framework.cloud import CloudError, api, cloud_server, project_token
+    from framework.cloud import PROJECT_NOT_LINKED, CloudError, api, cloud_server, project_token
 
     token = project_token(root)
     if token is None:
+        inform(f"{PROJECT_NOT_LINKED} Using the GitHub Pages address from the git remote.")
         return False, None, None
     try:
         server = cloud_server(scope="project", project_dir=root).url

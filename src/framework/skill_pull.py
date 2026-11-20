@@ -99,12 +99,19 @@ def _cloud_skills(root: Path, notes: list[str]) -> dict[str, Any]:
 
     Raises CloudError (or another error) when the setup can't be read.
     """
-    from framework.cloud import CloudError, _request, cloud_server, project_token
+    from framework.cloud import (
+        PROJECT_NOT_LINKED,
+        CloudError,
+        ProjectNotLinkedError,
+        _request,
+        cloud_server,
+        project_token,
+    )
     from framework.spec.resolve import spec_resolve
 
     token = project_token(root)
     if token is None:
-        raise CloudError("no project token")
+        raise ProjectNotLinkedError(PROJECT_NOT_LINKED)
     server = cloud_server(scope="project", project_dir=root).url
     envelope = _request("/api/v1/projects/pull", token, server).json()
     if not isinstance(envelope, dict) or envelope.get("spec_version") != 1:
@@ -222,7 +229,7 @@ def _pull_offer(root: Path, spec: dict[str, Any]) -> tuple[dict[str, Any], list[
     """What pull offers: the skills the project's Cloud setup lists (``source`` cloud),
     else, offline, the package skills for the project type (``source`` package)."""
     from framework._log import inform
-    from framework.cloud import CloudError, ProjectServerMissingError
+    from framework.cloud import CloudError, ProjectNotLinkedError, ProjectServerMissingError
     from framework.spec.merge import SpecError
 
     notes: list[str] = []
@@ -232,11 +239,14 @@ def _pull_offer(root: Path, spec: dict[str, Any]) -> tuple[dict[str, Any], list[
     except ProjectServerMissingError:
         raise
     except (CloudError, SpecError) as error:
-        reason = str(error).rstrip(".") or type(error).__name__
-        inform(
-            f"Framework Cloud not reached ({reason}); "
-            "using the package skills for this project type."
-        )
+        if isinstance(error, ProjectNotLinkedError):
+            inform(f"{error} Using the package skills for this project type.")
+        else:
+            reason = str(error).rstrip(".") or type(error).__name__
+            inform(
+                f"Framework Cloud not reached ({reason}); "
+                "using the package skills for this project type."
+            )
         wanted = _package_skills(spec)
         source = "package"
         notes = []

@@ -195,6 +195,17 @@ def test_the_cloud_knows_the_pages_url(
         assert fw.publish(report, to="github") == "https://pages.example.org/study/report/"
 
 
+def test_an_unlinked_project_says_how_to_link(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from framework._log import show_messages
+    from framework._pages import _cloud_pages_url
+
+    show_messages()
+    assert _cloud_pages_url(repo) == (False, None, None)
+    assert "fw project link --from SLUG" in capsys.readouterr().err
+
+
 def test_publish_notebook_html_only(repo: Path) -> None:
     notebook = repo / "analysis.qmd"
     notebook.write_text("# hi\n", encoding="utf-8")

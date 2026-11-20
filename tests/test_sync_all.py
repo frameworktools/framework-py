@@ -311,6 +311,18 @@ def test_pull_offline_and_missing_endpoint_change_nothing(cloud: Cloud, project:
     assert cloud.runs == []  # type: ignore[attr-defined]
 
 
+def test_pull_without_a_project_token_says_how_to_link(cloud: Cloud, project: Path) -> None:
+    (project / ".env").write_text("")
+    with pytest.raises(
+        CloudError,
+        match=r"^This project isn't linked to Framework Cloud \(no FW_PROJECT_TOKEN in the "
+        r"environment or \.env\)\. Link it with: fw project link --from SLUG\. "
+        r"fw projects list shows the slugs\. Nothing changed\.$",
+    ):
+        fw.pull_all(confirm=True)
+    assert cloud.runs == []  # type: ignore[attr-defined]
+
+
 def test_pull_stata_leaves_packages_alone(cloud: Cloud, project: Path) -> None:
     cloud.language = "stata"
     result = fw.pull_all(dry_run=True)

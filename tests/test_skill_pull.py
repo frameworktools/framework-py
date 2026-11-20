@@ -248,9 +248,14 @@ def test_pull_without_cloud_uses_the_package_skills(
     )
 
 
-def test_pull_without_a_project_token_says_so(cloud: Cloud, project: Path) -> None:
+def test_pull_without_a_project_token_says_so(cloud: Cloud, project: Path, capsys: Any) -> None:
     (project / ".env").write_text("")
     assert fw.pull_skills(project)["source"] == "package"
+    assert (
+        "This project isn't linked to Framework Cloud (no FW_PROJECT_TOKEN in the environment "
+        "or .env). Link it with: fw project link --from SLUG. fw projects list shows the "
+        "slugs. Using the package skills for this project type." in capsys.readouterr().err
+    )
 
 
 def test_pull_dry_run_writes_nothing(cloud: Cloud, project: Path) -> None:

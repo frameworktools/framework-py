@@ -178,6 +178,43 @@ def test_created_project_bootstraps(tmp_path: Path) -> None:
     assert "Created framework.db" in result.done
 
 
+def test_a_cloud_clone_without_a_token_says_how_to_link(tmp_path: Path) -> None:
+    """A clone of a Cloud project has no .env, so no token: bootstrap says how to link it.
+    An app's clone gets no framework.db either."""
+    from framework.create import project_create_from_layers
+
+    layers = Path(__file__).parent / "golden/app-shiny-python/layers.json"
+    root = project_create_from_layers(layers, tmp_path / "app")
+    (root / ".env").unlink()
+    hint = (
+        "This project isn't linked to Framework Cloud (no FW_PROJECT_TOKEN in the environment "
+        "or .env). Link it with: fw project link --from SLUG. fw projects list shows the slugs."
+    )
+    result = fw.bootstrap(root, packages=False)
+    assert hint in result.todo
+    assert not (root / "framework.db").exists()
+    with (root / ".env").open("a", encoding="utf-8") as env:
+        env.write("FW_PROJECT_TOKEN=fw_project\nFW_CLOUD_URL=https://cloud.example\n")
+    assert hint not in fw.bootstrap(root, packages=False).todo
+
+
+def test_a_local_project_needs_no_link(clone: Path) -> None:
+    assert not any("fw project link" in item for item in fw.bootstrap(clone, packages=False).todo)
+
+
+def test_an_app_gets_no_database(clone: Path) -> None:
+    settings = clone / "settings.yml"
+    settings.write_text(
+        settings.read_text(encoding="utf-8").replace(
+            "  language: python\n", "  language: python\n  project_type: shiny_python\n"
+        ),
+        encoding="utf-8",
+    )
+    result = fw.bootstrap(clone, packages=False)
+    assert not (clone / "framework.db").exists()
+    assert "Created framework.db" not in result.done
+
+
 def test_create_help_describes_interactive(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -7,9 +7,11 @@ Every step is safe to repeat and none contacts the cloud:
    variables that are still empty and that the settings read with ``env()``.
 3. Create the project folders, which git does not carry when they are empty
    or ignored.
-4. Create ``framework.db``, or add tables a newer version needs.
+4. Create ``framework.db``, or add tables a newer version needs. An app (Shiny for
+   Python or FastAPI) gets it only when something records to it.
 5. Install the packages from ``uv.lock`` (``uv sync``).
 6. Install the git hooks enabled in the settings.
+7. For a project made on Framework Cloud with no project token, say how to link it.
 
 R's ``bootstrap()`` follows the same contract, so ``fw bootstrap`` can call
 either language.
@@ -38,6 +40,7 @@ from framework.hooks import git_hooks_install
 from framework.project import _settings_in
 from framework.settings import settings_read
 from framework.spec.check import spec_check
+from framework.spec.resolve import is_app_type
 
 _SECRET_NAME = re.compile(
     r"PASSWORD|SECRET|TOKEN|ACCESS_KEY|API_KEY|PRIVATE_KEY|CREDENTIAL", re.IGNORECASE
@@ -72,6 +75,21 @@ def _check_spec(root: Path) -> None:
         raise FrameworkError(
             ".framework/spec.json is invalid: " + "; ".join(str(p) for p in problems)
         )
+
+
+def _cloud_link(root: Path, result: BootstrapResult) -> None:
+    """A project made on Framework Cloud needs its token, which a clone lacks."""
+    from framework.cloud import PROJECT_NOT_LINKED, project_token
+
+    try:
+        spec = json.loads((root / ".framework" / "spec.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    source = spec.get("source") if isinstance(spec, dict) else None
+    if not isinstance(source, dict) or source.get("origin") != "cloud":
+        return
+    if project_token(root) is None:
+        result.todo.append(PROJECT_NOT_LINKED)
 
 
 def _ask(prompt: str) -> str:
@@ -241,13 +259,15 @@ def bootstrap(
     _prepare_env(root, settings_file, interactive, result)
     _create_folders(root, config, result)
     existed = db.db_path(root).exists()
-    db.ensure_db(root)
-    if not existed:
-        result.done.append("Created framework.db")
+    if existed or not is_app_type(config.get("project_type")):
+        db.ensure_db(root)
+        if not existed:
+            result.done.append("Created framework.db")
     if packages:
         _restore_packages(root, result)
     if (root / ".git").exists() and git_hooks_install(settings_file, verbose=False):
         result.done.append("Installed git hooks")
+    _cloud_link(root, result)
 
     for step in result.done:
         inform(f"✓ {step}")

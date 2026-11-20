@@ -406,7 +406,7 @@ def test_data_verify(cloud_project: Path, server: FakeCloud) -> None:
 
 
 def test_ledger_needs_a_project_token(project: Path) -> None:
-    with pytest.raises(fw.CloudError, match="No project token found"):
+    with pytest.raises(fw.CloudError, match="fw project link --from SLUG"):
         fw.ledger_push()
 
 

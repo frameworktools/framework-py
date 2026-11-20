@@ -223,14 +223,16 @@ def _lock_write(root: Path, revision: str, server: str) -> None:
 
 
 def _connection(root: Path) -> tuple[str, str]:
-    from framework.cloud import CloudError, cloud_server, project_token
+    from framework.cloud import (
+        PROJECT_NOT_LINKED,
+        ProjectNotLinkedError,
+        cloud_server,
+        project_token,
+    )
 
     token = project_token(root)
     if token is None:
-        raise CloudError(
-            "Framework Cloud not reached (no project token in FW_PROJECT_TOKEN or the "
-            "project's .env). Nothing changed."
-        )
+        raise ProjectNotLinkedError(f"{PROJECT_NOT_LINKED} Nothing changed.")
     return cloud_server(scope="project", project_dir=root).url, token
 
 
