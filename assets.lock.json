@@ -1,5 +1,5 @@
 {
-  "commit": "7392ffee6760eda2547c5f94a18b6c997c3539b7",
+  "commit": "8486e4d5fac0c2dc6bd2c5cc9e7569a4cdbc995a",
   "files": {
     "docs/docs-site.md": {
       "sha256": "be34e19dacbe77390e41986e47bac11d95ace1e458e6fec868e2b279a9e7c497",
@@ -382,7 +382,7 @@
       "source": "inst/conformance/merge/tools-and-core-files.json"
     },
     "tests/shared/conformance/skills/README.md": {
-      "sha256": "39a8c014c38bf699aee9035a6f7f2f52a48d88ce824e91f5603687fdfbbe96a2",
+      "sha256": "4f827644cf956ff246cec4f578fbb6d02c09b6ae1a0a43083f3d7e9b3e7551a8",
       "source": "inst/conformance/skills/README.md"
     },
     "tests/shared/conformance/skills/assistant-add-clean.json": {
@@ -401,12 +401,16 @@
       "sha256": "8134c85fb8e214da7fdcf184ff29a4fdfe930e352db4438217a32d3af666a712",
       "source": "inst/conformance/skills/assistant-add-loose-copy.json"
     },
+    "tests/shared/conformance/skills/assistant-add-setup-older-copies-differ.json": {
+      "sha256": "4c9a6ce5c7a8305388985cef905cdba02b8ad104b89537857ed9b1b551aca36d",
+      "source": "inst/conformance/skills/assistant-add-setup-older-copies-differ.json"
+    },
     "tests/shared/conformance/skills/assistant-add-setup-older.json": {
       "sha256": "52e1ee71b39c6bae02dc5a3358ebfc5e72a4348f7ef4916caeec78c19abf3486",
       "source": "inst/conformance/skills/assistant-add-setup-older.json"
     },
     "tests/shared/conformance/skills/assistant-switch-independent-copy.json": {
-      "sha256": "0cf3409da0ce87b5d5a84f8aac847be7298778158279bd3ff1e39f3a1b0820b3",
+      "sha256": "fe91ff5372b5b09b34136c1c92521d65adcfa7ac03749f5f95d2fef26a5919e1",
       "source": "inst/conformance/skills/assistant-switch-independent-copy.json"
     },
     "tests/shared/conformance/skills/copies-absent-beside-clean.json": {
@@ -441,9 +445,21 @@
       "sha256": "bfc0cd3d4cd9eb07f9681872f81f67cfbd8db83bd90f092330c1c315c82a6741",
       "source": "inst/conformance/skills/copies-folder-gone.json"
     },
+    "tests/shared/conformance/skills/copy-edited-target.json": {
+      "sha256": "d75c805e4782bb305825c54acebdd7e54bf8b5eeb76207551f3719c867b0b3af",
+      "source": "inst/conformance/skills/copy-edited-target.json"
+    },
     "tests/shared/conformance/skills/copy-edited-to-new-folder.json": {
       "sha256": "2c84d5f3d323eedb32e602b3405c4948c4035d2c2c51a73a0341c2a50d72bbeb",
       "source": "inst/conformance/skills/copy-edited-to-new-folder.json"
+    },
+    "tests/shared/conformance/skills/copy-source-missing.json": {
+      "sha256": "dc5a40a365977a2b549036624f365365aa40793d0ddf61cd686a2ad290728669",
+      "source": "inst/conformance/skills/copy-source-missing.json"
+    },
+    "tests/shared/conformance/skills/copy-source-unreadable.json": {
+      "sha256": "88854f9850fcd21486119a8724e27a51d64fbe2051436ed78ca6dfc3f9336c88",
+      "source": "inst/conformance/skills/copy-source-unreadable.json"
     },
     "tests/shared/conformance/skills/copy-target-owned.json": {
       "sha256": "e89caf3c91415f5773dfe956b1025b67297bebc4db398b1567e86b7e48749ec9",
@@ -457,9 +473,17 @@
       "sha256": "3bdc6df936657bd31e229ab1b6baff38b911e69246ff282916ce6d94dabd9e88",
       "source": "inst/conformance/skills/identity-inline-vs-framework.json"
     },
+    "tests/shared/conformance/skills/identity-other-server-variant.json": {
+      "sha256": "0276f8dd5d49a04fd4d8d64972b5e2f0e6aaeb3a578efeb39f06c4cdc22973f1",
+      "source": "inst/conformance/skills/identity-other-server-variant.json"
+    },
     "tests/shared/conformance/skills/identity-variant-mismatch.json": {
       "sha256": "66e9a16d572a6d5a0f2ef9f931306eaacb6401b2ac8f6f507da1e738d9e0ca72",
       "source": "inst/conformance/skills/identity-variant-mismatch.json"
+    },
+    "tests/shared/conformance/skills/kept-owner-two-copies.json": {
+      "sha256": "23d85450bfff51cfdd273342bb7fa87b0f8889043a2ee1c6e3a10d430f54d1ee",
+      "source": "inst/conformance/skills/kept-owner-two-copies.json"
     },
     "tests/shared/conformance/skills/metadata-channel-switch.json": {
       "sha256": "239cff6f35a2c5f057aca7bbdfb54d54a7e0d94f82923a15a679e876b4113f6e",
@@ -476,6 +500,18 @@
     "tests/shared/conformance/skills/migrate-v1-cloud-pending-push.json": {
       "sha256": "8810eb04093d98d31fe0ece407d5a7b50c90a99d6342b31293794b33598039ab",
       "source": "inst/conformance/skills/migrate-v1-cloud-pending-push.json"
+    },
+    "tests/shared/conformance/skills/migrate-v1-conflict-package-cloud.json": {
+      "sha256": "65e7f420887ffc4bbec65220f7eada9c0b11148b50570c225efa8d151d2d65b6",
+      "source": "inst/conformance/skills/migrate-v1-conflict-package-cloud.json"
+    },
+    "tests/shared/conformance/skills/migrate-v1-conflict-reversed.json": {
+      "sha256": "aafc1eed04092a079e58af74a274746928a2e4cf2da038a0cc493cdf710e523b",
+      "source": "inst/conformance/skills/migrate-v1-conflict-reversed.json"
+    },
+    "tests/shared/conformance/skills/migrate-v1-conflict-versions.json": {
+      "sha256": "c6aada11c95e32004887c80d1b1c3a4e9cfcfce5fc49396c297070152970b273",
+      "source": "inst/conformance/skills/migrate-v1-conflict-versions.json"
     },
     "tests/shared/conformance/skills/migrate-v1-framework-cloud.json": {
       "sha256": "ac4a4e303bbaa0966cdb7c76b3538aa1eab4aff6498a15e8c52da4ab62141c79",
@@ -509,6 +545,10 @@
       "sha256": "6df0008ac644e01728365b7f0b0a7eabfa8834ad89b928ea11a5a3b769b05c24",
       "source": "inst/conformance/skills/move-target-exists.json"
     },
+    "tests/shared/conformance/skills/move-target-recorded.json": {
+      "sha256": "b01d107e22e9bd4e7ce4f34421ad04d50332c87028faf5bb59c375116471acce",
+      "source": "inst/conformance/skills/move-target-recorded.json"
+    },
     "tests/shared/conformance/skills/offline-builtin-tracked-on-cloud.json": {
       "sha256": "46c668da1cbc6b0cf45a3d5cdbe43c186afd43816403df0802123fdb8dd0eb48",
       "source": "inst/conformance/skills/offline-builtin-tracked-on-cloud.json"
@@ -529,6 +569,10 @@
       "sha256": "438333479f7751fd8fe9ba3edc4da69e970d16296cdc73ff7b854d3baa2a2c1e",
       "source": "inst/conformance/skills/pull-after-retarget.json"
     },
+    "tests/shared/conformance/skills/pull-builtin-other-server.json": {
+      "sha256": "ff5d662f907acc6a07ed4a303a9d6a23f8149e4623a31d2c53c1bc2c131210b3",
+      "source": "inst/conformance/skills/pull-builtin-other-server.json"
+    },
     "tests/shared/conformance/skills/pull-dry-run.json": {
       "sha256": "45b2f7054a009f28f21db7ff4a056e16551a10d96239ae00ce557328c1920447",
       "source": "inst/conformance/skills/pull-dry-run.json"
@@ -544,6 +588,18 @@
     "tests/shared/conformance/skills/pull-newer-in-project.json": {
       "sha256": "487bac86de5c4764af6db7614f8d531840a02ab5f2f83ac43de2a41d6554c56c",
       "source": "inst/conformance/skills/pull-newer-in-project.json"
+    },
+    "tests/shared/conformance/skills/pull-partial-write-then-older.json": {
+      "sha256": "e8421b4184a9fc38de2f465dc31570e0cdbe91b5ddc0a818e5a40e5a059562dc",
+      "source": "inst/conformance/skills/pull-partial-write-then-older.json"
+    },
+    "tests/shared/conformance/skills/pull-restored-sibling.json": {
+      "sha256": "17090868a4e46e8f58ae33715423744736084366cde951585e2052522eb0f210",
+      "source": "inst/conformance/skills/pull-restored-sibling.json"
+    },
+    "tests/shared/conformance/skills/pull-rewound-lock-revert.json": {
+      "sha256": "15068bf0130c354522143c4e48582264fd85101c242fc9e9ca29d4a4065704c2",
+      "source": "inst/conformance/skills/pull-rewound-lock-revert.json"
     },
     "tests/shared/conformance/skills/pull-unknown-before-lock.json": {
       "sha256": "8256f0e586b2c5231deee3570b124b7c614f9e6db1964ee41064c994e4d81591",
@@ -584,6 +640,14 @@
     "tests/shared/conformance/skills/push-edited.json": {
       "sha256": "acc8ba36307a085a05fda01f907b8bc1cba933ec20bddb019fa8ec8d26022d00",
       "source": "inst/conformance/skills/push-edited.json"
+    },
+    "tests/shared/conformance/skills/push-first-push-pending.json": {
+      "sha256": "68953ea1345d55026505076a20e7e5a45de8f038e2e1e0c26fc5786c5b260ca1",
+      "source": "inst/conformance/skills/push-first-push-pending.json"
+    },
+    "tests/shared/conformance/skills/push-gone-sibling.json": {
+      "sha256": "57e320d65ff67c82e5c73388c3f24475463e8ca2a938dd63e35c79a12b983a91",
+      "source": "inst/conformance/skills/push-gone-sibling.json"
     },
     "tests/shared/conformance/skills/push-no-base.json": {
       "sha256": "8ef421841a5f6ce952f0f829b5f86aa1404bb8c40d5f84ece68a6729bfa65894",
@@ -642,6 +706,6 @@
       "source": "inst/conformance/skills/upgrade-diverged.json"
     }
   },
-  "ref": "7392ffe",
+  "ref": "8486e4d",
   "source": "framework (R package)"
 }
