@@ -4,6 +4,7 @@ that describes the app."""
 from __future__ import annotations
 
 import base64
+import json
 import random
 import re
 from pathlib import Path
@@ -35,6 +36,9 @@ def test_an_app_has_no_scaffold_leftovers(app: Path) -> None:
     assert not (app / "framework.db").exists()
     config = settings_read(app / "settings.yml")
     assert "quarto" not in config
+    assert "connections:" not in (app / "settings.yml").read_text(encoding="utf-8")
+    workspace = json.loads((app / "demo-app.code-workspace").read_text(encoding="utf-8"))
+    assert "files.associations" not in workspace["settings"]
     assert config["scaffold"] == {"workflow": "scripts", "notebook_format": "script"}
 
 

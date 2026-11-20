@@ -32,12 +32,5 @@ default:
     workflow: scripts
     notebook_format: script
   data: {}
-  connections:
-    default_database: framework
-    databases:
-      framework:
-        driver: sqlite
-        database: framework.db
-    storage_buckets: {}
   security:
     sensitive: false

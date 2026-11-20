@@ -177,8 +177,10 @@ def _sections(spec: Mapping[str, Any]) -> dict[str, Any]:
         "quarto": spec.get("quarto") or {},
         "connections": spec.get("connections") or {},
     }
+    # Nor does it use the framework database connection the defaults name
     if app:
         del sections["quarto"]
+        del sections["connections"]
     return sections
 
 
@@ -206,8 +208,9 @@ def _write_settings(root: Path, spec: Mapping[str, Any]) -> None:
                 continue
             main[section] = f"settings/{section}.yml"
             _yaml.write(root / "settings" / f"{section}.yml", {section: sections[section]})
-        main["connections"] = "settings/connections.yml"
-        _yaml.write(root / "settings/connections.yml", {"connections": sections["connections"]})
+        if "connections" in sections:
+            main["connections"] = "settings/connections.yml"
+            _yaml.write(root / "settings/connections.yml", {"connections": sections["connections"]})
         main["data"] = "settings/data.yml"
         _yaml.write(root / "settings/data.yml", {"data": catalog_nest(spec.get("data"))})
     else:
@@ -215,7 +218,8 @@ def _write_settings(root: Path, spec: Mapping[str, Any]) -> None:
             if section in sections:
                 main[section] = sections[section]
         main["data"] = catalog_nest(spec.get("data"))
-        main["connections"] = sections["connections"]
+        if "connections" in sections:
+            main["connections"] = sections["connections"]
 
     if spec.get("publish") is not None:
         main["publish"] = spec["publish"]
@@ -399,14 +403,12 @@ def _pyproject(spec: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _code_workspace() -> str:
-    workspace = {
-        "folders": [{"path": "."}],
-        "settings": {
-            "python.defaultInterpreterPath": ".venv/bin/python",
-            "files.associations": {"*.qmd": "quarto"},
-        },
-    }
+def _code_workspace(quarto: bool) -> str:
+    settings: dict[str, Any] = {"python.defaultInterpreterPath": ".venv/bin/python"}
+    # Quarto files only where the project uses Quarto
+    if quarto:
+        settings["files.associations"] = {"*.qmd": "quarto"}
+    workspace = {"folders": [{"path": "."}], "settings": settings}
     return json.dumps(workspace, indent=2) + "\n"
 
 
@@ -543,7 +545,11 @@ def project_create(
     _write(root, "pyproject.toml", _pyproject(spec))
     ide = str((spec.get("scaffold") or {}).get("ide") or "").lower()
     if not bare and ide in WORKSPACE_IDES:
-        _write(root, f"{kebab_case(spec['name'])}.code-workspace", _code_workspace())
+        _write(
+            root,
+            f"{kebab_case(spec['name'])}.code-workspace",
+            _code_workspace(spec_tool_on(spec, "quarto")),
+        )
     if spec["type"] == "presentation":
         _write(root, "presentation.qmd", _presentation(spec))
 

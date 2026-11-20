@@ -1,25 +1,48 @@
 {
-  "schema": 1,
+  "schema": 2,
   "skills": {
-    "account:https://cloud.example:framework:git-workflow:python": {
-      "paths": [
-        ".agents/skills/git-workflow"
-      ],
-      "variant": "python",
-      "hash": "cdbce1802bc49454803c0c9b2828d7bd3ff7c60e6f19c23f3954417ede300a81",
-      "version": 2,
-      "skill_id": "framework:git-workflow",
-      "server": "https://cloud.example"
-    },
-    "package:framework-packages": {
-      "paths": [
-        ".agents/skills/framework-packages"
-      ],
-      "variant": "python",
-      "hash": "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4",
-      "origin": {
+    "framework:framework-packages@python": {
+      "identity": {
+        "kind": "builtin",
         "skill_id": "framework:framework-packages",
-        "hash": "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4"
+        "variant": "python"
+      },
+      "base": {
+        "channel": "package",
+        "hash": "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4",
+        "version": null,
+        "server": null
+      },
+      "known": [
+        "011e70e6f8ab46e405d5b3eb8f3603f73846dea4a1656defaf57c46bfb133809",
+        "1ed8d71791717ae4c978796f601508dc033151e4e92e396311b32065f3b99186",
+        "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4"
+      ],
+      "copies": {
+        ".agents/skills/framework-packages": {
+          "hash": "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4"
+        }
+      }
+    },
+    "framework:git-workflow@python": {
+      "identity": {
+        "kind": "builtin",
+        "skill_id": "framework:git-workflow",
+        "variant": "python"
+      },
+      "base": {
+        "channel": "cloud",
+        "hash": "cdbce1802bc49454803c0c9b2828d7bd3ff7c60e6f19c23f3954417ede300a81",
+        "version": 2,
+        "server": "https://cloud.example"
+      },
+      "known": [
+        "cdbce1802bc49454803c0c9b2828d7bd3ff7c60e6f19c23f3954417ede300a81"
+      ],
+      "copies": {
+        ".agents/skills/git-workflow": {
+          "hash": "cdbce1802bc49454803c0c9b2828d7bd3ff7c60e6f19c23f3954417ede300a81"
+        }
       }
     }
   }
