@@ -106,42 +106,6 @@ def empty_lock() -> dict[str, Any]:
 # Migration -------------------------------------------------------------------------------
 
 
-def _merge_v1(skills: dict[str, Any]) -> dict[str, Any]:
-    """Merge v1 entries for one skill: those sharing a Cloud ID (server, skill_id,
-    variant), or a name, built-in origin, and variant. The merged entry keeps the
-    newest version's metadata and every path."""
-    skills = {k: dict(v) for k, v in skills.items() if isinstance(v, dict)}
-    groups: dict[tuple[Any, ...], list[str]] = {}
-    for key, entry in skills.items():
-        if not entry.get("paths"):
-            continue
-        if entry.get("skill_id"):
-            group: tuple[Any, ...] = (
-                "id",
-                entry.get("server"),
-                entry["skill_id"],
-                entry.get("variant"),
-            )
-        elif (entry.get("origin") or {}).get("skill_id"):
-            names = {posixpath.basename(p) for p in entry["paths"]}
-            group = ("origin", entry["origin"]["skill_id"], entry.get("variant"), *sorted(names))
-        else:
-            continue
-        groups.setdefault(group, []).append(key)
-    for keys in groups.values():
-        if len(keys) < 2:
-            continue
-        entries = [skills[k] for k in keys]
-        newest = max(range(len(keys)), key=lambda i: int(entries[i].get("version") or 0))
-        merged = dict(entries[newest])
-        merged["paths"] = list(dict.fromkeys(p for e in entries for p in e["paths"]))
-        skills[keys[newest]] = merged
-        for i, key in enumerate(keys):
-            if i != newest:
-                del skills[key]
-    return skills
-
-
 def _from_v1(entry: dict[str, Any]) -> dict[str, Any]:
     variant = entry.get("variant") or "r"
     found = entry.get("origin")
@@ -177,17 +141,21 @@ def _from_v1(entry: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _mergeable(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """Whether two entries for one identity can be one: the same base, and at most one
+    with a pending push."""
+    return a.get("base") == b.get("base") and not (a.get("pending") and b.get("pending"))
+
+
 def _merge_v2(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
-    """Two entries for one identity (two v1 entries that map to one key): every copy,
-    every known hash, and the Cloud-delivered base when only one has it."""
-    keep = b if (b.get("base") or {}).get("channel") == "cloud" and not _cloud_base(a) else a
-    out = copy.deepcopy(keep)
-    other = b if keep is a else a
-    for path, record in other["copies"].items():
-        out["copies"].setdefault(path, record)
+    """Two mergeable entries for one identity: every copy, with its own record, and
+    every known hash."""
+    out = copy.deepcopy(a)
+    for path, record in b["copies"].items():
+        out["copies"].setdefault(path, dict(record))
     out["known"] = sorted(set(a["known"]) | set(b["known"]))
-    if "pending" not in out and "pending" in other:
-        out["pending"] = other["pending"]
+    if "pending" not in out and b.get("pending"):
+        out["pending"] = b["pending"]
     return out
 
 
@@ -205,7 +173,7 @@ def migrate(state: Any) -> dict[str, Any]:
         raise LockSchemaError(schema)
     entries: list[tuple[str | None, dict[str, Any]]]
     if schema == 1:
-        entries = [(None, _from_v1(e)) for e in _merge_v1(state["skills"]).values()]
+        entries = [(str(k), _from_v1(e)) for k, e in state["skills"].items() if isinstance(e, dict)]
     elif schema == SCHEMA:
         entries = [
             (str(k), _clean_v2(e)) for k, e in state["skills"].items() if isinstance(e, dict)
@@ -213,6 +181,7 @@ def migrate(state: Any) -> dict[str, Any]:
     else:
         raise ValueError("Unsupported skill lock file")
     out = empty_lock()
+    sources: dict[str, str] = {}
     for stored, entry in entries:
         identity = entry["identity"]
         if identity["kind"] == "local":
@@ -221,7 +190,17 @@ def migrate(state: Any) -> dict[str, Any]:
             key = stored if stored and stored.startswith("local:") else f"local:{path}"
         else:
             key = key_of(identity)
-        out["skills"][key] = _merge_v2(out["skills"][key], entry) if key in out["skills"] else entry
+        if key in out["skills"]:
+            if not _mergeable(out["skills"][key], entry):
+                raise SkillPlanError(
+                    "lock_migrate_conflict",
+                    f"The skills lock has two entries for {key} at different versions: "
+                    f"{sources[key]!r} and {stored!r}. Delete the entry for the copy you "
+                    "don't keep from .framework/skills.lock.json, then run the command again.",
+                )
+            entry = _merge_v2(out["skills"][key], entry)
+        sources.setdefault(key, str(stored))
+        out["skills"][key] = entry
     return out
 
 
@@ -297,9 +276,14 @@ class Disk:
     folders: set[str] = field(default_factory=set)
     children: dict[str, list[str]] = field(default_factory=dict)
     spelling: dict[str, str] = field(default_factory=dict)
+    case_insensitive: bool = False
 
     def spelled(self, path: str) -> str:
         return self.spelling.get(path, path)
+
+    def alias(self, path: str) -> str:
+        """The form two paths share when they are one folder on this volume."""
+        return path.casefold() if self.case_insensitive else path
 
     def get(self, path: str) -> str:
         return self.hashes.get(path, ABSENT)
@@ -390,6 +374,8 @@ def is_older(source: dict[str, Any] | None, entry: dict[str, Any]) -> bool:
     if source is None or not base:
         return False
     if source["channel"] == "cloud" and base.get("channel") == "cloud":
+        if source.get("server") != base.get("server"):
+            return False  # Versions from different servers don't compare
         mine, theirs = base.get("version"), source.get("version")
         return mine is not None and theirs is not None and int(theirs) < int(mine)
     if source["channel"] == "package" and base.get("channel") == "package":
@@ -458,12 +444,21 @@ def _plan_pull(
     accounted: set[str] = set()
     dirs = list(opt.get("dirs") or [])
 
+    claimed: dict[str, str] = {}
     for source in offer.get("skills") or []:
         key = key_of(source["identity"])
         entry = lock["skills"].get(key)
         extra = []
         for d in dirs:
             p = disk.spelled(f"{d}/{source['name']}")
+            if claimed.get(disk.alias(p), p) != p:
+                raise SkillPlanError(
+                    "paths_alias",
+                    f"{claimed[disk.alias(p)]} and {p} are one folder on this volume, and the "
+                    "setup names both. Rename one of the skills in the setup.",
+                    p,
+                )
+            claimed[disk.alias(p)] = p
             owner = owner_of(lock, p)
             if owner == key:
                 continue
@@ -472,16 +467,24 @@ def _plan_pull(
                 if disk.get(p) == ABSENT:
                     continue  # The owner's entry plans it (restored or missing)
                 theirs, wanted = lock["skills"][owner]["identity"], source["identity"]
-                other_variant = theirs.get("skill_id") == wanted.get("skill_id") and theirs.get(
-                    "variant"
-                ) != wanted.get("variant")
+                other_variant = (
+                    theirs["kind"] == wanted["kind"]
+                    and theirs.get("skill_id") == wanted.get("skill_id")
+                    and theirs.get("server") == wanted.get("server")
+                    and theirs.get("variant") != wanted.get("variant")
+                )
+                # skills_move() switches the owner's whole entry and refuses an identity
+                # the lock already tracks: the hint only when it works
+                movable = len(lock["skills"][owner]["copies"]) == 1 and entry is None
                 plan.step(
                     p,
                     owner,
                     "none",
                     "kept",
                     "other_variant" if other_variant else "other_identity",
-                    hint("retarget", path=p, identity=dict(source["identity"])),
+                    hint("retarget", path=p, identity=dict(source["identity"]))
+                    if movable
+                    else None,
                     source["name"],
                 )
                 plan.kept_paths.add(p)
@@ -526,9 +529,11 @@ def _plan_entry(
 ) -> None:
     entry = entry or _entry(source["identity"])
     name = source["name"]
-    copies = [state_tracked(p, entry, source, disk) for p in sorted(entry["copies"])] + [
-        state_untracked(p, entry, source, disk) for p in extra
-    ]
+    copies = sorted(
+        [state_tracked(p, entry, source, disk) for p in entry["copies"]]
+        + [state_untracked(p, entry, source, disk) for p in extra],
+        key=lambda c: c.path.encode(),
+    )
 
     if any(c.state == "unreadable" for c in copies):
         return _all_rows(plan, key, copies, "failed", "unreadable", None, name)
@@ -627,13 +632,32 @@ def _plan_entry(
             )
         return _finish(plan, key, entry, source)
 
+    # Unedited copies at different versions (a pull that wrote only some of them):
+    # update only to a source that knows every version they hold
+    versions = {c.disk for c in held}
+    if len(versions) > 1 and (
+        older or not versions <= set(source.get("known") or []) | {source["hash"]}
+    ):
+        return _all_rows(
+            plan,
+            key,
+            held + holes,
+            "diverged",
+            "copies_differ",
+            _copy_hint(None, [c.path for c in held + holes]),
+            name,
+        )
+
     if older:
+        # The copies all hold one version here; prefer the one at the base
+        base_hash = (entry.get("base") or {}).get("hash")
+        fill = next((c for c in held if c.disk == base_hash), held[0] if held else None)
         for c in held:
             plan.step(c.path, key, "none", "current", "newer_in_project", None, name)
         for c in holes:
-            if held:
+            if fill is not None:
                 plan.step(
-                    c.path, key, "copy", _added_or_restored(c), None, None, name, from_=held[0].path
+                    c.path, key, "copy", _added_or_restored(c), None, None, name, from_=fill.path
                 )
             else:
                 plan.step(c.path, key, "none", "unavailable", "setup_older", hint("login"), name)
@@ -756,6 +780,22 @@ def _plan_copy(disk: Disk, lock: dict[str, Any], opt: dict[str, Any]) -> Plan:
     for t in opt["to_dirs"]:
         for n in names:
             src, dst = f"{from_dir}/{n}", disk.spelled(f"{t}/{n}")
+            if disk.get(src) == ABSENT:
+                raise SkillPlanError("copy_source_missing", f"Not a skill in {from_dir}: {n}.", src)
+            if disk.get(src) == UNREADABLE:
+                raise SkillPlanError(
+                    "copy_source_unreadable",
+                    f"{src} is not a skill folder (no SKILL.md file, or files that can't be "
+                    "read). Fix it, then copy again.",
+                    src,
+                )
+            if disk.get(dst) == UNREADABLE:
+                raise SkillPlanError(
+                    "copy_target_unreadable",
+                    f"{dst} exists but is not a skill folder (no SKILL.md file). "
+                    "Move it, then copy again.",
+                    dst,
+                )
             mine, theirs = owner_of(lock, src), owner_of(lock, dst)
             if theirs is not None and mine is not None and theirs != mine:
                 raise SkillPlanError(
@@ -869,12 +909,21 @@ def _plan_push(
                 "version": head.get("version"),
                 "server": server,
             }
-            out["copies"] = {p: {"hash": local} for p in entry["copies"]}
+            out["copies"] = {
+                p: {"hash": local} if disk.get(p) == local else dict(r)
+                for p, r in entry["copies"].items()
+            }
             out["known"] = sorted(set(out["known"]) | {local})
             out.pop("pending", None)
         elif entry["identity"]["kind"] == "builtin":
             for c in copies:
                 plan.step(c.path, key, "push", "pushed", fork=True, hash=local)
+        elif not base and entry.get("pending") and not opt.get("force"):
+            # A first push that stopped before Cloud replied may have reached it
+            for c in copies:
+                plan.step(
+                    c.path, key, "none", "refused", "first_push_pending", hint("force"), hash=local
+                )
         elif not base:
             force = bool(opt.get("force"))
             for c in copies:
@@ -956,7 +1005,8 @@ def _plan_move(disk: Disk, lock: dict[str, Any], opt: dict[str, Any]) -> Plan:
         key = owner_of(lock, a)
         if key is None:
             raise SkillPlanError("move_untracked", f"{a} is not a skill the lock tracks.", a)
-        if owner_of(lock, b) not in (None, key):
+        # A destination with a record, even in the same entry, is never overwritten
+        if owner_of(lock, b) is not None and disk.alias(b) != disk.alias(a):
             raise SkillPlanError(
                 "move_target_owned",
                 f"{b} belongs to another skill in the lock, so skills_move() won't use it.",
@@ -1112,10 +1162,17 @@ def rows(steps: list[dict[str, Any]], command: str) -> list[dict[str, Any]]:
     return out
 
 
-def after_push(lock: dict[str, Any], key: str, response: dict[str, Any]) -> dict[str, Any]:
+def after_push(
+    lock: dict[str, Any],
+    key: str,
+    response: dict[str, Any],
+    holding: set[str] | None = None,
+) -> dict[str, Any]:
     """The lock once Cloud accepted a push of entry ``key``: its base is the pushed
-    version, every copy's record the pushed hash, and ``pending`` is cleared. A pushed
-    built-in (or a local skill's first push) becomes a Cloud entry under the response's
+    version, and ``pending`` is cleared. Each copy in ``holding`` (the copies whose
+    files are the pushed bytes; every copy when None) takes the pushed hash as its
+    record; any other copy (one whose folder is gone) keeps its own. A pushed built-in
+    (or a local skill's first push) becomes a Cloud entry under the response's
     ``skill_id``, with only the pushed hash known."""
     out = copy.deepcopy(lock)
     entry = out["skills"].pop(key)
@@ -1133,7 +1190,10 @@ def after_push(lock: dict[str, Any], key: str, response: dict[str, Any]) -> dict
             "server": server or None,
         },
         "known": sorted({pushed} | (set() if fresh else set(entry.get("known") or []))),
-        "copies": {p: {"hash": pushed} for p in entry["copies"]},
+        "copies": {
+            p: {"hash": pushed} if holding is None or p in holding else dict(r)
+            for p, r in entry["copies"].items()
+        },
     }
     new_key = key_of(identity)
     if new_key in out["skills"]:

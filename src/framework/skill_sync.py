@@ -253,6 +253,33 @@ class SkillRestoreError(FrameworkError):
         self.stuck = stuck
 
 
+class SkillRollbackError(FrameworkError):
+    """An install failed and was rolled back. ``kept`` lists each (target, saved) pair,
+    relative to the project: the copy the install had written at target, moved to
+    ``saved`` in ``.framework/skills-backups/`` rather than deleted."""
+
+    def __init__(self, message: str, kept: list[tuple[str, str]]) -> None:
+        super().__init__(message)
+        self.kept = kept
+
+
+def set_aside(root: Path, target: Path) -> tuple[str, str]:
+    """Move a copy into ``.framework/skills-backups/`` and return (target, where it went),
+    relative to the project."""
+    saved = _path(root, ".framework/skills-backups/" + str(uuid.uuid4()))
+    _private(root)
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    target.rename(saved)
+    return target.relative_to(root).as_posix(), saved.relative_to(root).as_posix()
+
+
+def set_aside_text(kept: list[tuple[str, str]]) -> str:
+    if not kept:
+        return ""
+    moved = "; ".join(f"{t} -> {s}" for t, s in kept)
+    return f" What it had written was moved, not deleted: {moved}."
+
+
 def _is_dir(path: Path) -> bool:
     """Whether a path is a real folder, not a symlink to one."""
     try:
@@ -419,14 +446,17 @@ def _install(
             stage.rename(target)
     except BaseException as error:
         stuck: list[tuple[str, str | None]] = []
+        kept: list[tuple[str, str]] = []
         for target, stage, backup, existed in reversed(swaps):
             try:
+                # A copy this install wrote is moved aside, never deleted: it may hold an
+                # edit made after the write
                 if lstat(backup) is not None:
                     if lstat(target) is not None:
-                        shutil.rmtree(target)
+                        kept.append(set_aside(root, target))
                     backup.rename(target)
                 elif lstat(stage) is None and not existed and lstat(target) is not None:
-                    shutil.rmtree(target)
+                    kept.append(set_aside(root, target))
             except OSError:
                 stuck.append(
                     (target.relative_to(root).as_posix(), backup.relative_to(root).as_posix())
@@ -440,8 +470,14 @@ def _install(
             detail = "; ".join(f"{t} (old copy in {b})" for t, b in stuck)
             raise SkillRestoreError(
                 f"Installing the skill failed ({error}), and the old copy could not be put "
-                f"back: {detail}.",
+                f"back: {detail}.{set_aside_text(kept)}",
                 stuck,
+            ) from error
+        if kept:
+            raise SkillRollbackError(
+                f"Installing the skill failed ({error}). The old copies were put back."
+                f"{set_aside_text(kept)}",
+                kept,
             ) from error
         raise
     # Backups retain the replaced bytes for recovery and explicit conflict resolution.
@@ -720,6 +756,10 @@ def skills_sync(
                     "hash": remote["hash"],
                     "server": server,
                 },
+                # A pull wrote every copy; otherwise only copies holding these bytes
+                None
+                if action == "pull"
+                else {p for p, h in zip(paths, hashes, strict=True) if h == remote["hash"]},
             )
             result.update(skill_id=remote["skill_id"], version=remote["version"])
         _save_changed(root, before, lock)

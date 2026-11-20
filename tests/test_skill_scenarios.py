@@ -140,10 +140,15 @@ def options_of(case: dict[str, Any], offer: dict[str, Any] | None) -> dict[str, 
     }
     if command == "copy":
         source_dir = folder(o["from"])
-        names = sorted(
+        names = o.get("skills") or sorted(
             posixpath.basename(p) for p in case["disk"] if posixpath.dirname(p) == source_dir
         )
-        opt.update(from_dir=source_dir, to_dirs=[folder(o["to"])], names=names, names_is_all=True)
+        opt.update(
+            from_dir=source_dir,
+            to_dirs=[folder(o["to"])],
+            names=names,
+            names_is_all=not o.get("skills"),
+        )
     if command == "move":
         identity = {k: o.get(k) for k in ("skill_id", "variant", "builtin") if o.get(k)}
         opt.update(
@@ -237,8 +242,11 @@ def test_planner(path: Path) -> None:
             planner.cancel(steps)
         elif not opt["dry_run"]:
             responses = resolve((case.get("offer") or {}).get("push_response") or {})
+            disk = disk_of(case)
             for key in {s["entry"] for s in steps if s["action"] == "push"}:
-                lock_after = planner.after_push(lock_after, key, responses[key])
+                pushed = responses[key]["hash"]
+                holding = {p for p in lock_after["skills"][key]["copies"] if disk.get(p) == pushed}
+                lock_after = planner.after_push(lock_after, key, responses[key], holding)
     assert comparable_steps(steps) == expected_steps(case)
     assert comparable_rows(planner.rows(steps, opt["command"])) == expected_rows(case)
     if opt["dry_run"]:
@@ -373,6 +381,7 @@ def run_command(
             to=names.get("to"),
             from_dir=None if "from" in names else o["from"],
             to_dir=None if "to" in names else o["to"],
+            skills=o.get("skills"),
             project_path=root,
         )
     if command == "move":

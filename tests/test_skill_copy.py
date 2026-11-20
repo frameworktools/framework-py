@@ -77,7 +77,7 @@ def test_names_and_aliases_pick_the_folders(project: Path) -> None:
         ({"from_": "claude", "skills": []}, "skills is empty"),
         (
             {"from_": "claude", "skills": ["nope", "figures", "gone", "nope"]},
-            r"Not skills in \.claude/skills: nope, gone\.",
+            r"Not a skill in \.claude/skills: nope\.",
         ),
     ],
 )
@@ -274,8 +274,9 @@ def test_only_folders_with_a_skill_md_are_skills(project: Path) -> None:
     result = fw.skills_copy(from_="claude", project_path=project)
     assert statuses(result) == {("alpha", ".agents/skills/alpha"): "copied"}
     assert not (project / ".agents/skills/templates").exists()
-    with pytest.raises(FrameworkError, match=r"Not skills in \.claude/skills: templates"):
+    with pytest.raises(FrameworkError, match=r"templates is not a skill folder") as caught:
         fw.skills_copy(from_="claude", skills=["templates"], project_path=project)
+    assert caught.value.code == "copy_source_unreadable"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges on Windows")
@@ -536,12 +537,15 @@ def test_a_failed_copy_undoes_the_copies_before_it(
     failing_install(monkeypatch, after=2)
     with pytest.raises(OSError, match="disk full") as caught:
         fw.skills_copy(from_="claude", project_path=project)
-    assert "".join(caught.value.__notes__) == (
+    note = "".join(caught.value.__notes__)
+    assert note.startswith(
         "skills_copy() failed copying .claude/skills/gamma -> .agents/skills/gamma; "
-        "the 2 copies made before it were undone."
+        "the 2 copies made before it were undone. What it had written was moved, not "
+        "deleted: .agents/skills/beta -> .framework/skills-backups/"
     )
     assert tree(project / ".agents") == before
-    assert backups(project) == []
+    # The undone copies are moved aside, never deleted: they may hold a later edit
+    assert len(backups(project)) == 2
     assert not (project / ".framework/skills.sync.lock").exists()
 
 

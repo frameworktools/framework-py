@@ -303,7 +303,7 @@ def _scan(root: Path, paths: Any, dirs: list[str]) -> tuple[Disk, dict[str, str]
     unreadable copy can't be read."""
     from framework.skill_sync import on_disk
 
-    disk, errors = Disk(), {}
+    disk, errors = Disk(case_insensitive=_case_insensitive(root)), {}
     for folder in dirs:
         try:
             if _kind(root, folder) == "dir":
@@ -335,6 +335,18 @@ def _scan(root: Path, paths: Any, dirs: list[str]) -> tuple[Disk, dict[str, str]
         if why:
             errors[relative] = why
     return disk, errors
+
+
+def _case_insensitive(root: Path) -> bool:
+    """Whether the project's volume folds case: its root under another case is the same
+    folder."""
+    other = Path(str(root).swapcase())
+    if str(other) == str(root):
+        return False
+    try:
+        return other.exists() and other.samefile(root)
+    except OSError:
+        return False
 
 
 def _tracked_paths(lock: dict[str, Any]) -> list[str]:
@@ -530,6 +542,12 @@ def _reason(row: dict[str, Any], lock: dict[str, Any], errors: dict[str, str], v
         return f"{path} changed while the {verb} ran, so it was kept."
     if code == "cloud_changed":
         return _REFUSED
+    if code == "first_push_pending":
+        return (
+            f"A first push of {name} stopped before Cloud replied, so it may already be on "
+            f"Cloud. Check your Cloud skills: if it's there, skills_sync({json.dumps(path)}, "
+            "skill_id=...) tracks it."
+        )
     if code == "no_base":
         return f"{name} has no Cloud version this project pulled, since it was retargeted."
     if code == "cancelled":
@@ -951,8 +969,11 @@ def _push_send(root: Path, prep: dict[str, Any]) -> list[dict[str, Any]]:
                 expected = (head["version"] if head else 0) if forced else base.get("version")
             else:
                 skill_id, expected = None, 0
+            # Only the copies seen holding the pushed files take the new record
+            disk = prep["disk"]
+            holding = {p for p in entry["copies"] if disk.get(p) == mine[0]["hash"]}
             try:
-                first = sorted(entry["copies"])[0]
+                first = sorted(holding)[0]
                 files = scan(_path(root, first))
                 local = bundle_hash(files)
                 if local != mine[0]["hash"]:
@@ -988,6 +1009,7 @@ def _push_send(root: Path, prep: dict[str, Any]) -> list[dict[str, Any]]:
                     "hash": response["hash"],
                     "server": response.get("server") or server,
                 },
+                holding,
             )
             for s in mine:
                 s["version"] = response["version"]
@@ -1215,11 +1237,16 @@ def _skill_names(root: Path, folder: str) -> list[str]:
 
 def _copy_apply(root: Path, plans: list[dict[str, Any]], finish: Any = None) -> None:
     """Install each planned copy, then run ``finish`` (recording the joins). When either
-    fails, the copies made are undone. When a copy can't be undone or put back, the
-    error names it and its backup."""
-    import shutil
-
-    from framework.skill_sync import SkillRestoreError, _install, _path
+    fails, the copies made are undone: each is moved to ``.framework/skills-backups/``
+    (never deleted) and its old copy put back. When a copy can't be undone or put back,
+    the error names it and its backup."""
+    from framework.skill_sync import (
+        SkillRestoreError,
+        _install,
+        _path,
+        set_aside,
+        set_aside_text,
+    )
 
     done: list[dict[str, Any]] = []
     plan: dict[str, Any] = {}
@@ -1236,13 +1263,14 @@ def _copy_apply(root: Path, plans: list[dict[str, Any]], finish: Any = None) -> 
     except BaseException as error:
         failing = f"{plan['from']} -> {plan['to']}"
         stuck: list[tuple[str, str | None]] = []
+        kept: list[tuple[str, str]] = []
         if isinstance(error, SkillRestoreError):
             stuck += error.stuck
         for copy in reversed(done):
             try:
                 target = _path(root, copy["to"])
                 if _exists(target):
-                    shutil.rmtree(target)
+                    kept.append(set_aside(root, target))
                 if copy["backup"]:
                     _path(root, copy["backup"]).rename(target)
             except OSError:
@@ -1254,11 +1282,11 @@ def _copy_apply(root: Path, plans: list[dict[str, Any]], finish: Any = None) -> 
             )
             raise SkillRestoreError(
                 f"skills_copy() failed copying {failing} ({error}) and could not undo "
-                f"every change. Not restored: {detail}.",
+                f"every change. Not restored: {detail}.{set_aside_text(kept)}",
                 stuck,
             ) from error
         undone = f"; the {len(done)} copies made before it were undone" if done else ""
-        error.add_note(f"skills_copy() failed copying {failing}{undone}.")
+        error.add_note(f"skills_copy() failed copying {failing}{undone}.{set_aside_text(kept)}")
         raise
 
 
@@ -1413,44 +1441,35 @@ def skills_copy(
             if _kind(root, folder) == "other":
                 raise FrameworkError(f"Can't copy into {folder}: it is not a folder.")
 
-        available = _skill_names(root, source)
-        if skills is None:
-            names = available
-        else:
-            names = list(dict.fromkeys(skills))
-            unknown = [n for n in names if n not in available]
-            if unknown:
-                raise FrameworkError(f"Not skills in {source}: {', '.join(unknown)}.")
+        names = _skill_names(root, source) if skills is None else list(dict.fromkeys(skills))
         # The lock is read and checked before any write: an unreadable one stops here
         lock, _ = _read(root)
         before = copy.deepcopy(lock)
-        disk = Disk()
         from framework.skill_sync import _path, bundle_hash, scan
 
-        for relative in [f"{source}/{n}" for n in names]:
-            disk.hashes[relative] = bundle_hash(scan(_path(root, relative)))
+        def state(relative: str) -> str:
+            """A folder's hash, ABSENT, or UNREADABLE (not a skill folder). Errors reading
+            a skill folder (symlinks, permissions) propagate."""
+            kind = _kind(root, relative)
+            if kind == "missing":
+                return ABSENT
+            if kind == "other" or not _is_skill(root / relative, relative):
+                return UNREADABLE
+            return bundle_hash(scan(_path(root, relative)))
+
+        disk = Disk(case_insensitive=_case_insensitive(root))
+        for name in names:
+            disk.hashes[f"{source}/{name}"] = state(f"{source}/{name}")
         for folder in targets:
-            present_skills = _skill_names(root, folder) if _kind(root, folder) == "dir" else []
-            disk.children[folder] = present_skills
-            for name in names:
-                relative = f"{folder}/{name}"
-                dest = root / relative
-                kind = _kind(root, relative)
-                if kind == "other" or (kind == "dir" and not _is_skill(dest, relative)):
-                    raise FrameworkError(
-                        f"{relative} exists but is not a skill folder (no SKILL.md file). "
-                        "Move it, then copy again."
-                    )
-        for folder in targets:
+            disk.children[folder] = (
+                _skill_names(root, folder) if _kind(root, folder) == "dir" else []
+            )
             for name in names:
                 # An existing target folder keeps its on-disk spelling (alpha for Alpha)
                 relative = on_disk(root, f"{folder}/{name}")
                 if relative != f"{folder}/{name}":
                     disk.spelling[f"{folder}/{name}"] = relative
-                kind = _kind(root, relative)
-                disk.hashes[relative] = (
-                    bundle_hash(scan(_path(root, relative))) if kind == "dir" else ABSENT
-                )
+                disk.hashes[relative] = state(relative)
         plan = planner.plan(
             disk,
             lock,

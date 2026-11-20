@@ -176,3 +176,46 @@ def test_canonical_package_bytes_match_shipped_identity(tmp_path):
         relative = ".agents/skills/" + source.name
         assert install_package(source, tmp_path, relative, source.name)
         assert bundle_hash(scan(tmp_path / relative)) == expected
+
+
+def test_a_rollback_moves_what_it_wrote_aside_and_keeps_a_later_edit(tmp_path, monkeypatch):
+    """An install into two folders writes the first, the first is then edited, and the
+    second swap fails: the rollback puts the old first copy back and moves the edited
+    one to .framework/skills-backups/, never deleting it."""
+    from framework import skill_sync
+    from framework.skill_sync import SkillRollbackError, _install
+
+    def skill(folder, text):
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "SKILL.md").write_text(f"---\nname: x\ndescription: x\n---\n{text}\n")
+
+    first, second = tmp_path / ".claude/skills/x", tmp_path / ".agents/skills/x"
+    skill(first, "Old")
+    skill(second, "Old")
+    old = bundle_hash(scan(first))
+    new = [
+        {
+            "path": "SKILL.md",
+            "content": base64.b64encode(b"---\nname: x\ndescription: x\n---\nNew\n").decode(),
+            "executable": False,
+        }
+    ]
+    real = skill_sync.scan
+    done = []
+
+    def scan_then_edit(path):
+        # After the first swap: an edit to the new first copy, and a change to the second
+        if path == second and not done and "New" in (first / "SKILL.md").read_text():
+            done.append(True)
+            (first / "SKILL.md").write_text((first / "SKILL.md").read_text() + "My edit\n")
+            (second / "SKILL.md").write_text("changed meanwhile\n")
+        return real(path)
+
+    monkeypatch.setattr(skill_sync, "scan", scan_then_edit)
+    with pytest.raises(SkillRollbackError, match="moved, not deleted") as caught:
+        _install(tmp_path, [".claude/skills/x", ".agents/skills/x"], new, old)
+    assert done
+    assert "Old" in (first / "SKILL.md").read_text()
+    [(target, saved)] = caught.value.kept
+    assert target == ".claude/skills/x" and saved in str(caught.value)
+    assert "My edit" in (tmp_path / saved / "SKILL.md").read_text()

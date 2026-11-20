@@ -585,8 +585,12 @@ def test_pull_keeps_a_personal_skill_when_a_new_assistant_folder_gets_the_builti
         # has no copy of either, so it gets the setup's built-in.
         kept = rows[".claude/skills/framework-data"]
         assert kept["status"] == "kept" and kept["reason_code"] == "other_identity"
+        # The retarget hint only while the built-in isn't tracked yet: once the new
+        # folder holds it, skills_move() would refuse an identity the lock tracks
         assert kept["hint"] == (
-            'skills_move(".claude/skills/framework-data", builtin="framework-data", '
+            None
+            if overwrite
+            else 'skills_move(".claude/skills/framework-data", builtin="framework-data", '
             'variant="python")'
         )
         assert rows[".agents/skills/framework-data"]["status"] in ("added", "current")
@@ -1801,3 +1805,28 @@ def test_known_hashes_from_the_setup_mark_an_older_copy_unedited(
     assert statuses(fw.pull_skills(project))["team-style"] == "updated"
     assert "Version two" in skill_text(project, "team-style")
     assert old["sync"]["hash"] in lock_entry(project, ".claude/skills/team-style")["known"]
+
+
+def test_a_second_pull_leaves_the_lock_bytes_as_they_are(cloud: Cloud, project: Path) -> None:
+    two_assistants(project)
+    fw.pull_skills(project)
+    lock = (project / ".framework/skills.lock.json").read_bytes()
+    fw.pull_skills(project)
+    assert (project / ".framework/skills.lock.json").read_bytes() == lock
+
+
+def test_two_setup_names_for_one_folder_stop_with_paths_alias(
+    cloud: Cloud, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import framework.skill_pull as skill_pull
+    from framework._skill_plan import SkillPlanError
+
+    # As on a case-insensitive volume (macOS, Windows), whatever this one is
+    monkeypatch.setattr(skill_pull, "_case_insensitive", lambda root: True)
+    cloud.skills = {"Team-Style": cloud_entry(1, "Upper"), "team-style": cloud_entry(1, "x")}
+    for dry_run in (True, False):
+        with pytest.raises(SkillPlanError, match="one folder on this volume") as caught:
+            fw.pull_skills(project, dry_run=dry_run)
+        assert caught.value.code == "paths_alias"
+    assert not (project / ".claude/skills").exists()
+    assert not (project / ".framework/skills.lock.json").exists()
