@@ -1954,3 +1954,22 @@ def test_a_builtin_last_delivered_by_cloud_reads_cloud_s_head(
     gets = [p for p in paths if "framework%3Aframework-data" in p]
     # The head, never the hash-qualified copy of a package version
     assert gets and all("hash=" not in p for p in gets)
+
+
+def test_a_failed_lock_save_undoes_a_move(
+    cloud: Cloud, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import framework.skill_sync as skill_sync
+
+    fw.pull_skills(project)
+    lock = (project / ".framework/skills.lock.json").read_text()
+
+    def broken(*args: Any) -> None:
+        raise OSError("lock write failed")
+
+    monkeypatch.setattr(skill_sync, "_save_changed", broken)
+    with pytest.raises(fw.FrameworkError, match="The moves made were undone"):
+        fw.skills_move("claude", "agents", project_path=project)
+    assert (project / ".claude/skills/team-style/SKILL.md").is_file()
+    assert not (project / ".agents/skills/team-style").exists()
+    assert (project / ".framework/skills.lock.json").read_text() == lock

@@ -376,9 +376,10 @@ def _tracked_paths(lock: dict[str, Any]) -> list[str]:
 # Apply -----------------------------------------------------------------------------------
 
 
-def _apply_moves(root: Path, steps: list[dict[str, Any]]) -> None:
-    """Rename each moved folder. When one fails, the renames made are undone in reverse
-    order, and the error names any folder that couldn't be put back."""
+def _apply_moves(root: Path, steps: list[dict[str, Any]], then: Any = None) -> None:
+    """Rename each moved folder, then run ``then`` (saving the lock). When a rename or
+    ``then`` fails, the renames made are undone, newest first, and the error names any
+    folder that couldn't be put back."""
     from framework.skill_sync import _path
 
     done: list[tuple[Path, Path]] = []
@@ -388,6 +389,8 @@ def _apply_moves(root: Path, steps: list[dict[str, Any]]) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             source.rename(target)
             done.append((source, target))
+        if then is not None:
+            then()
     except OSError as error:
         stuck = []
         for source, target in reversed(done):
@@ -1752,8 +1755,14 @@ def skills_move(
         )
         steps = plan.steps
         if not dry_run:
-            steps, final, _ = _apply(root, plan, lock, {}, disk)
-            _save_changed(root, before, final)
+            # Only renames and lock records: the lock is saved right after the renames,
+            # and a failed save undoes them
+            steps = [dict(s) for s in plan.steps]
+            _apply_moves(
+                root,
+                [s for s in steps if s["action"] == "move"],
+                lambda: _save_changed(root, before, plan.lock_after),
+            )
     rows = _rows(steps, "move", plan.lock_after)
     prefix = "Skills (dry run, nothing moved): " if dry_run else "Skills: "
     message = prefix + (f"{len(rows)} moved" if rows else "none")
