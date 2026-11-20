@@ -79,6 +79,16 @@ def default_settings_layout(type: str) -> str:
     return "split" if type in ("project", "project_sensitive") else "flat"
 
 
+# Framework Cloud app blueprints. Their code doesn't call fw.scaffold(), so they get no
+# scaffold.py, no framework.db at creation, and no scaffold settings.
+APP_PROJECT_TYPES = ("shiny_python", "fastapi")
+
+
+def is_app_type(type: object) -> bool:
+    """Whether a project type is an app (Shiny for Python or FastAPI)."""
+    return type in APP_PROJECT_TYPES
+
+
 def spec_core_files(spec: Mapping[str, Any]) -> bool:
     """Whether the project gets .env, scaffold.py, framework.db, and the AI files.
 

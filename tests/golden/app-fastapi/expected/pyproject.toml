@@ -1,0 +1,16 @@
+[project]
+name = "demo-app"
+version = "0.1.0"
+description = "Demo App"
+requires-python = ">=3.11"
+dependencies = [
+    "framework-py",
+    "httpx",
+    "pytest",
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+]
+
+[tool.uv]
+package = false

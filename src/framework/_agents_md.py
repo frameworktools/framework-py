@@ -7,9 +7,14 @@ user's to edit.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+
+from framework.spec.resolve import is_app_type
 
 REGENERATE = "<!-- @framework:regenerate -->"
 PACKAGES_HEADING = "Installed Packages"
@@ -61,12 +66,33 @@ def _header(name: str) -> str:
 def skill_description(folder: Path) -> str:
     """A skill's own description, from its SKILL.md front matter, on one line with pipes
     escaped, for skills Framework has no line for. R: ``.skill_description()``."""
-    from framework import _yaml
-
     try:
         text = (folder / "SKILL.md").read_text(encoding="utf-8")
     except OSError:
         return ""
+    return _front_description(text)
+
+
+def _entry_skill_md(entry: object) -> str | None:
+    """A spec skill entry's SKILL.md text: its ``content``, else the file in its Cloud
+    ``bundle`` (base64). None for a package skill, which ships its own."""
+    if not isinstance(entry, Mapping):
+        return None
+    content = entry.get("content")
+    if isinstance(content, str) and content:
+        return content
+    for item in entry.get("bundle") or []:
+        if isinstance(item, Mapping) and item.get("path") == "SKILL.md":
+            try:
+                return base64.b64decode(str(item.get("content") or "")).decode("utf-8")
+            except (binascii.Error, ValueError):
+                return None
+    return None
+
+
+def _front_description(text: str) -> str:
+    from framework import _yaml
+
     found = re.match(r"---\r?\n(.*?)\r?\n---", text, re.DOTALL)
     try:
         meta = _yaml.load(found.group(1)) if found else None
@@ -78,12 +104,25 @@ def skill_description(folder: Path) -> str:
     return " ".join(value.split()).replace("|", "\\|")
 
 
-def _skills(skills: list[str], skills_dir: str, root: Path | None = None) -> str:
+def _skills(
+    skills: list[str],
+    skills_dir: str,
+    root: Path | None = None,
+    entries: Mapping[str, Any] | None = None,
+) -> str:
+    """The Skills section. A skill Framework has no line for is described by its SKILL.md
+    front matter: from the spec's entry when there is one, else the copy in the project."""
+
     def covers(skill: str) -> str:
         known = SKILL_DESCRIPTIONS.get(skill)
-        if known is not None or root is None:
-            return known or ""
-        return skill_description(root / skills_dir / skill)
+        if known is not None:
+            return known
+        text = _entry_skill_md((entries or {}).get(skill))
+        if text is not None:
+            described = _front_description(text)
+            if described:
+                return described
+        return skill_description(root / skills_dir / skill) if root is not None else ""
 
     rows = [
         f"| `{skill}` | {covers(skill)} | `{skills_dir}/{skill}/SKILL.md` |" for skill in skills
@@ -103,7 +142,61 @@ def _skills(skills: list[str], skills_dir: str, root: Path | None = None) -> str
     )
 
 
+def _folder(spec: Mapping[str, Any], key: str) -> str:
+    """A folder's name from the spec's directories, else its usual name."""
+    value = (spec.get("directories") or {}).get(key)
+    return str(value).strip("/") if isinstance(value, str) and value else key
+
+
+def _app_environment(spec: dict[str, Any]) -> str | None:
+    """The Framework Environment section of an app, which doesn't call ``fw.scaffold()``.
+    None for other project types."""
+    www, data, tests = (_folder(spec, key) for key in ("www", "data", "tests"))
+    publish = (
+        "- Ask before publishing anything public. GitHub Pages is public even from a "
+        "private repository."
+    )
+    package = '- Add packages with `fw.package_add("name")`. It records them in pyproject.toml.'
+    if spec.get("type") == "shiny_python":
+        kind = "a Shiny for Python app"
+        lines = [
+            f"- The interface and server are in `app.py`. Static files go in `{www}/`, data "
+            f"files in `{data}/`, and tests in `{tests}/`.",
+            "- Run it with `uv run shiny run --reload app.py`.",
+            package,
+            publish,
+        ]
+    elif spec.get("type") == "fastapi":
+        app = _folder(spec, "app")
+        module = app.replace("/", ".")
+        kind = "a FastAPI app"
+        lines = [
+            f"- The endpoints are in `{app}/main.py`. Tests in `{tests}/` use FastAPI's test "
+            f"client. Data files go in `{data}/`.",
+            f"- Run it with `uv run uvicorn {module}.main:app --reload`. The API docs are at "
+            "`/docs`.",
+            "- Run the tests with `uv run pytest`.",
+            package,
+            publish,
+        ]
+    else:
+        return None
+    return "\n".join(
+        [
+            f"## Framework Environment {REGENERATE}",
+            "",
+            f"This is {kind}. Framework manages its packages, skills, and settings. The app "
+            "doesn't call `fw.scaffold()`.",
+            "",
+            *lines,
+        ]
+    )
+
+
 def _environment(spec: dict[str, Any]) -> str:
+    app = _app_environment(spec)
+    if app is not None:
+        return app
     scaffold = spec.get("scaffold") or {}
     functions = (spec.get("directories") or {}).get("functions") or "functions"
     steps = [
@@ -247,7 +340,7 @@ def _data(spec: dict[str, Any]) -> str:
     )
 
 
-def _type_section(spec: dict[str, Any]) -> str:
+def _type_section(spec: dict[str, Any]) -> str | None:
     # Sensitive data is a setting, whatever structure the project uses
     from framework._private import spec_sensitive
 
@@ -278,6 +371,9 @@ def _type_section(spec: dict[str, Any]) -> str:
             'fw.make_revealjs("backup-slides")\n'
             "```"
         )
+    # The guidelines point at the framework-workflow skill, so they need it
+    if is_app_type(spec.get("type")) or "framework-workflow" not in (spec.get("skills") or {}):
+        return None
     return (
         "## Workflow Guidelines\n\n"
         "Follow the standard Framework workflow (see the `framework-workflow` skill):\n"
@@ -286,22 +382,31 @@ def _type_section(spec: dict[str, Any]) -> str:
     )
 
 
-def agents_md(spec: dict[str, Any], skills_dir: str, restricted_notice: str | None) -> str:
+def agents_md(
+    spec: dict[str, Any],
+    skills_dir: str,
+    restricted_notice: str | None,
+    root: Path | None = None,
+) -> str:
     """The full AGENTS.md for a new project.
 
     ``restricted_notice`` names the folders agents must stay out of. It goes
-    right after the header in sensitive projects.
+    right after the header in sensitive projects. ``root`` is the project, for the
+    descriptions of skills already written there. An app (Shiny for Python or FastAPI)
+    has no Data Management or Workflow Guidelines section.
     """
-    sections = [_header(spec["name"])]
+    skills = spec.get("skills") or {}
+    app = is_app_type(spec.get("type"))
+    sections: list[str | None] = [_header(spec["name"])]
     if restricted_notice:
         sections.append(restricted_notice)
     sections += [
-        _skills(list(spec.get("skills") or {}), skills_dir),
+        _skills(list(skills), skills_dir, root, skills),
         _environment(spec),
         _packages(spec),
-        _data(spec),
+        None if app else _data(spec),
         _type_section(spec),
         "## Project Notes\n\n*Add your project-specific notes, conventions, and documentation "
         "here.*",
     ]
-    return "\n\n".join(section.rstrip("\n") for section in sections) + "\n"
+    return "\n\n".join(section.rstrip("\n") for section in sections if section) + "\n"

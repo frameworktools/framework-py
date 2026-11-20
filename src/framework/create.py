@@ -31,6 +31,7 @@ from framework.spec.merge import SpecError
 from framework.spec.resolve import (
     TYPES,
     author_normalize,
+    is_app_type,
     spec_core_files,
     spec_resolve,
     spec_settings_layout,
@@ -136,7 +137,25 @@ def _sections(spec: Mapping[str, Any]) -> dict[str, Any]:
     scaffold = spec.get("scaffold") or {}
     git = spec.get("git") or {}
     ai = spec.get("ai") or {}
-    return {
+    # An app doesn't call fw.scaffold(), so it gets no seed, theme, or function-folder keys,
+    # and no Quarto block
+    app = is_app_type(spec.get("type"))
+    scaffold_keys: dict[str, Any] = (
+        {}
+        if app
+        else {
+            "seed_on_scaffold": scaffold.get("seed_on_scaffold", False),
+            "seed": scaffold.get("seed", ""),
+            "source_all_functions": scaffold.get("source_all_functions", True),
+            # The plot style scaffold() applies, as R's ggplot2 theme
+            **{
+                k: scaffold[k]
+                for k in ("set_theme_on_scaffold", "matplotlib_style")
+                if scaffold.get(k) is not None
+            },
+        }
+    )
+    sections: dict[str, Any] = {
         "author": author_normalize(spec.get("author")),
         "git": {
             "enabled": git.get("use_git", True),
@@ -150,15 +169,7 @@ def _sections(spec: Mapping[str, Any]) -> dict[str, Any]:
             "assistants": list(ai.get("assistants") or {}),
         },
         "scaffold": {
-            "seed_on_scaffold": scaffold.get("seed_on_scaffold", False),
-            "seed": scaffold.get("seed", ""),
-            "source_all_functions": scaffold.get("source_all_functions", True),
-            # The plot style scaffold() applies, as R's ggplot2 theme
-            **{
-                k: scaffold[k]
-                for k in ("set_theme_on_scaffold", "matplotlib_style")
-                if scaffold.get(k) is not None
-            },
+            **scaffold_keys,
             **({"workflow": scaffold["workflow"]} if scaffold.get("workflow") else {}),
             "notebook_format": scaffold.get("notebook_format")
             or ("quarto" if spec_tool_on(spec, "quarto") else "jupyter"),
@@ -166,6 +177,9 @@ def _sections(spec: Mapping[str, Any]) -> dict[str, Any]:
         "quarto": spec.get("quarto") or {},
         "connections": spec.get("connections") or {},
     }
+    if app:
+        del sections["quarto"]
+    return sections
 
 
 def _write_settings(root: Path, spec: Mapping[str, Any]) -> None:
@@ -188,6 +202,8 @@ def _write_settings(root: Path, spec: Mapping[str, Any]) -> None:
 
     if spec_settings_layout(spec) == "split":
         for section in ("author", "git", "ai", "scaffold", "quarto"):
+            if section not in sections:
+                continue
             main[section] = f"settings/{section}.yml"
             _yaml.write(root / "settings" / f"{section}.yml", {section: sections[section]})
         main["connections"] = "settings/connections.yml"
@@ -196,7 +212,8 @@ def _write_settings(root: Path, spec: Mapping[str, Any]) -> None:
         _yaml.write(root / "settings/data.yml", {"data": catalog_nest(spec.get("data"))})
     else:
         for section in ("author", "quarto", "git", "ai", "scaffold"):
-            main[section] = sections[section]
+            if section in sections:
+                main[section] = sections[section]
         main["data"] = catalog_nest(spec.get("data"))
         main["connections"] = sections["connections"]
 
@@ -519,7 +536,9 @@ def project_create(
     _ignore_publish_folders(root, spec)
     if not bare and (spec.get("ai") or {}).get("enabled"):
         write_ai_files(root, dict(spec))
-    if not bare:
+    # An app doesn't call fw.scaffold(), which runs scaffold.py
+    app = is_app_type(spec["type"])
+    if not bare and not app:
         _write(root, "scaffold.py", _scaffold_py(spec))
     _write(root, "pyproject.toml", _pyproject(spec))
     ide = str((spec.get("scaffold") or {}).get("ide") or "").lower()
@@ -541,7 +560,8 @@ def project_create(
             spec.get("quarto") or {},
             spec.get("directories") or {},
         )
-    if not bare:
+    # An app gets framework.db when something first records to it
+    if not bare and not app:
         db.ensure_db(root)
     _keep_folders(root)
     _record(root, spec)

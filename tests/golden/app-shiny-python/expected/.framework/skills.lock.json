@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "skills": {
+    "account:https://cloud.example:framework:git-workflow:python": {
+      "paths": [
+        ".agents/skills/git-workflow"
+      ],
+      "variant": "python",
+      "hash": "cdbce1802bc49454803c0c9b2828d7bd3ff7c60e6f19c23f3954417ede300a81",
+      "version": 2,
+      "skill_id": "framework:git-workflow",
+      "server": "https://cloud.example"
+    },
+    "package:framework-packages": {
+      "paths": [
+        ".agents/skills/framework-packages"
+      ],
+      "variant": "python",
+      "hash": "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4",
+      "origin": {
+        "skill_id": "framework:framework-packages",
+        "hash": "27e2ed40bce7f22b668d355e8aab0f28b188bfa60e3a3ad5d11d1b5991af7ae4"
+      }
+    }
+  }
+}

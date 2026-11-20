@@ -1,0 +1,221 @@
+{
+  "spec_version": 1,
+  "name": "Demo App",
+  "author": {
+    "name": "Ada Example",
+    "email": "",
+    "affiliation": ""
+  },
+  "layers": [
+    {
+      "kind": "base",
+      "key": "framework/fastapi",
+      "version": 3,
+      "layer": {
+        "git": {
+          "gitignore_content": "# Private data and credentials\n**/private/**\n**/*_private/**\n.env\n.env.*\n!.env.example\n.Renviron\n**/credentials/**\n**/secrets/**\n\n# Local records and caches\nframework.db\nframework.db-wal\nframework.db-shm\n.DS_Store\n\n# Python environments and caches\n.venv/\n__pycache__/\n.pytest_cache/\nrsconnect-python/\n"
+        },
+        "type": "fastapi",
+        "files": {
+          "README.md": {
+            "content": "# {{project_name}}\n\nAn API built with FastAPI. The endpoints are in app/main.py. The docs are at /docs once it runs.\n\nRun it:\n\n```\nuvicorn app.main:app --reload\n```\n",
+            "template": true
+          },
+          "app/main.py": {
+            "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\n\napp = FastAPI(title=\"{{project_name}}\")\n\n\nclass Message(BaseModel):\n    message: str\n\n\n@app.get(\"/health\")\ndef health() -> dict[str, str]:\n    return {\"status\": \"ok\"}\n\n\n@app.post(\"/echo\")\ndef echo(body: Message) -> Message:\n    return body\n",
+            "template": true
+          },
+          "conftest.py": {
+            "content": "# Here so pytest puts the project folder on the import path, and tests can import app.main\n"
+          },
+          "app/__init__.py": {
+            "content": ""
+          },
+          "tests/test_main.py": {
+            "content": "from fastapi.testclient import TestClient\n\nfrom app.main import app\n\nclient = TestClient(app)\n\n\ndef test_health():\n    assert client.get(\"/health\").json() == {\"status\": \"ok\"}\n\n\ndef test_echo():\n    assert client.post(\"/echo\", json={\"message\": \"hi\"}).json() == {\"message\": \"hi\"}\n"
+          }
+        },
+        "directories": {
+          "app": "app",
+          "data": "data",
+          "tests": "tests",
+          "scripts": "scripts"
+        },
+        "render_dirs": {},
+        "settings_layout": "flat"
+      }
+    },
+    {
+      "kind": "facet",
+      "key": "framework/uv",
+      "version": 1,
+      "layer": {
+        "tools": {
+          "uv": true
+        }
+      }
+    },
+    {
+      "kind": "facet",
+      "key": "framework/fastapi-python",
+      "version": 2,
+      "layer": {
+        "packages": {
+          "default_packages": {
+            "httpx": {
+              "source": "pypi",
+              "auto_attach": false
+            },
+            "pytest": {
+              "source": "pypi",
+              "auto_attach": false
+            },
+            "fastapi": {
+              "source": "pypi",
+              "auto_attach": false
+            },
+            "uvicorn": {
+              "source": "pypi",
+              "auto_attach": false
+            },
+            "pydantic": {
+              "source": "pypi",
+              "auto_attach": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "facet",
+      "key": "framework/workflow-scripts",
+      "version": 2,
+      "layer": {
+        "scaffold": {
+          "workflow": "scripts",
+          "notebook_format": "script"
+        }
+      }
+    },
+    {
+      "kind": "facet",
+      "key": "framework/git",
+      "version": 2,
+      "layer": {}
+    },
+    {
+      "kind": "facet",
+      "key": "framework/git-python",
+      "version": 2,
+      "layer": {
+        "skills": {
+          "git-workflow": {
+            "sync": {
+              "hash": "cdbce1802bc49454803c0c9b2828d7bd3ff7c60e6f19c23f3954417ede300a81",
+              "variant": "python",
+              "version": 2,
+              "skill_id": "framework:git-workflow",
+              "server": "https://cloud.example"
+            },
+            "bundle": [
+              {
+                "path": "SKILL.md",
+                "content": "LS0tCm5hbWU6IGdpdC13b3JrZmxvdwpkZXNjcmlwdGlvbjogVXNlIHdoZW4gcmV2aWV3aW5nIGNoYW5nZXMsIGNvbW1pdHRpbmcgYW5hbHlzaXMgd29yaywgcmVzb2x2aW5nIG1lcmdlIGNvbmZsaWN0cywgb3IgY29vcmRpbmF0aW5nIGJyYW5jaGVzIGluIGEgcmVzZWFyY2ggcmVwb3NpdG9yeS4KbWV0YWRhdGE6CiAgdGl0bGU6IFVzaW5nIEdpdCBpbiBhbiBhbmFseXNpcyBwcm9qZWN0CiAgc3VtbWFyeTogUmV2aWV3YWJsZSBHaXQgY2hhbmdlcyBmb3IgYW5hbHlzaXMgY29kZSBhbmQgcHJvamVjdCBmaWxlcy4KLS0tCgojIFVzaW5nIEdpdCBpbiBhbiBhbmFseXNpcyBwcm9qZWN0CgojIyBDaGFuZ2VzCgotIENoZWNrIHRoZSBicmFuY2gsIHN0YXR1cywgYW5kIGRpZmYgYmVmb3JlIGVkaXRpbmcgb3IgY29tbWl0dGluZy4KLSBLZWVwIHVucmVsYXRlZCB3b3JrIGFzIGl0IGlzLgotIFN0YWdlIGV4cGxpY2l0IHBhdGhzLCBzbyBnZW5lcmF0ZWQgb3V0cHV0LCBkYXRhLCBjcmVkZW50aWFscywgYW5kCiAgbWFjaGluZS1zcGVjaWZpYyBmaWxlcyBzdGF5IG91dCBvZiBjb21taXRzLgotIEtlZXAgZWFjaCBjb21taXQgdG8gb25lIGNvaGVyZW50IGNoYW5nZSwgYW5kIGRlc2NyaWJlIHdoYXQgY2hhbmdlZC4KCiMjIENvbmZsaWN0cwoKLSBSZXNvbHZlIG5vdGVib29rIGNvbmZsaWN0cyB3aXRoIG5vdGVib29rLWF3YXJlIHRvb2xzIHdoZW4gYXZhaWxhYmxlLgotIFJlZ2VuZXJhdGUgZ2VuZXJhdGVkIGZpbGVzIGZyb20gdGhlaXIgc291cmNlLgotIFJlcnVuIGFmZmVjdGVkIGFuYWx5c2VzIGFmdGVyIHJlc29sdmluZyBhIGNvbmZsaWN0LgoKIyMgU2hhcmVkIGhpc3RvcnkKCi0gTGVhdmUgc2hhcmVkIGhpc3RvcnkgYXMgaXQgaXMuIENoZWNrIGRpdmVyZ2VuY2UgYmVmb3JlIG1lcmdpbmcgb3IgcmViYXNpbmcuCi0gQ29tbWl0LCBwdXNoLCBhbmQgcHVibGlzaCBvbmx5IHdoZW4gdGhlIHVzZXIgYXNrcy4K",
+                "executable": false
+              }
+            ],
+            "content": "---\nname: git-workflow\ndescription: Use when reviewing changes, committing analysis work, resolving merge conflicts, or coordinating branches in a research repository.\nmetadata:\n  title: Using Git in an analysis project\n  summary: Reviewable Git changes for analysis code and project files.\n---\n\n# Using Git in an analysis project\n\n## Changes\n\n- Check the branch, status, and diff before editing or committing.\n- Keep unrelated work as it is.\n- Stage explicit paths, so generated output, data, credentials, and\n  machine-specific files stay out of commits.\n- Keep each commit to one coherent change, and describe what changed.\n\n## Conflicts\n\n- Resolve notebook conflicts with notebook-aware tools when available.\n- Regenerate generated files from their source.\n- Rerun affected analyses after resolving a conflict.\n\n## Shared history\n\n- Leave shared history as it is. Check divergence before merging or rebasing.\n- Commit, push, and publish only when the user asks.\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "settings",
+      "key": "framework defaults",
+      "layer": {
+        "scaffold": {
+          "ide": "vscode",
+          "seed_on_scaffold": true,
+          "seed": "123",
+          "set_theme_on_scaffold": false,
+          "source_all_functions": true
+        },
+        "ai": {
+          "assistants": {
+            "claude": false,
+            "codex": false,
+            "copilot": false
+          }
+        }
+      }
+    },
+    {
+      "kind": "blueprint",
+      "key": "framework/fastapi",
+      "layer": {
+        "skills": {
+          "framework-packages": {
+            "package": true
+          }
+        }
+      }
+    },
+    {
+      "kind": "project",
+      "key": "demo-app",
+      "layer": {
+        "language": "python",
+        "tools": {
+          "quarto": false,
+          "quarto_manuscript": false,
+          "quarto_slides": false,
+          "jupyter": false,
+          "uv": true
+        }
+      }
+    }
+  ],
+  "source": {
+    "origin": "cloud",
+    "blueprint": {
+      "key": "framework/fastapi",
+      "version": 4
+    },
+    "fragments": [
+      {
+        "kind": "base",
+        "key": "framework/fastapi",
+        "version": 3
+      },
+      {
+        "kind": "facet",
+        "key": "framework/uv",
+        "version": 1
+      },
+      {
+        "kind": "facet",
+        "key": "framework/fastapi-python",
+        "version": 2
+      },
+      {
+        "kind": "facet",
+        "key": "framework/workflow-scripts",
+        "version": 2
+      },
+      {
+        "kind": "facet",
+        "key": "framework/git",
+        "version": 2
+      },
+      {
+        "kind": "facet",
+        "key": "framework/git-python",
+        "version": 2
+      },
+      {
+        "kind": "blueprint",
+        "key": "framework/fastapi"
+      }
+    ]
+  }
+}

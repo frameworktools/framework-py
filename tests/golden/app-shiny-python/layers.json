@@ -1,0 +1,192 @@
+{
+  "spec_version": 1,
+  "name": "Demo App",
+  "author": {
+    "name": "Ada Example",
+    "email": "",
+    "affiliation": ""
+  },
+  "layers": [
+    {
+      "kind": "base",
+      "key": "framework/shiny_python",
+      "version": 2,
+      "layer": {
+        "git": {
+          "gitignore_content": "# Private data and credentials\n**/private/**\n**/*_private/**\n.env\n.env.*\n!.env.example\n.Renviron\n**/credentials/**\n**/secrets/**\n\n# Local records and caches\nframework.db\nframework.db-wal\nframework.db-shm\n.DS_Store\n\n# Python environments and caches\n.venv/\n__pycache__/\n.pytest_cache/\nrsconnect-python/\n"
+        },
+        "type": "shiny_python",
+        "files": {
+          "app.py": {
+            "content": "import numpy as np\nimport pandas as pd\nfrom shiny import App, render, ui\n\napp_ui = ui.page_sidebar(\n    ui.sidebar(ui.input_slider(\"n\", \"Rows\", min=5, max=100, value=20)),\n    ui.card(ui.card_header(\"A random sample\"), ui.output_data_frame(\"table\")),\n    title=\"{{project_name}}\",\n)\n\n\ndef server(input, output, session):\n    @render.data_frame\n    def table():\n        rng = np.random.default_rng(1)\n        return pd.DataFrame({\"value\": rng.normal(size=input.n())})\n\n\napp = App(app_ui, server)\n",
+            "template": true
+          },
+          "README.md": {
+            "content": "# {{project_name}}\n\nA Shiny for Python app. The interface and server are in app.py.\n\nRun it:\n\n```\nshiny run --reload app.py\n```\n",
+            "template": true
+          }
+        },
+        "directories": {
+          "www": "www",
+          "data": "data",
+          "tests": "tests",
+          "scripts": "scripts"
+        },
+        "render_dirs": {},
+        "settings_layout": "flat"
+      }
+    },
+    {
+      "kind": "facet",
+      "key": "framework/uv",
+      "version": 1,
+      "layer": {
+        "tools": {
+          "uv": true
+        }
+      }
+    },
+    {
+      "kind": "facet",
+      "key": "framework/workflow-scripts",
+      "version": 2,
+      "layer": {
+        "scaffold": {
+          "workflow": "scripts",
+          "notebook_format": "script"
+        }
+      }
+    },
+    {
+      "kind": "facet",
+      "key": "framework/git",
+      "version": 2,
+      "layer": {}
+    },
+    {
+      "kind": "facet",
+      "key": "framework/git-python",
+      "version": 2,
+      "layer": {
+        "skills": {
+          "git-workflow": {
+            "sync": {
+              "hash": "cdbce1802bc49454803c0c9b2828d7bd3ff7c60e6f19c23f3954417ede300a81",
+              "variant": "python",
+              "version": 2,
+              "skill_id": "framework:git-workflow",
+              "server": "https://cloud.example"
+            },
+            "bundle": [
+              {
+                "path": "SKILL.md",
+                "content": "LS0tCm5hbWU6IGdpdC13b3JrZmxvdwpkZXNjcmlwdGlvbjogVXNlIHdoZW4gcmV2aWV3aW5nIGNoYW5nZXMsIGNvbW1pdHRpbmcgYW5hbHlzaXMgd29yaywgcmVzb2x2aW5nIG1lcmdlIGNvbmZsaWN0cywgb3IgY29vcmRpbmF0aW5nIGJyYW5jaGVzIGluIGEgcmVzZWFyY2ggcmVwb3NpdG9yeS4KbWV0YWRhdGE6CiAgdGl0bGU6IFVzaW5nIEdpdCBpbiBhbiBhbmFseXNpcyBwcm9qZWN0CiAgc3VtbWFyeTogUmV2aWV3YWJsZSBHaXQgY2hhbmdlcyBmb3IgYW5hbHlzaXMgY29kZSBhbmQgcHJvamVjdCBmaWxlcy4KLS0tCgojIFVzaW5nIEdpdCBpbiBhbiBhbmFseXNpcyBwcm9qZWN0CgojIyBDaGFuZ2VzCgotIENoZWNrIHRoZSBicmFuY2gsIHN0YXR1cywgYW5kIGRpZmYgYmVmb3JlIGVkaXRpbmcgb3IgY29tbWl0dGluZy4KLSBLZWVwIHVucmVsYXRlZCB3b3JrIGFzIGl0IGlzLgotIFN0YWdlIGV4cGxpY2l0IHBhdGhzLCBzbyBnZW5lcmF0ZWQgb3V0cHV0LCBkYXRhLCBjcmVkZW50aWFscywgYW5kCiAgbWFjaGluZS1zcGVjaWZpYyBmaWxlcyBzdGF5IG91dCBvZiBjb21taXRzLgotIEtlZXAgZWFjaCBjb21taXQgdG8gb25lIGNvaGVyZW50IGNoYW5nZSwgYW5kIGRlc2NyaWJlIHdoYXQgY2hhbmdlZC4KCiMjIENvbmZsaWN0cwoKLSBSZXNvbHZlIG5vdGVib29rIGNvbmZsaWN0cyB3aXRoIG5vdGVib29rLWF3YXJlIHRvb2xzIHdoZW4gYXZhaWxhYmxlLgotIFJlZ2VuZXJhdGUgZ2VuZXJhdGVkIGZpbGVzIGZyb20gdGhlaXIgc291cmNlLgotIFJlcnVuIGFmZmVjdGVkIGFuYWx5c2VzIGFmdGVyIHJlc29sdmluZyBhIGNvbmZsaWN0LgoKIyMgU2hhcmVkIGhpc3RvcnkKCi0gTGVhdmUgc2hhcmVkIGhpc3RvcnkgYXMgaXQgaXMuIENoZWNrIGRpdmVyZ2VuY2UgYmVmb3JlIG1lcmdpbmcgb3IgcmViYXNpbmcuCi0gQ29tbWl0LCBwdXNoLCBhbmQgcHVibGlzaCBvbmx5IHdoZW4gdGhlIHVzZXIgYXNrcy4K",
+                "executable": false
+              }
+            ],
+            "content": "---\nname: git-workflow\ndescription: Use when reviewing changes, committing analysis work, resolving merge conflicts, or coordinating branches in a research repository.\nmetadata:\n  title: Using Git in an analysis project\n  summary: Reviewable Git changes for analysis code and project files.\n---\n\n# Using Git in an analysis project\n\n## Changes\n\n- Check the branch, status, and diff before editing or committing.\n- Keep unrelated work as it is.\n- Stage explicit paths, so generated output, data, credentials, and\n  machine-specific files stay out of commits.\n- Keep each commit to one coherent change, and describe what changed.\n\n## Conflicts\n\n- Resolve notebook conflicts with notebook-aware tools when available.\n- Regenerate generated files from their source.\n- Rerun affected analyses after resolving a conflict.\n\n## Shared history\n\n- Leave shared history as it is. Check divergence before merging or rebasing.\n- Commit, push, and publish only when the user asks.\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "settings",
+      "key": "framework defaults",
+      "layer": {
+        "scaffold": {
+          "ide": "vscode",
+          "seed_on_scaffold": true,
+          "seed": "123",
+          "set_theme_on_scaffold": false,
+          "source_all_functions": true
+        },
+        "ai": {
+          "assistants": {
+            "claude": false,
+            "codex": false,
+            "copilot": false
+          }
+        }
+      }
+    },
+    {
+      "kind": "blueprint",
+      "key": "framework/shiny_python",
+      "layer": {
+        "skills": {
+          "framework-packages": {
+            "package": true
+          }
+        },
+        "packages": {
+          "default_packages": {
+            "numpy": {
+              "source": "pypi",
+              "auto_attach": false
+            },
+            "shiny": {
+              "source": "pypi",
+              "auto_attach": false
+            },
+            "pandas": {
+              "source": "pypi",
+              "auto_attach": false
+            }
+          }
+        }
+      }
+    },
+    {
+      "kind": "project",
+      "key": "demo-app",
+      "layer": {
+        "language": "python",
+        "tools": {
+          "quarto": false,
+          "quarto_manuscript": false,
+          "quarto_slides": false,
+          "jupyter": false,
+          "uv": true
+        }
+      }
+    }
+  ],
+  "source": {
+    "origin": "cloud",
+    "blueprint": {
+      "key": "framework/shiny_python",
+      "version": 3
+    },
+    "fragments": [
+      {
+        "kind": "base",
+        "key": "framework/shiny_python",
+        "version": 2
+      },
+      {
+        "kind": "facet",
+        "key": "framework/uv",
+        "version": 1
+      },
+      {
+        "kind": "facet",
+        "key": "framework/workflow-scripts",
+        "version": 2
+      },
+      {
+        "kind": "facet",
+        "key": "framework/git",
+        "version": 2
+      },
+      {
+        "kind": "facet",
+        "key": "framework/git-python",
+        "version": 2
+      },
+      {
+        "kind": "blueprint",
+        "key": "framework/shiny_python"
+      }
+    ]
+  }
+}

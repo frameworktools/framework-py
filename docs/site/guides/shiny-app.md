@@ -21,11 +21,11 @@ my-app/
 ├── app.py                 # Shiny UI and server definition
 ├── README.md              # run instructions
 ├── AGENTS.md
-├── framework.db
 ├── pyproject.toml
-├── scaffold.py
 └── settings.yml
 ```
+
+The app doesn't call `fw.scaffold()`, so it has no `scaffold.py`. `framework.db` appears when something first records to it, such as `fw.cache()`.
 
 Project creation also writes `.env`, `.gitignore`, the `framework-workflow` and `framework-packages` AI skills, and an initial git commit.
 

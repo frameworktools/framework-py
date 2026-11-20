@@ -1,0 +1,43 @@
+default:
+  project_name: Demo App
+  project_type: fastapi
+  language: python
+  tools:
+    quarto: false
+    uv: true
+    quarto_manuscript: false
+    quarto_slides: false
+    jupyter: false
+  directories:
+    app: app
+    data: data
+    tests: tests
+    scripts: scripts
+  render_dirs: {}
+  author:
+    name: Ada Example
+    email: ''
+    affiliation: ''
+  git:
+    enabled: true
+    user_name: ''
+    user_email: ''
+    hooks:
+      data_security: false
+  ai:
+    enabled: true
+    canonical_file: AGENTS.md
+    assistants: []
+  scaffold:
+    workflow: scripts
+    notebook_format: script
+  data: {}
+  connections:
+    default_database: framework
+    databases:
+      framework:
+        driver: sqlite
+        database: framework.db
+    storage_buckets: {}
+  security:
+    sensitive: false

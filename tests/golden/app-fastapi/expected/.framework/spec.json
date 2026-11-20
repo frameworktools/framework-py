@@ -1,0 +1,211 @@
+{
+  "spec_version": 1,
+  "name": "Demo App",
+  "type": "fastapi",
+  "language": "python",
+  "core_files": true,
+  "settings_layout": "flat",
+  "tools": {
+    "quarto": false,
+    "uv": true,
+    "quarto_manuscript": false,
+    "quarto_slides": false,
+    "jupyter": false
+  },
+  "author": {
+    "name": "Ada Example",
+    "email": "",
+    "affiliation": ""
+  },
+  "directories": {
+    "app": "app",
+    "data": "data",
+    "tests": "tests",
+    "scripts": "scripts"
+  },
+  "extra_directories": {},
+  "render_dirs": {},
+  "packages": {
+    "use_renv": false,
+    "default_packages": {
+      "httpx": {
+        "source": "pypi",
+        "auto_attach": false
+      },
+      "pytest": {
+        "source": "pypi",
+        "auto_attach": false
+      },
+      "fastapi": {
+        "source": "pypi",
+        "auto_attach": false
+      },
+      "uvicorn": {
+        "source": "pypi",
+        "auto_attach": false
+      },
+      "pydantic": {
+        "source": "pypi",
+        "auto_attach": false
+      }
+    }
+  },
+  "git": {
+    "use_git": true,
+    "hooks": {
+      "data_security": false
+    },
+    "gitignore_content": "# Framework Research Project\n# ================================================================================\n# Pattern-based gitignore - works regardless of directory structure customization.\n# This is the standard template for non-sensitive projects.\n# ================================================================================\n\n# ============================================================================\n# PRIVATE DATA - NEVER COMMIT\n# ============================================================================\n\n# Private directories (anywhere in project tree)\n**/private/**\n**/*_private/**\n\n# ============================================================================\n# SECRETS AND CREDENTIALS - NEVER COMMIT\n# ============================================================================\n\n.env\n.env.local\n.env.*.local\n.Renviron\n.httr-oauth\n**/credentials/**\n**/secrets/**\n*.key\n*.pem\n\n# ============================================================================\n# UTILITY & CACHE - SAFE TO IGNORE\n# ============================================================================\n\n# Temporary processing directories\n**/cache/**\n**/scratch/**\n**/tmp/**\n**/temp/**\n\n# Logs (run logs, cluster job output)\n**/logs/**\nslurm-*.out\n\n# ============================================================================\n# FRAMEWORK INTERNALS\n# ============================================================================\n\nframework.db\nframework.db-wal\nframework.db-shm\n.initiated\n.framework_scaffolded\n\n# ============================================================================\n# QUARTO ARTIFACTS\n# ============================================================================\n\n# Quarto adds these two lines, in this form, unless they are here already\n/.quarto/\n**/*.quarto_ipynb\n# A folder with its own _quarto.yml gets its own .quarto/\n.quarto/\n_freeze/\n# Backups from quarto_regenerate() before framework-py 0.1.0.dev13\n.quarto_backups/\n*_cache/\n*_files/\n\n# ============================================================================\n# PYTHON ENVIRONMENT\n# ============================================================================\n\n__pycache__/\n*.py[cod]\n.venv/\nvenv/\n.ipynb_checkpoints/\n.pytest_cache/\n.mypy_cache/\n.ruff_cache/\n*.egg-info/\nbuild/\ndist/\n\n# ============================================================================\n# IDE & SYSTEM FILES\n# ============================================================================\n\n# IDE - personal settings only (commit workspace settings if desired)\n.idea/\n.vscode/.history/\n.positron/.history/\n.history/\n\n# macOS\n.DS_Store\n.AppleDouble\n.LSOverride\n\n# Windows\nThumbs.db\nehthumbs.db\n\n# Linux\n*~\n\n# ============================================================================\n# TEMPORARY FILES\n# ============================================================================\n\n*.tmp\n*.log\n*.bak\n*.swp\n*~\n\n# --- from base framework/fastapi v3 ---\n# Private data and credentials\n**/private/**\n**/*_private/**\n.env\n.env.*\n!.env.example\n.Renviron\n**/credentials/**\n**/secrets/**\n\n# Local records and caches\nframework.db\nframework.db-wal\nframework.db-shm\n.DS_Store\n\n# Python environments and caches\n.venv/\n__pycache__/\n.pytest_cache/\nrsconnect-python/\n"
+  },
+  "ai": {
+    "enabled": true,
+    "assistants": {},
+    "agents_md": "stub"
+  },
+  "scaffold": {
+    "seed_on_scaffold": true,
+    "seed": "123",
+    "source_all_functions": true,
+    "ide": "vscode",
+    "workflow": "scripts",
+    "notebook_format": "script",
+    "set_theme_on_scaffold": false
+  },
+  "quarto": {
+    "html": {
+      "format": "html",
+      "embed_resources": true,
+      "theme": "default",
+      "toc": true,
+      "toc_depth": 3,
+      "code_fold": false,
+      "code_tools": false,
+      "highlight_style": "github"
+    },
+    "revealjs": {
+      "format": "revealjs",
+      "theme": "default",
+      "incremental": false,
+      "slide_number": true,
+      "transition": "slide",
+      "background_transition": "fade",
+      "controls": true,
+      "progress": true,
+      "center": true,
+      "highlight_style": "github"
+    }
+  },
+  "connections": {
+    "default_database": "framework",
+    "databases": {
+      "framework": {
+        "driver": "sqlite",
+        "database": "framework.db"
+      }
+    },
+    "storage_buckets": {}
+  },
+  "security": {
+    "sensitive": false
+  },
+  "env": {
+    "POSTGRES_HOST": "",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_DB": "",
+    "POSTGRES_SCHEMA": "public",
+    "POSTGRES_USER": "",
+    "POSTGRES_PASSWORD": "",
+    "S3_BUCKET": "",
+    "S3_ACCESS_KEY": "",
+    "S3_SECRET_KEY": "",
+    "S3_REGION": "",
+    "S3_ENDPOINT": "",
+    "S3_SESSION_TOKEN": ""
+  },
+  "data_hooks": {},
+  "files": {
+    "README.md": {
+      "content": "# {{project_name}}\n\nAn API built with FastAPI. The endpoints are in app/main.py. The docs are at /docs once it runs.\n\nRun it:\n\n```\nuvicorn app.main:app --reload\n```\n",
+      "template": true
+    },
+    "app/main.py": {
+      "content": "from fastapi import FastAPI\nfrom pydantic import BaseModel\n\napp = FastAPI(title=\"{{project_name}}\")\n\n\nclass Message(BaseModel):\n    message: str\n\n\n@app.get(\"/health\")\ndef health() -> dict[str, str]:\n    return {\"status\": \"ok\"}\n\n\n@app.post(\"/echo\")\ndef echo(body: Message) -> Message:\n    return body\n",
+      "template": true
+    },
+    "conftest.py": {
+      "content": "# Here so pytest puts the project folder on the import path, and tests can import app.main\n"
+    },
+    "app/__init__.py": {
+      "content": ""
+    },
+    "tests/test_main.py": {
+      "content": "from fastapi.testclient import TestClient\n\nfrom app.main import app\n\nclient = TestClient(app)\n\n\ndef test_health():\n    assert client.get(\"/health\").json() == {\"status\": \"ok\"}\n\n\ndef test_echo():\n    assert client.post(\"/echo\", json={\"message\": \"hi\"}).json() == {\"message\": \"hi\"}\n"
+    }
+  },
+  "skills": {
+    "git-workflow": {
+      "sync": {
+        "hash": "cdbce1802bc49454803c0c9b2828d7bd3ff7c60e6f19c23f3954417ede300a81",
+        "variant": "python",
+        "version": 2,
+        "skill_id": "framework:git-workflow",
+        "server": "https://cloud.example"
+      },
+      "bundle": [
+        {
+          "path": "SKILL.md",
+          "content": "LS0tCm5hbWU6IGdpdC13b3JrZmxvdwpkZXNjcmlwdGlvbjogVXNlIHdoZW4gcmV2aWV3aW5nIGNoYW5nZXMsIGNvbW1pdHRpbmcgYW5hbHlzaXMgd29yaywgcmVzb2x2aW5nIG1lcmdlIGNvbmZsaWN0cywgb3IgY29vcmRpbmF0aW5nIGJyYW5jaGVzIGluIGEgcmVzZWFyY2ggcmVwb3NpdG9yeS4KbWV0YWRhdGE6CiAgdGl0bGU6IFVzaW5nIEdpdCBpbiBhbiBhbmFseXNpcyBwcm9qZWN0CiAgc3VtbWFyeTogUmV2aWV3YWJsZSBHaXQgY2hhbmdlcyBmb3IgYW5hbHlzaXMgY29kZSBhbmQgcHJvamVjdCBmaWxlcy4KLS0tCgojIFVzaW5nIEdpdCBpbiBhbiBhbmFseXNpcyBwcm9qZWN0CgojIyBDaGFuZ2VzCgotIENoZWNrIHRoZSBicmFuY2gsIHN0YXR1cywgYW5kIGRpZmYgYmVmb3JlIGVkaXRpbmcgb3IgY29tbWl0dGluZy4KLSBLZWVwIHVucmVsYXRlZCB3b3JrIGFzIGl0IGlzLgotIFN0YWdlIGV4cGxpY2l0IHBhdGhzLCBzbyBnZW5lcmF0ZWQgb3V0cHV0LCBkYXRhLCBjcmVkZW50aWFscywgYW5kCiAgbWFjaGluZS1zcGVjaWZpYyBmaWxlcyBzdGF5IG91dCBvZiBjb21taXRzLgotIEtlZXAgZWFjaCBjb21taXQgdG8gb25lIGNvaGVyZW50IGNoYW5nZSwgYW5kIGRlc2NyaWJlIHdoYXQgY2hhbmdlZC4KCiMjIENvbmZsaWN0cwoKLSBSZXNvbHZlIG5vdGVib29rIGNvbmZsaWN0cyB3aXRoIG5vdGVib29rLWF3YXJlIHRvb2xzIHdoZW4gYXZhaWxhYmxlLgotIFJlZ2VuZXJhdGUgZ2VuZXJhdGVkIGZpbGVzIGZyb20gdGhlaXIgc291cmNlLgotIFJlcnVuIGFmZmVjdGVkIGFuYWx5c2VzIGFmdGVyIHJlc29sdmluZyBhIGNvbmZsaWN0LgoKIyMgU2hhcmVkIGhpc3RvcnkKCi0gTGVhdmUgc2hhcmVkIGhpc3RvcnkgYXMgaXQgaXMuIENoZWNrIGRpdmVyZ2VuY2UgYmVmb3JlIG1lcmdpbmcgb3IgcmViYXNpbmcuCi0gQ29tbWl0LCBwdXNoLCBhbmQgcHVibGlzaCBvbmx5IHdoZW4gdGhlIHVzZXIgYXNrcy4K",
+          "executable": false
+        }
+      ],
+      "content": "---\nname: git-workflow\ndescription: Use when reviewing changes, committing analysis work, resolving merge conflicts, or coordinating branches in a research repository.\nmetadata:\n  title: Using Git in an analysis project\n  summary: Reviewable Git changes for analysis code and project files.\n---\n\n# Using Git in an analysis project\n\n## Changes\n\n- Check the branch, status, and diff before editing or committing.\n- Keep unrelated work as it is.\n- Stage explicit paths, so generated output, data, credentials, and\n  machine-specific files stay out of commits.\n- Keep each commit to one coherent change, and describe what changed.\n\n## Conflicts\n\n- Resolve notebook conflicts with notebook-aware tools when available.\n- Regenerate generated files from their source.\n- Rerun affected analyses after resolving a conflict.\n\n## Shared history\n\n- Leave shared history as it is. Check divergence before merging or rebasing.\n- Commit, push, and publish only when the user asks.\n"
+    },
+    "framework-packages": {
+      "package": true
+    }
+  },
+  "source": {
+    "origin": "cloud",
+    "blueprint": {
+      "key": "framework/fastapi",
+      "version": 4
+    },
+    "fragments": [
+      {
+        "kind": "base",
+        "key": "framework/fastapi",
+        "version": 3
+      },
+      {
+        "kind": "facet",
+        "key": "framework/uv",
+        "version": 1
+      },
+      {
+        "kind": "facet",
+        "key": "framework/fastapi-python",
+        "version": 2
+      },
+      {
+        "kind": "facet",
+        "key": "framework/workflow-scripts",
+        "version": 2
+      },
+      {
+        "kind": "facet",
+        "key": "framework/git",
+        "version": 2
+      },
+      {
+        "kind": "facet",
+        "key": "framework/git-python",
+        "version": 2
+      },
+      {
+        "kind": "blueprint",
+        "key": "framework/fastapi"
+      }
+    ],
+    "framework_version": "0.0.0-golden"
+  }
+}

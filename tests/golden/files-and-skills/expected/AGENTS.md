@@ -20,7 +20,7 @@ on a matching task.
 | `framework-cache` | caching computations with the Framework package | `.claude/skills/framework-cache/SKILL.md` |
 | `framework-databases` | querying configured Framework databases | `.claude/skills/framework-databases/SKILL.md` |
 | `framework-publishing` | publishing artifacts with the Framework package | `.claude/skills/framework-publishing/SKILL.md` |
-| `study-protocol` |  | `.claude/skills/study-protocol/SKILL.md` |
+| `study-protocol` | Use when working on the study protocol. | `.claude/skills/study-protocol/SKILL.md` |
 
 ## Framework Environment <!-- @framework:regenerate -->
 

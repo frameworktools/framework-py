@@ -122,11 +122,9 @@ def write_ai_files(root: Path, spec: dict[str, Any]) -> list[str]:
     folders, stubs = assistant_targets(spec)
     files = spec.get("files") or {}
 
-    if spec.get("ai", {}).get("agents_md") == "stub" and "AGENTS.md" not in files:
-        # The full guide, as R writes it; its skills table points at the first skills folder
-        skills_dir = folders[0] if folders else ".agents/skills"
-        _write(root, "AGENTS.md", agents_md(spec, skills_dir, restricted_notice(spec)))
-        written.append("AGENTS.md")
+    guide = spec.get("ai", {}).get("agents_md") == "stub" and "AGENTS.md" not in files
+    if guide:
+        written.append("AGENTS.md")  # Written after the skills, which it describes
     for stub in stubs:
         _write(root, stub, "@AGENTS.md\n" if stub == "CLAUDE.md" else pointer_stub(spec["name"]))
         written.append(stub)
@@ -138,6 +136,11 @@ def write_ai_files(root: Path, spec: dict[str, Any]) -> list[str]:
         # Recorded in .framework/skills.lock.json; an existing edited copy, or one another
         # skill tracks, is left alone and not listed
         written += install_setup_skills(root, skills, folders)
+
+    if guide:
+        # The full guide, as R writes it; its skills table points at the first skills folder
+        skills_dir = folders[0] if folders else ".agents/skills"
+        _write(root, "AGENTS.md", agents_md(spec, skills_dir, restricted_notice(spec), root))
 
     if spec_sensitive(spec):
         guard = write_agent_guards(root, spec)

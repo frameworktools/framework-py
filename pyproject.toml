@@ -86,6 +86,8 @@ include = ["src", "tests", "scripts", "parity.toml", "README.md", "LICENSE"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Golden trees are what project creation writes, byte for byte
+extend-exclude = ["tests/golden/*/expected"]
 
 # Ruff 0.17 formats Python blocks in Markdown. The skills and docs align
 # their comments by hand, and a skill's text is part of its release hash.
@@ -105,6 +107,10 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Golden trees hold the test files project creation writes, not tests of this package
+norecursedirs = [
+    "*.egg", ".*", "_darcs", "build", "CVS", "dist", "node_modules", "venv", "{arch}", "golden",
+]
 pythonpath = ["."]
 addopts = ["-ra", "--strict-markers", "--import-mode=importlib"]
 markers = [

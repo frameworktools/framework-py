@@ -56,9 +56,9 @@ Every non-`bare` project includes:
 
 - `settings.yml` (`language: python`)
 - `pyproject.toml` with `framework-py` and active tool dependencies
-- `scaffold.py` startup hook
+- `scaffold.py` startup hook (not in apps)
 - `.env` credential placeholders (gitignored)
-- `framework.db` SQLite database (gitignored)
+- `framework.db` SQLite database (gitignored; in apps, created on first use)
 - Root `_quarto.yml` (when the `quarto` tool is enabled)
 - `AGENTS.md`, Framework skills, and `CLAUDE.md` (when `claude` is enabled)
 - `<slug>.code-workspace` for VS Code and Positron
