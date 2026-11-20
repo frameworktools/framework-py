@@ -27,7 +27,7 @@ my-app/
 
 The app doesn't call `fw.scaffold()`, so it has no `scaffold.py`. `framework.db` appears when something first records to it, such as `fw.cache()`.
 
-Project creation also writes `.env`, `.gitignore`, the `framework-workflow` and `framework-packages` AI skills, and an initial git commit.
+Project creation also writes `.env`, `.gitignore`, the `framework-packages` and `git-workflow` AI skills, and an initial git commit.
 
 ## Starter application
 
