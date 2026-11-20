@@ -844,15 +844,15 @@ def _untracked_folders(disk: Disk, lock: dict[str, Any], dirs: list[str]) -> lis
 
 def _twins(disk: Disk, lock: dict[str, Any], dirs: list[str]) -> list[tuple[str, str, str]]:
     """Hand-moved copies (the twin rule, push only): (entry key, copy, folder) for each
-    untracked folder in a configured folder that has the name of an absent copy of an
-    entry with no copy left (moved to another folder), or holds that copy's recorded
-    bytes (renamed, in the same folder or another)."""
+    untracked folder in a configured folder that has the name of an absent copy of any
+    entry (moved to another folder), or holds that copy's recorded bytes (renamed, in
+    the same folder or another). The entry may still have other copies."""
     folders = _untracked_folders(disk, lock, dirs)
     found = []
     for key, entry in lock["skills"].items():
-        if not entry["copies"] or any(disk.get(p) != ABSENT for p in entry["copies"]):
-            continue
         for p in sorted(entry["copies"]):
+            if disk.get(p) != ABSENT:
+                continue
             record = _record(entry, p)
             for q in folders:
                 if posixpath.basename(q) == posixpath.basename(p) or (
@@ -871,12 +871,20 @@ def _plan_push(
     twins = _twins(disk, lock, dirs)
 
     def unique(found: list[tuple[str, str, str]]) -> tuple[str, str, str] | None:
-        """The match when it is its entry's only match and its folder's only match."""
+        """The match when it is the only match of its entry's absent copies and of its
+        folder."""
         if len(found) != 1:
             return None
         key, _, q = found[0]
         alone = [t for t in twins if t[0] == key or t[2] == q]
         return found[0] if len(alone) == 1 else None
+
+    def copy_twin(key: str, path: str) -> tuple[str, str, str] | None:
+        """The folder an absent copy was moved to, when the match is unique both ways."""
+        mine = [t for t in twins if t[0] == key and t[1] == path]
+        if len(mine) != 1:
+            return None
+        return mine[0] if len([t for t in twins if t[2] == mine[0][2]]) == 1 else None
 
     for key, entry in lock["skills"].items():
         copies = [state_tracked(p, entry, None, disk) for p in sorted(entry["copies"])]
@@ -903,13 +911,19 @@ def _plan_push(
         holes = [c for c in copies if c.state == "absent"]
         if differ or holes:
             src = edited[0].path if len(edited) == 1 else None
+            moved = (
+                None if differ else next((t for c in holes if (t := copy_twin(key, c.path))), None)
+            )
             _all_rows(
                 plan,
                 key,
                 copies,
                 "failed",
                 "copies_differ" if differ else "copy_absent",
-                _copy_hint(src, _others(held + holes, src)),
+                # An absent copy moved by hand: record the move, never copy over it
+                hint("move", from_=moved[1], to=moved[2])
+                if moved
+                else _copy_hint(src, _others(held + holes, src)),
             )
             continue
         local = held[0].disk
@@ -974,7 +988,7 @@ def _plan_push(
                 )
     for p in _untracked_folders(disk, lock, dirs):
         mine = [t for t in twins if t[2] == p]
-        match = unique(mine)
+        match = mine[0] if len(mine) == 1 and copy_twin(mine[0][0], mine[0][1]) else None
         plan.step(
             p,
             None,

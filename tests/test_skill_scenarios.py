@@ -439,3 +439,55 @@ def test_command(path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     else:
         assert after is not None
         assert json.loads(after) == normal_lock(resolve(expected["lock"]))
+
+
+# Planner unit cases beyond the shared scenarios -------------------------------------------
+
+
+def test_a_copy_renamed_beside_a_sibling_gets_the_move_hint() -> None:
+    """One of two tracked copies renamed by hand: the renamed folder gets the move hint,
+    never the sync hint, though its entry still has a copy."""
+    m1, e1 = label_hash("m1"), label_hash("e1")
+    identity = {"kind": "cloud", "skill_id": "uuid-mine", "variant": "r", "server": SERVER}
+    lock = {
+        "schema": 2,
+        "skills": {
+            planner.key_of(identity): {
+                "identity": identity,
+                "base": {"channel": "cloud", "hash": m1, "version": 1, "server": SERVER},
+                "known": [m1],
+                "copies": {
+                    ".agents/skills/team-data": {"hash": m1},
+                    ".agents/skills/framework-data": {"hash": m1},
+                },
+            }
+        },
+    }
+    move = {
+        "key": "move",
+        "from": ".agents/skills/framework-data",
+        "to": ".agents/skills/team-data2",
+    }
+
+    def push(team_data: str) -> dict[str, dict[str, Any]]:
+        disk = planner.Disk(
+            hashes={".agents/skills/team-data": team_data, ".agents/skills/team-data2": m1},
+            folders={".agents", ".agents/skills"},
+            children={".agents/skills": ["team-data", "team-data2"]},
+        )
+        plan = planner.plan(
+            disk,
+            planner.migrate(lock),
+            {"remote": {}},
+            {"command": "push", "dirs": [".agents/skills"]},
+        )
+        return {s["path"]: s for s in plan.steps}
+
+    unedited = push(m1)
+    assert unedited[".agents/skills/team-data2"]["hint"] == move
+    assert ".agents/skills/framework-data" not in unedited  # nothing to push
+    # Edited beside the absent copy: copy_absent, with the move hint instead of a copy
+    edited = push(e1)
+    assert edited[".agents/skills/framework-data"]["reason_code"] == "copy_absent"
+    assert edited[".agents/skills/framework-data"]["hint"] == move
+    assert edited[".agents/skills/team-data2"]["hint"] == move
