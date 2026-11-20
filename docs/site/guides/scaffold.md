@@ -123,6 +123,17 @@ scaffold:
 
 Check `matplotlib.style.available` for installed style names. Missing `matplotlib` or an unknown style emits a warning without failing.
 
+## Data descriptions
+
+[data_read()](ref:data_read) does not print catalog descriptions by default. Set `print_description_on_read: true` under `scaffold:` to print each entry's `description` on read as `Note: <name>: <description>`:
+
+```yaml
+scaffold:
+  print_description_on_read: true
+```
+
+[data_list()](ref:data_list) always shows descriptions.
+
 ## scaffold.py
 
 New projects include a root `scaffold.py` file that `scaffold()` executes after its built-in steps. Use it for shared session configuration such as pandas display options:

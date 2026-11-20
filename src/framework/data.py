@@ -363,6 +363,12 @@ def data_read(
     later read. A changed locked file raises ``IntegrityError``. A changed
     unlocked file issues a ``DataChangedWarning``.
 
+    With ``print_description_on_read: true`` under ``scaffold:`` in
+    ``settings/scaffold.yml`` (or ``settings.yml``), ``data_read()`` prints a
+    catalog entry's ``description`` on each read as
+    ``Note: <name>: <description>``. Printing is off by default.
+    ``data_list()`` always shows descriptions.
+
     Args:
         path: A catalog name such as ``"inputs.raw.survey"``, or a file path. A relative
             path is looked for from the project root, then from the current folder.
@@ -429,11 +435,27 @@ def data_read(
         _check_integrity(path, info)
 
     data = read_file(info, delim, keep_attributes, r_args, kwargs)
-    if info.description:
+    if info.description and _print_description_on_read():
         inform(f"Note: {path}: {info.description}")
     if info.private or is_private_data(info.path, _root_or_none()):
         note_private_read(path)
     return data
+
+
+def _print_description_on_read() -> bool:
+    """Whether data_read() prints a catalog entry's description, as R does.
+
+    Off unless the project sets ``print_description_on_read: true`` under
+    ``scaffold:`` (settings/scaffold.yml), ``options:``, or the top level.
+    """
+    try:
+        config = settings_read()
+    except FrameworkError:
+        return False
+    for section in (config.get("scaffold"), config.get("options"), config):
+        if isinstance(section, dict) and section.get("print_description_on_read") is not None:
+            return section["print_description_on_read"] is True
+    return False
 
 
 def _catalog_entry(name: str) -> DataInfo | None:

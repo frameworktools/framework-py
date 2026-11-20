@@ -57,7 +57,8 @@ class DataInfo:
         private: Whether the file is in a private folder: one whose name
             contains private, confidential, or sensitive, at any depth below
             the project root.
-        description: Shown when the data is read.
+        description: Optional description of the dataset, printed by ``data_read()``
+            when ``scaffold.print_description_on_read`` is ``true``.
         name: The catalog name, when the file was found by name.
         extra: Any other fields of the catalog entry.
         columns: With ``data_info(..., columns=True)``: one row per column, with its

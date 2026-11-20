@@ -49,7 +49,7 @@ Each entry is either a path string or a mapping with these fields:
 | `type` | File format; inferred from the file extension when omitted. |
 | `delimiter` | Delimiter for text files: `comma`, `tab`, `semicolon`, or `space`. |
 | `locked` | When `true`, file modifications raise `IntegrityError` on read. Omitted for unlocked entries. |
-| `description` | Summary printed on read and shown by `data_list()`. |
+| `description` | Summary shown by `data_list()`. `data_read()` prints it only when `scaffold.print_description_on_read` is `true`. |
 
 Custom metadata fields are preserved and exposed via `info.extra` on [data_info()](ref:data_info). Framework writes nested YAML keys, though dotted keys (`raw.survey:` under `inputs:`) resolve identically.
 

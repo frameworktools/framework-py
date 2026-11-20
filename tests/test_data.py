@@ -297,10 +297,32 @@ def test_first_read_records_the_hash(data_project: Path) -> None:
     assert record is not None and record.path == "inputs/raw/v.tsv" and not record.locked
 
 
-def test_description_is_shown(data_project: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_description_is_not_shown_by_default(
+    data_project: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     (data_project / "inputs/raw/s.csv").write_text("a\n1\n", encoding="utf-8")
     (data_project / "settings/data.yml").write_text(
         "data:\n  s: {path: inputs/raw/s.csv, description: Survey responses}\n", encoding="utf-8"
+    )
+    with caplog.at_level("INFO", logger="framework"):
+        fw.data_read("s")
+    assert "Survey responses" not in caplog.text
+
+
+def test_description_is_shown_when_print_description_on_read(
+    data_project: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (data_project / "inputs/raw/s.csv").write_text("a\n1\n", encoding="utf-8")
+    (data_project / "settings/data.yml").write_text(
+        "data:\n  s: {path: inputs/raw/s.csv, description: Survey responses}\n", encoding="utf-8"
+    )
+    settings = data_project / "settings.yml"
+    settings.write_text(
+        settings.read_text(encoding="utf-8") + "  scaffold: settings/scaffold.yml\n",
+        encoding="utf-8",
+    )
+    (data_project / "settings/scaffold.yml").write_text(
+        "scaffold:\n  print_description_on_read: true\n", encoding="utf-8"
     )
     with caplog.at_level("INFO", logger="framework"):
         fw.data_read("s")

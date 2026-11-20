@@ -124,7 +124,7 @@ For compatibility with R projects, `framework-py` also evaluates `!expr Sys.gete
 | `author` | `name`, `email`, and `affiliation` for notebook metadata. |
 | `git` | `enabled` and pre-commit `hooks`. See [Git](guide:git). |
 | `ai` | `enabled`, `canonical_file` (`AGENTS.md`), and `assistants`. See [AI assistants](guide:ai-assistants). |
-| `scaffold` | `seed_on_scaffold`, `seed`, `set_theme_on_scaffold`, `matplotlib_style`, `source_all_functions`, `workflow`, and `notebook_format` (`quarto`, `jupyter`, or `script`). |
+| `scaffold` | `seed_on_scaffold`, `seed`, `set_theme_on_scaffold`, `matplotlib_style`, `source_all_functions`, `print_description_on_read`, `workflow`, and `notebook_format` (`quarto`, `jupyter`, or `script`). |
 | `quarto` | HTML and RevealJS rendering options. |
 | `connections` | Database and S3 storage definitions. See [Connections](guide:connections). |
 | `data` | Data catalog entries. See [Data management](guide:data-management). |
@@ -185,6 +185,15 @@ scaffold:
 ```
 
 When `seed_on_scaffold` is omitted, setting `FW_SEED` in the environment enables seeding; `scaffold.seed` still overrides `FW_SEED`'s value when present. An explicit `seed_on_scaffold: false` disables seeding even when `FW_SEED` is set.
+
+### Data descriptions
+
+With `print_description_on_read: true`, [data_read()](ref:data_read) prints a catalog entry's `description` on each read as `Note: <name>: <description>`. Printing is off by default. [data_list()](ref:data_list) always shows descriptions.
+
+```yaml
+scaffold:
+  print_description_on_read: true
+```
 
 ### Options
 
