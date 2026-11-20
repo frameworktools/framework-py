@@ -842,19 +842,24 @@ def _untracked_folders(disk: Disk, lock: dict[str, Any], dirs: list[str]) -> lis
     ]
 
 
-def _twin(
-    disk: Disk, lock: dict[str, Any], entry: dict[str, Any], dirs: list[str]
-) -> tuple[str, str] | None:
-    """An absent copy of an entry and an untracked folder of the same name in a configured
-    folder: the copy was moved by hand, whether or not its old folder still exists."""
-    for p in sorted(entry["copies"]):
-        if disk.get(p) != ABSENT:
+def _twins(disk: Disk, lock: dict[str, Any], dirs: list[str]) -> list[tuple[str, str, str]]:
+    """Hand-moved copies (the twin rule, push only): (entry key, copy, folder) for each
+    untracked folder in a configured folder that has the name of an absent copy of an
+    entry with no copy left (moved to another folder), or holds that copy's recorded
+    bytes (renamed, in the same folder or another)."""
+    folders = _untracked_folders(disk, lock, dirs)
+    found = []
+    for key, entry in lock["skills"].items():
+        if not entry["copies"] or any(disk.get(p) != ABSENT for p in entry["copies"]):
             continue
-        for d in dirs:
-            q = f"{d}/{posixpath.basename(p)}"
-            if q != p and owner_of(lock, q) is None and present(disk.get(q)):
-                return p, q
-    return None
+        for p in sorted(entry["copies"]):
+            record = _record(entry, p)
+            for q in folders:
+                if posixpath.basename(q) == posixpath.basename(p) or (
+                    record is not None and disk.get(q) == record
+                ):
+                    found.append((key, p, q))
+    return found
 
 
 def _plan_push(
@@ -863,6 +868,16 @@ def _plan_push(
     plan = Plan(lock_after=copy.deepcopy(lock))
     dirs = list(opt.get("dirs") or [])
     remote = offer.get("remote") or {}
+    twins = _twins(disk, lock, dirs)
+
+    def unique(found: list[tuple[str, str, str]]) -> tuple[str, str, str] | None:
+        """The match when it is its entry's only match and its folder's only match."""
+        if len(found) != 1:
+            return None
+        key, _, q = found[0]
+        alone = [t for t in twins if t[0] == key or t[2] == q]
+        return found[0] if len(alone) == 1 else None
+
     for key, entry in lock["skills"].items():
         copies = [state_tracked(p, entry, None, disk) for p in sorted(entry["copies"])]
         if any(c.state == "unreadable" for c in copies):
@@ -870,14 +885,15 @@ def _plan_push(
             continue
         held = [c for c in copies if c.state in ("clean", "edited")]
         if not held:
-            twin = _twin(disk, lock, entry, dirs)
+            mine = [t for t in twins if t[0] == key]
+            match = unique(mine)
             _all_rows(
                 plan,
                 key,
                 copies,
                 "missing",
-                "folder_gone" if twin else "all_gone",
-                hint("move", from_=twin[0], to=twin[1]) if twin else None,
+                "folder_gone" if mine else "all_gone",
+                hint("move", from_=match[1], to=match[2]) if match else None,
             )
             continue
         edited = [c for c in held if c.state == "edited"]
@@ -957,23 +973,15 @@ def _plan_push(
                     forced=force,
                 )
     for p in _untracked_folders(disk, lock, dirs):
-        twin = None
-        for entry in lock["skills"].values():
-            gone = [
-                q
-                for q in sorted(entry["copies"])
-                if posixpath.basename(q) == posixpath.basename(p) and disk.get(q) == ABSENT
-            ]
-            if gone:
-                twin = gone[0]
-                break
+        mine = [t for t in twins if t[2] == p]
+        match = unique(mine)
         plan.step(
             p,
             None,
             "none",
             "untracked",
             "untracked",
-            hint("move", from_=twin, to=p) if twin else hint("sync", path=p),
+            hint("move", from_=match[1], to=p) if match else None if mine else hint("sync", path=p),
         )
     return plan
 

@@ -1,5 +1,5 @@
 {
-  "commit": "2c805d9401e3134ae7b4949c365a99cb93a7caa0",
+  "commit": "8c2efb9e36c505c2e7b98d5da2e541c4e571f40e",
   "files": {
     "docs/docs-site.md": {
       "sha256": "be34e19dacbe77390e41986e47bac11d95ace1e458e6fec868e2b279a9e7c497",
@@ -673,6 +673,14 @@
       "sha256": "524a9dc43ba4240559e13764ba6c25abd60a93c44b70a99b26920ab3a31b13ec",
       "source": "inst/conformance/skills/push-refused.json"
     },
+    "tests/shared/conformance/skills/push-renamed-ambiguous.json": {
+      "sha256": "b6b0c2898d1a2bcac514168eb248eaf2dd678b888bf6595e579de10d49617952",
+      "source": "inst/conformance/skills/push-renamed-ambiguous.json"
+    },
+    "tests/shared/conformance/skills/push-renamed-in-folder.json": {
+      "sha256": "8807320f5cbbcba02eb482963ba173befc5d477c0d7dad42739007fc47765464",
+      "source": "inst/conformance/skills/push-renamed-in-folder.json"
+    },
     "tests/shared/conformance/skills/push-untracked.json": {
       "sha256": "40ba61deff9d11142027182afb337165582316c1a0a9fdaa8b3b64de20824ef8",
       "source": "inst/conformance/skills/push-untracked.json"
@@ -722,6 +730,6 @@
       "source": "inst/conformance/skills/upgrade-diverged.json"
     }
   },
-  "ref": "2c805d9",
+  "ref": "8c2efb9",
   "source": "framework (R package)"
 }

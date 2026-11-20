@@ -695,6 +695,20 @@ def row_text(
         return f"{reason} To add it as its own skill: {hint}"
     if key == "login":
         return f"{reason} After {hint}, pull can get it from Cloud."
+    if (
+        not key
+        and row.get("status") in ("missing", "untracked")
+        and row.get("reason_code")
+        in (
+            "folder_gone",
+            "untracked",
+        )
+    ):
+        # Several folders could be the moved copy: the person says which
+        return (
+            f"{reason} If a skill folder was moved or renamed by hand, record the move: "
+            "skills_move(old_path, new_path)."
+        )
     return reason
 
 
