@@ -220,6 +220,7 @@ The magic and `fw.snippet()` take these options:
 | `--slug`, `--title` | `slug`, `title` | Default to the label |
 | `--repository URL` | `repository` | Repository URL to name in the snippet |
 | `--to`, `--visibility`, `--collection` | `to`, `visibility`, `collection` | As in `publish()` |
+| `--display links=off` (repeatable) | `display={"links": False}` | Embed display settings, as in `publish()` |
 | `--no-publish` | `publish=False` | Runs and records without publishing |
 
 The snippet names its file (from the git repository's top, else the project root), the label, and the commit checked out. A script snippet and a Quarto cell also name their lines. The magic finds its notebook through VS Code or Jupyter. Elsewhere it looks for `%%fw_snippet LABEL` in the notebooks of the working folder, and `--file` names the notebook. The snippet names the repository only when it is passed or `publish.repository` is set in `settings.yml`:
@@ -285,9 +286,33 @@ fw.publish_dag("dag { smoking [exposure] cancer [outcome] age -> smoking -> canc
 | `analysis` | `effect` (`"total"` or `"direct"`), `adjustment_sets`, and `implications`, from another tool. `[[]]` means no adjustment is needed, and `[]` means no set works |
 | `pos` | Positions by node, such as `{"age": (0, 0)}` or a networkx layout; they win over `pos` attributes |
 | `y` | `"up"` (default) reads positions as networkx and matplotlib draw them; `"down"` reads them as DAGitty does |
-| `slug`, `title`, `visibility`, `to` | As in `publish()`. The slug defaults to the title, else `dag` |
+| `slug`, `title`, `visibility`, `to`, `display` | As in `publish()`. The slug defaults to the title, else `dag` |
 
 Framework computes no adjustment sets or implications. `fw.publish(dag)` publishes a networkx graph too, without code or analysis.
+
+### Embed display settings
+
+Each artifact on Framework Cloud has display settings that decide what its embeds show on other sites. Every setting is on by default. The owner changes them on the artifact's **Settings** tab, or `display` sets them at publish:
+
+```python
+fw.publish_dag(dag, slug="education-health", display={"code": False, "legend": False})
+fw.publish(fitted_model, to="cloud", slug="adjusted-model", display={"variable_tips": False})
+```
+
+`display` maps setting names to `True` or `False`. Settings it leaves out keep their value, `True` restores a default, and the settings apply to every version. `publish()`, `publish_dag()`, `publish_notebook()`, `publish_data()`, `publish_dir()`, and `fw.snippet()` take it, and the `%%fw_snippet` magic takes `--display SETTING=on|off`. An unknown name or a value other than `True` or `False` is refused before anything is sent. Other destinations ignore `display` with a message.
+
+| Setting | Kinds | Off means |
+|---------|-------|-----------|
+| `title`, `description`, `author` | All | No title, description, or author name |
+| `details` | Model, test | No details section |
+| `variable_tips` | Model | No tips on terms |
+| `column_summaries` | Table | No column summaries in tips |
+| `output` | Code snippet | The output starts hidden |
+| `links` | Code snippet | No notebook and model links |
+| `legend`, `analysis`, `dagitty`, `code` | DAG | No role legend, analysis, DAGitty code, or source code |
+| `interactive` | Vega-Lite chart | The static image shows instead |
+
+The reader page on Framework Cloud shows everything.
 
 ### Collection attachment
 

@@ -42,6 +42,7 @@ from framework._private import (
     notebook_reasons,
     sensitive_reasons,
 )
+from framework.cloud import display_ignored, display_settings
 from framework.errors import FrameworkError
 from framework.publish_bundle import doc_title
 from framework.settings import settings_read
@@ -420,6 +421,7 @@ def _publish_legacy(
     visibility: str | None = None,
     collection: str | int | None = None,
     share_unlisted: bool = False,
+    display: Mapping[str, bool] | None = None,
     _on_s3: Callable[[Path, str | list[str]], None] | None = None,
 ) -> str | list[str]:
     """Upload a file or folder to the project's storage bucket.
@@ -458,6 +460,9 @@ def _publish_legacy(
             ``slug=True`` or ``False``.
         collection: Existing project collection ID or slug; follows the latest artifact version.
         share_unlisted: Explicitly allow collection readers to access an unlisted artifact.
+        display: What embeds show, on Framework Cloud: settings by name, such as
+            ``{"analysis": False, "code": False}``. True restores a default, and settings
+            left out keep their value. Other destinations ignore it.
         allow_private: Deprecated name for ``include_private``.
 
     Returns:
@@ -488,6 +493,7 @@ def _publish_legacy(
                 visibility=visibility,
                 collection=collection,
                 share_unlisted=share_unlisted,
+                display=display,
                 _on_s3=_on_s3,
             )
     path = Path(source)
@@ -498,6 +504,7 @@ def _publish_legacy(
     if to == "github":
         if any(v is not None for v in (title, description, kind, password, visibility, collection)):
             raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
+        display_ignored(display, "GitHub Pages")
         return _publish_github(to, path, dest, connection, slug, self_contained)
     if _target(connection, to) == "cloud":
         from framework.cloud import cloud_publish
@@ -515,10 +522,12 @@ def _publish_legacy(
             visibility=visibility,
             collection=collection,
             share_unlisted=share_unlisted,
+            display=display,
         )
     if any(v is not None for v in (title, description, kind, password, visibility, collection)):
         raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
     _slug_ignored(slug)
+    display_ignored(display, "a storage bucket")
     bucket = resolve_bucket(connection)
     dest = dest or path.name
     if path.is_dir():
@@ -553,6 +562,7 @@ def publish(
     collection: str | int | None = None,
     share_unlisted: bool = False,
     model: Any = None,
+    display: Mapping[str, bool] | None = None,
 ) -> str | list[str]:
     """Publish an artifact to a named destination or the project default.
 
@@ -597,6 +607,9 @@ def publish(
         model: The Bambi model whose ``fit()`` returned ``source``, an InferenceData:
             ``publish(idata, model=model)``. The model adds its family, formula, priors,
             group-level effects, and variables to the posterior summaries.
+        display: What embeds show, on Framework Cloud: settings by name, such as
+            ``{"analysis": False, "code": False}``. True restores a default, and settings
+            left out keep their value. Other destinations ignore it.
         allow_private: Deprecated name for ``include_private``.
 
     Returns:
@@ -612,6 +625,7 @@ def publish(
 
     if share_unlisted and collection is None:
         raise FrameworkError("share_unlisted requires a collection.")
+    display_settings(display)
     selected = None if to == "bucket" else destination(to, connection)
     if selected is not None:
         visibility = visibility or selected.options.get("visibility")
@@ -678,6 +692,7 @@ def publish(
                 )
             if isinstance(slug, bool):
                 raise FrameworkError("slug=True/False is not used with bundle destinations.")
+            display_ignored(display, f'the "{selected.name}" destination')
             return publish_external(
                 source,
                 selected,
@@ -739,6 +754,7 @@ def publish(
             visibility=visibility,
             collection=collection,
             share_unlisted=share_unlisted,
+            display=display,
             _on_s3=record_legacy,
         )
 
@@ -758,6 +774,7 @@ def publish_notebook(
     share_unlisted: bool = False,
     title: str | None = None,
     description: str | None = None,
+    display: Mapping[str, bool] | None = None,
 ) -> str:
     """Render a Quarto notebook with the ``quarto`` command and upload the result.
 
@@ -798,6 +815,9 @@ def publish_notebook(
             ``title`` in the document's YAML front matter (for a Jupyter notebook, or a
             level-1 heading opening its first markdown cell), else its file name.
         description: A short description, on Framework Cloud and named destinations.
+        display: What embeds show, on Framework Cloud: settings by name, such as
+            ``{"analysis": False, "code": False}``. True restores a default, and settings
+            left out keep their value. Other destinations ignore it.
 
     Returns:
         The public URL.
@@ -809,6 +829,7 @@ def publish_notebook(
     """
     from framework.publish_bundle import destination
 
+    display_settings(display)
     selected = None if to == "bucket" else destination(to, connection)
     if selected is not None:
         source_path = Path(file)
@@ -829,6 +850,7 @@ def publish_notebook(
             share_unlisted=share_unlisted,
             title=title,
             description=description,
+            display=display,
         )
         assert isinstance(published, str)
         return published
@@ -847,6 +869,7 @@ def publish_notebook(
             raise FrameworkError(f'GitHub Pages publishes HTML only (got format="{format}").')
         if title is not None or description is not None:
             raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
+        display_ignored(display, "GitHub Pages")
         return _publish_github(to, source, dest, connection, slug, self_contained)
     quarto = shutil.which("quarto")
     if quarto is None:
@@ -868,12 +891,14 @@ def publish_notebook(
             share_unlisted=share_unlisted,
             title=title or doc_title(source),
             description=description,
+            display=display,
         )
     if collection is not None:
         raise FrameworkError("Collections require publishing to Framework Cloud.")
     if title is not None or description is not None:
         raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
     _slug_ignored(slug)
+    display_ignored(display, "a storage bucket")
     bucket = resolve_bucket(connection)
     self_contained = self_contained or not bucket.static_hosting
 
@@ -970,6 +995,7 @@ def publish_data(
     allow_private: bool | None = None,
     title: str | None = None,
     description: str | None = None,
+    display: Mapping[str, bool] | None = None,
 ) -> str:
     """Upload a DataFrame (as CSV, Parquet, or JSON) or a data file.
 
@@ -1000,6 +1026,9 @@ def publish_data(
         title: The published title, on Framework Cloud and named destinations. Default: the
             slug.
         description: A short description, on Framework Cloud and named destinations.
+        display: What embeds show, on Framework Cloud: settings by name, such as
+            ``{"analysis": False, "code": False}``. True restores a default, and settings
+            left out keep their value. Other destinations ignore it.
 
     Returns:
         The public URL (for a folder destination without a ``url``, its location).
@@ -1012,9 +1041,12 @@ def publish_data(
     if format not in ("csv", "parquet", "json"):
         raise FrameworkError("format must be csv, parquet, or json (rds is R-only)")
     include = include_private_arg(include_private, allow_private)
+    display_settings(display)
     selected, bucket_name = _publish_route(to, connection)
     if selected is None and (title is not None or description is not None):
         raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
+    if selected is None:
+        display_ignored(display, "a storage bucket")
     if isinstance(data, pd.DataFrame):
         confirm_private_upload([], include, sensitive_reasons("this DataFrame"))
     if selected is not None and isinstance(data, pd.DataFrame):
@@ -1028,6 +1060,7 @@ def publish_data(
             include_private=True,
             title=title,
             description=description,
+            display=display,
         )
         assert isinstance(published, str)
         return published
@@ -1065,6 +1098,7 @@ def publish_data(
                 include_private=True,
                 title=title,
                 description=description,
+                display=display,
             )
             assert isinstance(published, str)
             return published
@@ -1085,6 +1119,7 @@ def publish_dir(
     allow_private: bool | None = None,
     title: str | None = None,
     description: str | None = None,
+    display: Mapping[str, bool] | None = None,
 ) -> list[str]:
     """Upload the files in a folder. ``pattern`` is a regular expression on the paths.
 
@@ -1113,6 +1148,9 @@ def publish_dir(
         title: The published title, on Framework Cloud and named destinations. Default: the
             slug.
         description: A short description, on Framework Cloud and named destinations.
+        display: What embeds show, on Framework Cloud: settings by name, such as
+            ``{"analysis": False, "code": False}``. True restores a default, and settings
+            left out keep their value. Other destinations ignore it.
 
     Returns:
         The public URL of each file uploaded. The list is empty when no file matched. For
@@ -1132,9 +1170,12 @@ def publish_dir(
         inform("No files found to upload")
         return []
     confirm_private_upload(files, include)
+    display_settings(display)
     selected, bucket_name = _publish_route(to, connection)
     if selected is None and (title is not None or description is not None):
         raise FrameworkError("Artifact metadata requires publishing to Framework Cloud.")
+    if selected is None:
+        display_ignored(display, "a storage bucket")
     dest = dest or folder.resolve().name
     if selected is not None:
         slug = _dir_slug(dest)
@@ -1147,6 +1188,7 @@ def publish_dir(
                 include_private=True,
                 title=title,
                 description=description,
+                display=display,
             )
         else:
             # Publish only the selected files, keeping their paths inside the folder
@@ -1163,6 +1205,7 @@ def publish_dir(
                     include_private=True,
                     title=title,
                     description=description,
+                    display=display,
                 )
         return [published] if isinstance(published, str) else list(published)
     bucket = resolve_bucket(bucket_name)

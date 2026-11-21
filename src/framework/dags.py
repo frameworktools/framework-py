@@ -412,6 +412,7 @@ def publish_dag(
     share_unlisted: bool = False,
     to: str | None = None,
     include_private: bool = False,
+    display: Mapping[str, bool] | None = None,
 ) -> str | list[str]:
     """Publish a causal diagram (DAG) to Framework Cloud.
 
@@ -465,6 +466,10 @@ def publish_dag(
         share_unlisted: Allow collection readers to see an unlisted DAG.
         to: A configured destination name, or "cloud".
         include_private: Publish without asking about private folders.
+        display: What embeds of the DAG show, on Framework Cloud: ``legend``,
+            ``analysis``, ``dagitty``, ``code``, ``title``, ``description``, and
+            ``author``, such as ``{"code": False}``. True restores a default, and settings
+            left out keep their value.
 
     Returns:
         The artifact's URL.
@@ -489,4 +494,5 @@ def publish_dag(
             share_unlisted=share_unlisted,
             to=to,
             include_private=include_private,
+            display=display,
         )

@@ -276,6 +276,7 @@ _PUBLISH_OPTIONS = (
     "share_unlisted",
     "to",
     "include_private",
+    "display",
 )
 
 
@@ -301,6 +302,7 @@ def snippet(
     share_unlisted: bool = False,
     to: str | None = None,
     include_private: bool = False,
+    display: dict[str, bool] | None = None,
 ) -> Iterator[None]:
     """Run a block and publish its code and printed output as a code snippet.
 
@@ -346,7 +348,14 @@ def snippet(
         share_unlisted: Allow collection readers to see an unlisted snippet.
         to: A configured destination name, or "cloud".
         include_private: Publish without asking about private folders.
+        display: What embeds of the snippet show, on Framework Cloud: ``output``,
+            ``links``, ``title``, ``description``, and ``author``, such as
+            ``{"links": False}``. True restores a default, and settings left out keep
+            their value.
     """
+    from framework.cloud import display_settings
+
+    display_settings(display)
     caller = sys._getframe(2)
     filename = caller.f_code.co_filename
     start = caller.f_lineno
@@ -395,6 +404,7 @@ def snippet(
                 "share_unlisted": share_unlisted,
                 "to": to,
                 "include_private": include_private,
+                "display": display,
             }
             if document is not None:
                 if error is None:
@@ -537,6 +547,7 @@ def _magic_parser() -> Any:
     parser.add_argument("--share-unlisted", action="store_true")
     parser.add_argument("--to")
     parser.add_argument("--include-private", action="store_true")
+    parser.add_argument("--display", action="append", default=[])
     return parser
 
 
@@ -551,7 +562,7 @@ def _magic_arguments(line: str) -> Any:
             f"%%fw_snippet {line}: {error}. Usage: %%fw_snippet LABEL [--folded | --unfolded] "
             "[--no-output] [--link notebook=URL] [--link model=SLUG] [--repository URL] "
             "[--slug SLUG] [--title TITLE] [--visibility VISIBILITY] [--to DESTINATION] "
-            "[--no-publish]"
+            "[--display SETTING=on|off] [--no-publish]"
         ) from None
     links: dict[str, str] = {}
     for link in arguments.link:
@@ -560,6 +571,18 @@ def _magic_arguments(line: str) -> Any:
             raise FrameworkError("--link takes REL=VALUE, as in --link notebook=https://...")
         links[rel] = value
     arguments.links = links
+    display: dict[str, bool] = {}
+    for setting in arguments.display:
+        name, separator, value = setting.partition("=")
+        if not separator or value not in ("on", "off"):
+            raise FrameworkError(
+                "--display takes SETTING=on or SETTING=off, as in --display links=off"
+            )
+        display[name] = value == "on"
+    arguments.display = display or None
+    from framework.cloud import display_settings
+
+    display_settings(arguments.display)
     return arguments
 
 
@@ -721,7 +744,7 @@ def load_ipython_extension(shell: Any) -> None:
             [--link notebook=URL] [--link model=SLUG] [--repository URL] [--file PATH]
             [--slug SLUG] [--title TITLE] [--description TEXT] [--visibility VISIBILITY]
             [--password PASSWORD] [--collection COLLECTION] [--share-unlisted]
-            [--to DESTINATION] [--include-private] [--no-publish]
+            [--to DESTINATION] [--include-private] [--display SETTING=on|off] [--no-publish]
         """
         run_cell_snippet(shell, line, cell)
 

@@ -1139,6 +1139,54 @@ def _publish_collection(
     return selected
 
 
+# What an artifact's embeds show, set per artifact on Framework Cloud. Every setting is on
+# by default; publishing changes only the settings it names.
+DISPLAY_KEYS = (
+    "title",
+    "description",
+    "author",
+    "details",
+    "variable_tips",
+    "column_summaries",
+    "output",
+    "links",
+    "legend",
+    "analysis",
+    "dagitty",
+    "code",
+    "interactive",
+)
+
+
+def display_settings(display: Mapping[str, bool] | None) -> str | None:
+    """``display`` as the JSON text Framework Cloud takes, or None when it isn't given.
+
+    Raises:
+        FrameworkError: ``display`` isn't a dict of known setting names to True or False.
+    """
+    if display is None:
+        return None
+    keys = ", ".join(DISPLAY_KEYS)
+    if not isinstance(display, Mapping):
+        raise FrameworkError(
+            f'display must be a dict of settings to True or False, such as {{"analysis": False}}. '
+            f"Settings: {keys}."
+        )
+    unknown = [str(key) for key in display if key not in DISPLAY_KEYS]
+    if unknown:
+        raise FrameworkError(f"Unknown display setting: {', '.join(unknown)}. Settings: {keys}.")
+    wrong = [str(key) for key, value in display.items() if not isinstance(value, bool)]
+    if wrong:
+        raise FrameworkError(f"display values must be True or False: {', '.join(wrong)}.")
+    return json.dumps(dict(display), separators=(",", ":"))
+
+
+def display_ignored(display: Mapping[str, bool] | None, where: str) -> None:
+    """Say that ``display`` was left out, for a destination other than Framework Cloud."""
+    if display is not None:
+        inform(f"display applies on Framework Cloud only; {where} ignores it.")
+
+
 def cloud_publish(
     source: Path,
     dest: str | None = None,
@@ -1152,6 +1200,7 @@ def cloud_publish(
     visibility: str | None = None,
     collection: str | int | None = None,
     share_unlisted: bool = False,
+    display: Mapping[str, bool] | None = None,
 ) -> str:
     """Publish a file, rendered HTML folder, or notebook to the project cloud server.
 
@@ -1162,8 +1211,10 @@ def cloud_publish(
     ``True`` turns the readable URL on with the derived name, and ``False`` turns it off.
     Pass ``visibility="public"`` to make an artifact public. An explicit ``visibility``
     always wins over ``True`` and ``False``. A source in a private folder needs
-    confirmation, or ``include_private=True``.
+    confirmation, or ``include_private=True``. ``display`` changes the embed settings it
+    names (see ``DISPLAY_KEYS``) and leaves the others alone.
     """
+    shown = display_settings(display)
     sources = [source]
     if source.is_dir():
         sources = sorted(p for p in source.rglob("*") if p.is_file())
@@ -1246,6 +1297,7 @@ def cloud_publish(
             ("kind", kind),
             ("password", password),
             ("visibility", visibility),
+            ("display", shown),
         ):
             if value is not None:
                 data[key] = value
