@@ -52,7 +52,7 @@
   title: Publishing
   description: Artifact publishing and storage buckets
   common: [publish, publish_notebook]
-  names: [publish, publish_notebook, snippet, publish_data, publish_dir, publish_list, storage_test]
+  names: [publish, publish_notebook, snippet, publish_dag, dagitty, publish_data, publish_dir, publish_list, storage_test]
 
 - id: cloud
   title: Cloud

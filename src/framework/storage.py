@@ -469,7 +469,7 @@ def _publish_legacy(
         with tempfile.TemporaryDirectory(prefix="fw_artifact_") as temp:
             is_cloud = to != "github" and _target(connection, to) == "cloud"
             path = _artifact_file(source, Path(temp), cloud=is_cloud)
-            if kind is None and is_cloud and path.name in ("table.json", "model.json"):
+            if kind is None and is_cloud and path.name in ("table.json", "model.json", "dag.json"):
                 kind = path.stem
             return _publish_legacy(
                 path,
@@ -567,6 +567,7 @@ def publish(
             (every row is kept), tests and models become structured summaries, and static
             plots become SVG. Model exports carry coefficients, importance, and fit
             statistics, never observations, residuals, posterior draws, or serialized models.
+            A ``networkx.DiGraph`` becomes a DAG (see ``publish_dag()``).
             Buckets receive CSV tables, PNG figures, and HTML model summaries; Styler tables,
             plotly figures, and altair charts keep their HTML or Vega-Lite form everywhere.
         dest: Where to put it in the bucket. Default: the source's name.

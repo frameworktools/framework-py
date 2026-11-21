@@ -231,6 +231,61 @@ publish:
 
 With a GitHub repository, Framework Cloud links the snippet to its lines at that commit. Each run publishes again. When the snippet matches its newest version, Framework Cloud adds no version and Framework reports `Unchanged, still version N`.
 
+### DAGs
+
+A DAG is a causal diagram with the DAGitty model text that defines it. Framework Cloud draws it, lists its roles, and shows the DAGitty text and the code that built it, each with a copy button. R's dagitty and ggdag and dagitty.net read the same text. [publish_dag()](ref:publish_dag) publishes a `networkx.DiGraph` or DAGitty text:
+
+```python
+import networkx as nx
+
+dag = nx.DiGraph()
+dag.add_node("education", role="exposure", label="Years of education")
+dag.add_node("health", role="outcome", label="Self-rated health")
+dag.add_node("neighborhood", role="latent")
+dag.add_edges_from([
+    ("neighborhood", "parental SES"), ("neighborhood", "health"),
+    ("parental SES", "education"), ("parental SES", "health"),
+    ("education", "income"), ("income", "health"), ("education", "health"),
+])
+dag.add_edge("income", "health", bidirected=True)  # an unmeasured common cause
+
+fw.publish_dag(
+    dag,
+    slug="education-health",
+    title="Education and health",
+    code=open("dag.py").read(),
+    analysis={"effect": "total", "adjustment_sets": [["parental SES"]]},
+)
+```
+
+The graph's attributes say what DAGitty needs:
+
+| Attribute | Effect |
+|-----------|--------|
+| Node `role` | `"exposure"`, `"outcome"`, `"latent"`, `"adjusted"`, or `"selected"`, or a list of them |
+| Node `pos` | An `(x, y)` position, with y pointing down as in DAGitty. networkx layouts point y up, so negate y to keep their picture |
+| Node `label` | The name shown in the drawing |
+| Edge `bidirected=True` | `a <-> b`: a latent common cause. Direction doesn't matter |
+
+A pgmpy `DAG` is a `networkx.DiGraph`, and its `latents` are latent. [dagitty()](ref:dagitty) returns the text without publishing it. Names that aren't plain identifiers, such as `parental SES`, are double-quoted. A graph with a directed cycle or a node that points to itself is refused before anything is sent. Framework Cloud refuses more than 100 nodes or 400 edges.
+
+A string is DAGitty text, sent as it is. A `Path` names a `.dagitty` file:
+
+```python
+fw.publish_dag("dag { smoking [exposure] cancer [outcome] age -> smoking -> cancer age -> cancer }",
+               slug="smoking-cancer")
+```
+
+| Argument | Effect |
+|----------|--------|
+| `labels` | Display labels by node name; they win over `label` attributes |
+| `code` | The Python code that built the graph |
+| `analysis` | `effect` (`"total"` or `"direct"`), `adjustment_sets`, and `implications`, from another tool. `[[]]` means no adjustment is needed, and `[]` means no set works |
+| `pos` | Positions by node, such as `{"age": (0, 0)}`; they win over `pos` attributes |
+| `slug`, `title`, `visibility`, `to` | As in `publish()`. The slug defaults to the title, else `dag` |
+
+Framework computes no adjustment sets or implications. `fw.publish(dag)` publishes a networkx graph too, without code or analysis.
+
 ### Collection attachment
 
 Pass `collection` (slug or ID) to attach a published artifact to an existing Framework Cloud collection:

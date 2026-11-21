@@ -616,6 +616,8 @@ names = [
     "framework_template_path",
     "tools_available",
     "path",  # alias of project_path()
+    "publish_dag",  # proposed: R's publish_dag(), phase 2 of Framework Cloud's DAG artifacts plan
+    "dagitty",  # R users have dagitty itself
 ]
 
 [functions.pull_all]

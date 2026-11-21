@@ -62,6 +62,7 @@ from framework.create import (
     project_create,
     project_create_from_layers,
 )
+from framework.dags import dagitty, publish_dag
 from framework.data import data_add, data_read, data_save
 from framework.data_registry import pull_data_registry, push_data_registry
 from framework.display import TableDisplay, show_table
@@ -194,6 +195,7 @@ __all__ = [
     "config_sync",
     "configure_global",
     "connections_list",
+    "dagitty",
     "data_add",
     "data_info",
     "data_list",
@@ -248,6 +250,7 @@ __all__ = [
     "project_root",
     "project_unregister",
     "publish",
+    "publish_dag",
     "publish_data",
     "publish_dir",
     "publish_list",

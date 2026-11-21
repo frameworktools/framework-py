@@ -1298,6 +1298,10 @@ def structured(source: Any) -> dict[str, Any] | None:
 
 
 def _structured(source: Any) -> dict[str, Any] | None:
+    if _has_class(source, "networkx", "Graph"):
+        from framework import dags
+
+        return dags.structured(source)
     frame = as_frame(source)
     if frame is not None:
         return _table_document(source, frame)
