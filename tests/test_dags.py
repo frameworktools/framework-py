@@ -92,8 +92,34 @@ def test_positions_from_attributes_and_the_pos_mapping() -> None:
     graph.nodes["a"]["pos"] = (0, 1.5)
     graph.nodes["b"]["pos"] = (9, 9)
     text = fw.dagitty(graph, pos={"b": (2, -0.25)})
-    assert 'a [pos="0,1.5"]' in text
-    assert 'b [pos="2,-0.25"]' in text
+    assert 'a [pos="0,-1.5"]' in text
+    assert 'b [pos="2,0.25"]' in text
+
+
+def test_y_points_up_as_nx_draw_shows_it() -> None:
+    # nx.draw puts "top" above "bottom": the larger y is higher. DAGitty's y points down.
+    graph = nx.DiGraph([("top", "bottom")])
+    pos = {"top": (0, 1), "bottom": (0.5, 0)}
+    text = fw.dagitty(graph, pos=pos)
+    assert 'top [pos="0,-1"]' in text
+    assert 'bottom [pos="0.5,0"]' in text  # never "-0"
+
+
+def test_y_down_writes_positions_as_they_are() -> None:
+    graph = nx.DiGraph([("top", "bottom")])
+    text = fw.dagitty(graph, pos={"top": (0, 0), "bottom": (0, 1)}, y="down")
+    assert 'top [pos="0,0"]' in text
+    assert 'bottom [pos="0,1"]' in text
+    with pytest.raises(FrameworkError, match='y must be "up"'):
+        fw.dagitty(graph, y="north")
+
+
+def test_dagitty_text_keeps_its_positions() -> None:
+    text = 'dag {\na [pos="0,1"]\nb [pos="0,-2"]\na -> b\n}'
+    assert dags._document(text)["dagitty"] == text
+    assert dags._document(text, y="down")["dagitty"] == text
+    with pytest.raises(FrameworkError, match="sent as written"):
+        dags._document(text, y="up")
 
 
 def test_positions_must_be_two_finite_numbers() -> None:

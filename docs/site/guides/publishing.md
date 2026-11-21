@@ -263,9 +263,11 @@ The graph's attributes say what DAGitty needs:
 | Attribute | Effect |
 |-----------|--------|
 | Node `role` | `"exposure"`, `"outcome"`, `"latent"`, `"adjusted"`, or `"selected"`, or a list of them |
-| Node `pos` | An `(x, y)` position, with y pointing down as in DAGitty. networkx layouts point y up, so negate y to keep their picture |
+| Node `pos` | An `(x, y)` position, as `nx.draw(G, pos)` takes it, with y pointing up |
 | Node `label` | The name shown in the drawing |
 | Edge `bidirected=True` | `a <-> b`: a latent common cause. Direction doesn't matter |
+
+Framework Cloud draws a graph with positions as `nx.draw(G, pos)` does: DAGitty's y points down, so the DAGitty text negates y. DAGitty text passed as a string or a file is sent as written.
 
 A pgmpy `DAG` is a `networkx.DiGraph`, and its `latents` are latent. [dagitty()](ref:dagitty) returns the text without publishing it. Names that aren't plain identifiers, such as `parental SES`, are double-quoted. A graph with a directed cycle or a node that points to itself is refused before anything is sent. Framework Cloud refuses more than 100 nodes or 400 edges.
 
@@ -281,7 +283,8 @@ fw.publish_dag("dag { smoking [exposure] cancer [outcome] age -> smoking -> canc
 | `labels` | Display labels by node name; they win over `label` attributes |
 | `code` | The Python code that built the graph |
 | `analysis` | `effect` (`"total"` or `"direct"`), `adjustment_sets`, and `implications`, from another tool. `[[]]` means no adjustment is needed, and `[]` means no set works |
-| `pos` | Positions by node, such as `{"age": (0, 0)}`; they win over `pos` attributes |
+| `pos` | Positions by node, such as `{"age": (0, 0)}` or a networkx layout; they win over `pos` attributes |
+| `y` | `"up"` (default) reads positions as networkx and matplotlib draw them; `"down"` reads them as DAGitty does |
 | `slug`, `title`, `visibility`, `to` | As in `publish()`. The slug defaults to the title, else `dag` |
 
 Framework computes no adjustment sets or implications. `fw.publish(dag)` publishes a networkx graph too, without code or analysis.

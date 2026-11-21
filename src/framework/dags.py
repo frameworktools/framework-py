@@ -30,6 +30,7 @@ MAX_NAME = 100
 _BARE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 _KEYWORDS = {"dag", "pdag", "mag", "pag", "graph", "digraph", "node", "edge"}
 _EFFECTS = ("total", "direct")
+_Y = ("up", "down")
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +121,9 @@ def _cycle(nodes: list[str], edges: list[tuple[str, str, str]]) -> list[str] | N
 class _Graph:
     """A graph's nodes, roles, positions, labels, and edges, checked to be a DAG."""
 
-    def __init__(self, source: Any, pos: Mapping[Any, Any] | None = None) -> None:
+    def __init__(
+        self, source: Any, pos: Mapping[Any, Any] | None = None, y: str | None = None
+    ) -> None:
         if not _is_digraph(source):
             if _is_graph(source):
                 raise FrameworkError(
@@ -132,6 +135,11 @@ class _Graph:
             )
         if pos is not None and not isinstance(pos, Mapping):
             raise FrameworkError("pos must map node names to (x, y) positions.")
+        y = "up" if y is None else y
+        if y not in _Y:
+            raise FrameworkError('y must be "up", as networkx draws, or "down", as DAGitty reads.')
+        # DAGitty's y points down. networkx and matplotlib draw y pointing up.
+        self.flip = y == "up"
         latents = {str(node) for node in (getattr(source, "latents", None) or ())}
         self.names: list[str] = []
         self.roles: dict[str, list[str]] = {}
@@ -188,7 +196,8 @@ class _Graph:
             attributes = list(self.roles[name])
             position = self.positions[name]
             if position is not None:
-                attributes.append(f'pos="{_number(position[0])},{_number(position[1])}"')
+                x, y = position[0], -position[1] if self.flip else position[1]
+                attributes.append(f'pos="{_number(x)},{_number(y)}"')
             lines.append(_quote(name) + (f" [{','.join(attributes)}]" if attributes else ""))
         lines += [f"{_quote(a)} {kind} {_quote(b)}" for a, b, kind in self.edges]
         lines.append("}")
@@ -207,7 +216,7 @@ def _is_graph(source: Any) -> bool:
     return ("networkx", "Graph") in _classes(source)
 
 
-def dagitty(graph: Any, *, pos: Mapping[Any, Any] | None = None) -> str:
+def dagitty(graph: Any, *, pos: Mapping[Any, Any] | None = None, y: str | None = None) -> str:
     """DAGitty model text for a networkx graph.
 
     ::
@@ -228,8 +237,9 @@ def dagitty(graph: Any, *, pos: Mapping[Any, Any] | None = None) -> str:
 
     - ``role``: ``"exposure"``, ``"outcome"``, ``"latent"``, ``"adjusted"``, or
       ``"selected"``, or a list of them. A pgmpy ``DAG``'s ``latents`` are latent too.
-    - ``pos``: an ``(x, y)`` position, with y pointing down as in DAGitty. networkx's
-      layouts point y up, so negate y to keep their picture.
+    - ``pos``: an ``(x, y)`` position, as ``nx.draw(G, pos)`` takes it: y points up.
+      DAGitty's y points down, so y is negated in the text, and the drawing on
+      Framework Cloud matches ``nx.draw()``. ``y="down"`` writes positions as they are.
     - ``label``: the name to show. ``dagitty()`` leaves labels out; ``publish_dag()``
       sends them.
     - ``bidirected=True`` on an edge: ``a <-> b``, a latent common cause. The edge's
@@ -237,8 +247,10 @@ def dagitty(graph: Any, *, pos: Mapping[Any, Any] | None = None) -> str:
 
     Args:
         graph: A ``networkx.DiGraph``, or a subclass such as pgmpy's ``DAG``.
-        pos: Positions by node, such as ``{"age": (0, 0), "smoking": (1, 1)}``. They win
-            over ``pos`` node attributes.
+        pos: Positions by node, such as ``{"age": (0, 0), "smoking": (1, 1)}`` or a
+            networkx layout. They win over ``pos`` node attributes.
+        y: Which way y points in the positions: ``"up"``, as networkx and matplotlib
+            draw, or ``"down"``, as DAGitty reads. Default: ``"up"``.
 
     Returns:
         The DAGitty model text.
@@ -247,7 +259,7 @@ def dagitty(graph: Any, *, pos: Mapping[Any, Any] | None = None) -> str:
         FrameworkError: The graph is undirected or has a directed cycle, a node points to
             itself, or a role or position isn't valid.
     """
-    return _Graph(graph, pos).text()
+    return _Graph(graph, pos, y).text()
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +340,7 @@ def _document(
     code: str | None = None,
     analysis: Mapping[str, Any] | None = None,
     pos: Mapping[Any, Any] | None = None,
+    y: str | None = None,
 ) -> dict[str, Any]:
     """The ``dag`` document for a graph or DAGitty text."""
     shown = _labels(labels)
@@ -338,12 +351,14 @@ def _document(
     if isinstance(graph, str):
         if pos is not None:
             raise FrameworkError('pos is for networkx graphs. In DAGitty text, write pos="x,y".')
+        if y not in (None, "down"):
+            raise FrameworkError("DAGitty text is sent as written, with y pointing down.")
         text = graph.strip()
         if not text:
             raise FrameworkError("The DAGitty text is empty.")
         source: dict[str, Any] = {"language": "python"}
     else:
-        parsed = _Graph(graph, pos)
+        parsed = _Graph(graph, pos, y)
         unknown = sorted(set(shown) - set(parsed.names))
         if unknown:
             raise FrameworkError(
@@ -387,6 +402,7 @@ def publish_dag(
     code: str | None = None,
     analysis: Mapping[str, Any] | None = None,
     pos: Mapping[Any, Any] | None = None,
+    y: str | None = None,
     slug: str | None = None,
     title: str | None = None,
     description: str | None = None,
@@ -414,9 +430,10 @@ def publish_dag(
 
     A ``networkx.DiGraph`` becomes DAGitty text as ``dagitty()`` writes it: roles,
     positions, and labels come from node attributes, and ``bidirected=True`` on an edge
-    makes it ``<->``. A string is DAGitty text, sent as it is; a ``Path`` names a
-    ``.dagitty`` file. ``publish(graph)`` publishes a networkx graph too, without code
-    or analysis.
+    makes it ``<->``. Positions are read as ``nx.draw(G, pos)`` reads them, with y
+    pointing up, so the drawing on Framework Cloud matches. A string is DAGitty text,
+    sent as it is, with DAGitty's y pointing down; a ``Path`` names a ``.dagitty`` file.
+    ``publish(graph)`` publishes a networkx graph too, without code or analysis.
 
     Framework Cloud checks the graph, lays it out, and draws it, with the DAGitty text
     and the code to copy. A graph with a cycle, an undirected edge, more than 100 nodes,
@@ -432,8 +449,11 @@ def publish_dag(
             ``adjustment_sets`` (a list of lists of names: ``[[]]`` when no adjustment is
             needed, ``[]`` when no set works), and ``implications`` (``{"x", "y",
             "given"}`` conditional independencies).
-        pos: Positions by node, such as ``{"age": (0, 0)}``, with y pointing down. For
+        pos: Positions by node, such as ``{"age": (0, 0)}`` or a networkx layout. For
             networkx graphs.
+        y: Which way y points in a graph's positions: ``"up"``, as networkx and
+            matplotlib draw, or ``"down"``, as DAGitty reads. Default: ``"up"``.
+            DAGitty text is always read with y pointing down.
         slug: Artifact slug. Default: from ``title``, else ``dag``. Name each DAG, or a
             second one publishes as a new version of the first.
         title: Artifact title. Default: the slug.
@@ -452,7 +472,7 @@ def publish_dag(
     from framework.publish_bundle import artifact_slug
     from framework.storage import publish
 
-    document = _document(graph, labels=labels, code=code, analysis=analysis, pos=pos)
+    document = _document(graph, labels=labels, code=code, analysis=analysis, pos=pos, y=y)
     slug = slug or (artifact_slug(title) if title else None)
     with tempfile.TemporaryDirectory(prefix="fw_dag_") as temp:
         path = Path(temp) / "dag.json"
