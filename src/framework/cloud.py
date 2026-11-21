@@ -1145,6 +1145,7 @@ DISPLAY_KEYS = (
     "title",
     "description",
     "author",
+    "credit",
     "details",
     "variable_tips",
     "column_summaries",

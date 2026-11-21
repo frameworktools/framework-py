@@ -304,6 +304,7 @@ fw.publish(fitted_model, to="cloud", slug="adjusted-model", display={"variable_t
 | Setting | Kinds | Off means |
 |---------|-------|-----------|
 | `title`, `description`, `author` | All | No title, description, or author name |
+| `credit` | All | No link back to the artifact on Framework Cloud |
 | `details` | Model, test | No details section |
 | `variable_tips` | Model | No tips on terms |
 | `column_summaries` | Table | No column summaries in tips |
