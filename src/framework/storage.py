@@ -467,9 +467,9 @@ def _publish_legacy(
 
     Returns:
         The public URL, or a list of URLs for a folder. On Framework Cloud, the URL is a
-        ``Published`` string whose ``version`` and ``embed_link`` attributes hold the
-        version and the link to paste into a site that takes Framework embeds (None when
-        the artifact can't be embedded).
+        ``Published`` string with ``version``, ``embed_link`` (the link to share and
+        embed, None for a private artifact), and ``artifact_url`` (the artifact's page
+        for its owner).
     """
     if share_unlisted and collection is None:
         raise FrameworkError("share_unlisted requires a collection.")
@@ -617,9 +617,9 @@ def publish(
 
     Returns:
         The public URL, or a list of URLs for a folder. On Framework Cloud, the URL is a
-        ``Published`` string whose ``version`` and ``embed_link`` attributes hold the
-        version and the link to paste into a site that takes Framework embeds (None when
-        the artifact can't be embedded).
+        ``Published`` string with ``version``, ``embed_link`` (the link to share and
+        embed, None for a private artifact), and ``artifact_url`` (the artifact's page
+        for its owner).
     """
     from framework.publish_bundle import (
         Destination,

@@ -1189,26 +1189,37 @@ def display_ignored(display: Mapping[str, bool] | None, where: str) -> None:
         inform(f"display applies on Framework Cloud only; {where} ignores it.")
 
 
+def _link(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
 class Published(str):
-    """A published artifact's URL, with the version and the embed link Cloud answered.
+    """A published artifact's URL, with the version and the links Cloud answered.
 
     It is the URL string, so code that treats the result as a URL keeps working.
-    ``embed_link`` is the link to paste into a site that takes Framework embeds, or None
-    when the artifact can't be embedded (private, or with a password) or the server
-    doesn't say.
+    ``embed_link`` is the link to share: people open it, and sites that take Framework
+    embeds take it. It is None when the artifact can't be shared (private, or with a
+    password). ``artifact_url`` is the owner's page for the artifact on Framework Cloud.
+    Both are None when the server doesn't send them.
     """
 
     url: str
     version: int | None
     embed_link: str | None
+    artifact_url: str | None
 
     def __new__(
-        cls, url: str, version: int | None = None, embed_link: str | None = None
+        cls,
+        url: str,
+        version: int | None = None,
+        embed_link: str | None = None,
+        artifact_url: str | None = None,
     ) -> Published:
         published = super().__new__(cls, url)
         published.url = url
         published.version = version
         published.embed_link = embed_link
+        published.artifact_url = artifact_url
         return published
 
 
@@ -1239,9 +1250,9 @@ def cloud_publish(
     confirmation, or ``include_private=True``. ``display`` changes the embed settings it
     names (see ``DISPLAY_KEYS``) and leaves the others alone.
 
-    Prints the URL and, when the artifact can be embedded, the embed link to paste into
-    a site that takes Framework embeds. Returns the URL as a ``Published`` string, which
-    also carries ``version`` and ``embed_link``.
+    Prints the version, the share link (when the artifact can be shared), and the
+    artifact's page for its owner. Returns the URL as a ``Published`` string, which also
+    carries ``version``, ``embed_link``, and ``artifact_url``.
     """
     shown = display_settings(display)
     sources = [source]
@@ -1359,17 +1370,21 @@ def cloud_publish(
     if response.is_error:
         raise _error(response, "Publish")
     result = response.json()
+    embed_link = _link(result.get("embed_link"))
+    artifact_url = _link(result.get("artifact_url"))
+    # A server from before embed_link and artifact_url sends only url, so print it
+    where = "." if embed_link or artifact_url else f": {result.get('url')}"
     if result.get("unchanged") and result.get("version") is not None:
         # Cloud keeps the newest version when nothing changed (code snippets)
-        inform(f"Unchanged, still version {result['version']}: {result.get('url')}")
+        inform(f"Unchanged, still version {result['version']}{where}")
     elif result.get("version") is not None:
-        inform(f"Published version {result['version']}: {result.get('url')}")
+        inform(f"Published version {result['version']}{where}")
     else:
-        inform(f"Published: {result.get('url')}")
-    embed_link = result.get("embed_link")
-    embed_link = embed_link if isinstance(embed_link, str) and embed_link else None
+        inform(f"Published{where}")
     if embed_link is not None:
-        inform(f"Embed: {embed_link}")
+        inform(f"Share:  {embed_link}")
+    if artifact_url is not None:
+        inform(f"Manage: {artifact_url}")
     # The server's notice assumes an unlisted link. Say it plainly for a public
     # artifact whose owner has no handle yet.
     notice = str(result.get("notice") or "")
@@ -1405,6 +1420,7 @@ def cloud_publish(
         str(result.get("url")),
         version if isinstance(version, int) else None,
         embed_link,
+        artifact_url,
     )
 
 

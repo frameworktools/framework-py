@@ -473,8 +473,9 @@ def publish_dag(
             shows an item and False hides it; settings left out keep their value.
 
     Returns:
-        The artifact's URL. On Framework Cloud it is a ``Published`` string whose
-        ``embed_link`` is the link to paste into a site that takes Framework embeds.
+        The artifact's URL. On Framework Cloud it is a ``Published`` string with
+        ``embed_link``, the link to share and embed, and ``artifact_url``, the artifact's
+        page for its owner.
     """
     from framework.publish_bundle import artifact_slug
     from framework.storage import publish

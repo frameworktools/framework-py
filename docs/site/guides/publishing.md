@@ -317,16 +317,17 @@ fw.publish(fitted_model, to="cloud", slug="adjusted-model", display={"variable_t
 
 The reader page on Framework Cloud shows everything.
 
-### Embed links
+### Share and manage links
 
-After a publish to Framework Cloud, Framework prints the link to paste into a blog or site that takes Framework embeds:
+After a publish to Framework Cloud, Framework prints the version and two links:
 
 ```text
-Published version 3: https://framework.pub/d/dy01awbmpzvq4m49s1ijdtnr
-Embed: https://framework.pub/d/dy01awbmpzvq4m49s1ijdtnr
+Published version 3.
+Share:  https://framework.pub/go/az7h
+Manage: https://framework.pub/artifacts/123
 ```
 
-A public artifact's embed link is its short link (`https://framework.pub/go/...`), and an unlisted artifact's is its own link. A private artifact, or one with a password, can't be embedded, and no link is printed. The returned URL carries the link too: `fw.publish(...).embed_link`, with `version` beside it.
+**Share** is the link people open, and the link to paste into a blog or site that takes Framework embeds. A public artifact's is its short link, and an unlisted artifact's is its own link. A private artifact, or one with a password, has no share link. **Manage** is the artifact's page for its owner, with its versions and settings. The returned URL carries both: `fw.publish(...).embed_link` and `.artifact_url`, with `version` beside them.
 
 ### Collection attachment
 
