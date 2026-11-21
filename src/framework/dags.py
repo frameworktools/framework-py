@@ -466,13 +466,15 @@ def publish_dag(
         share_unlisted: Allow collection readers to see an unlisted DAG.
         to: A configured destination name, or "cloud".
         include_private: Publish without asking about private folders.
-        display: What embeds of the DAG show, on Framework Cloud: ``legend``,
-            ``analysis``, ``dagitty``, ``code``, ``title``, ``description``, and
-            ``author``, such as ``{"code": False}``. True restores a default, and settings
-            left out keep their value.
+        display: What embeds of the DAG show, on Framework Cloud. A DAG embeds as its
+            drawing alone: ``description``, ``analysis``, ``dagitty``, and ``code`` start
+            off, and ``title``, ``author``, ``credit``, and ``legend`` start on. Pass
+            ``{"code": True, "analysis": True}`` to show the code and analysis. True
+            shows an item and False hides it; settings left out keep their value.
 
     Returns:
-        The artifact's URL.
+        The artifact's URL. On Framework Cloud it is a ``Published`` string whose
+        ``embed_link`` is the link to paste into a site that takes Framework embeds.
     """
     from framework.publish_bundle import artifact_slug
     from framework.storage import publish

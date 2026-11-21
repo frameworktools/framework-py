@@ -1139,8 +1139,9 @@ def _publish_collection(
     return selected
 
 
-# What an artifact's embeds show, set per artifact on Framework Cloud. Every setting is on
-# by default; publishing changes only the settings it names.
+# What an artifact's embeds show, set per artifact on Framework Cloud. Settings are on by
+# default, except that a DAG embeds as its drawing alone: its description, analysis,
+# dagitty, and code start off. Publishing changes only the settings it names.
 DISPLAY_KEYS = (
     "title",
     "description",
@@ -1188,6 +1189,29 @@ def display_ignored(display: Mapping[str, bool] | None, where: str) -> None:
         inform(f"display applies on Framework Cloud only; {where} ignores it.")
 
 
+class Published(str):
+    """A published artifact's URL, with the version and the embed link Cloud answered.
+
+    It is the URL string, so code that treats the result as a URL keeps working.
+    ``embed_link`` is the link to paste into a site that takes Framework embeds, or None
+    when the artifact can't be embedded (private, or with a password) or the server
+    doesn't say.
+    """
+
+    url: str
+    version: int | None
+    embed_link: str | None
+
+    def __new__(
+        cls, url: str, version: int | None = None, embed_link: str | None = None
+    ) -> Published:
+        published = super().__new__(cls, url)
+        published.url = url
+        published.version = version
+        published.embed_link = embed_link
+        return published
+
+
 def cloud_publish(
     source: Path,
     dest: str | None = None,
@@ -1202,7 +1226,7 @@ def cloud_publish(
     collection: str | int | None = None,
     share_unlisted: bool = False,
     display: Mapping[str, bool] | None = None,
-) -> str:
+) -> Published:
     """Publish a file, rendered HTML folder, or notebook to the project cloud server.
 
     Accepts a self-contained ``.html``, an ``.html`` with a sibling
@@ -1214,6 +1238,10 @@ def cloud_publish(
     always wins over ``True`` and ``False``. A source in a private folder needs
     confirmation, or ``include_private=True``. ``display`` changes the embed settings it
     names (see ``DISPLAY_KEYS``) and leaves the others alone.
+
+    Prints the URL and, when the artifact can be embedded, the embed link to paste into
+    a site that takes Framework embeds. Returns the URL as a ``Published`` string, which
+    also carries ``version`` and ``embed_link``.
     """
     shown = display_settings(display)
     sources = [source]
@@ -1338,6 +1366,10 @@ def cloud_publish(
         inform(f"Published version {result['version']}: {result.get('url')}")
     else:
         inform(f"Published: {result.get('url')}")
+    embed_link = result.get("embed_link")
+    embed_link = embed_link if isinstance(embed_link, str) and embed_link else None
+    if embed_link is not None:
+        inform(f"Embed: {embed_link}")
     # The server's notice assumes an unlisted link. Say it plainly for a public
     # artifact whose owner has no handle yet.
     notice = str(result.get("notice") or "")
@@ -1368,7 +1400,12 @@ def cloud_publish(
                 FrameworkWarning,
                 stacklevel=2,
             )
-    return str(result.get("url"))
+    version = result.get("version")
+    return Published(
+        str(result.get("url")),
+        version if isinstance(version, int) else None,
+        embed_link,
+    )
 
 
 # Projects ---------------------------------------------------------------------------

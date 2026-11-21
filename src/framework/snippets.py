@@ -350,7 +350,7 @@ def snippet(
         include_private: Publish without asking about private folders.
         display: What embeds of the snippet show, on Framework Cloud: ``output``,
             ``links``, ``title``, ``description``, and ``author``, such as
-            ``{"links": False}``. True restores a default, and settings left out keep
+            ``{"links": False}``. True shows an item and False hides it; settings left out keep
             their value.
     """
     from framework.cloud import display_settings

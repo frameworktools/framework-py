@@ -461,12 +461,15 @@ def _publish_legacy(
         collection: Existing project collection ID or slug; follows the latest artifact version.
         share_unlisted: Explicitly allow collection readers to access an unlisted artifact.
         display: What embeds show, on Framework Cloud: settings by name, such as
-            ``{"analysis": False, "code": False}``. True restores a default, and settings
-            left out keep their value. Other destinations ignore it.
+            ``{"legend": False, "code": True}``. True shows an item and False hides it;
+            settings left out keep their value. Other destinations ignore it.
         allow_private: Deprecated name for ``include_private``.
 
     Returns:
-        The public URL, or a list of URLs for a folder.
+        The public URL, or a list of URLs for a folder. On Framework Cloud, the URL is a
+        ``Published`` string whose ``version`` and ``embed_link`` attributes hold the
+        version and the link to paste into a site that takes Framework embeds (None when
+        the artifact can't be embedded).
     """
     if share_unlisted and collection is None:
         raise FrameworkError("share_unlisted requires a collection.")
@@ -608,12 +611,15 @@ def publish(
             ``publish(idata, model=model)``. The model adds its family, formula, priors,
             group-level effects, and variables to the posterior summaries.
         display: What embeds show, on Framework Cloud: settings by name, such as
-            ``{"analysis": False, "code": False}``. True restores a default, and settings
-            left out keep their value. Other destinations ignore it.
+            ``{"legend": False, "code": True}``. True shows an item and False hides it;
+            settings left out keep their value. Other destinations ignore it.
         allow_private: Deprecated name for ``include_private``.
 
     Returns:
-        The public URL, or a list of URLs for a folder.
+        The public URL, or a list of URLs for a folder. On Framework Cloud, the URL is a
+        ``Published`` string whose ``version`` and ``embed_link`` attributes hold the
+        version and the link to paste into a site that takes Framework embeds (None when
+        the artifact can't be embedded).
     """
     from framework.publish_bundle import (
         Destination,
@@ -816,8 +822,8 @@ def publish_notebook(
             level-1 heading opening its first markdown cell), else its file name.
         description: A short description, on Framework Cloud and named destinations.
         display: What embeds show, on Framework Cloud: settings by name, such as
-            ``{"analysis": False, "code": False}``. True restores a default, and settings
-            left out keep their value. Other destinations ignore it.
+            ``{"legend": False, "code": True}``. True shows an item and False hides it;
+            settings left out keep their value. Other destinations ignore it.
 
     Returns:
         The public URL.
@@ -1027,8 +1033,8 @@ def publish_data(
             slug.
         description: A short description, on Framework Cloud and named destinations.
         display: What embeds show, on Framework Cloud: settings by name, such as
-            ``{"analysis": False, "code": False}``. True restores a default, and settings
-            left out keep their value. Other destinations ignore it.
+            ``{"legend": False, "code": True}``. True shows an item and False hides it;
+            settings left out keep their value. Other destinations ignore it.
 
     Returns:
         The public URL (for a folder destination without a ``url``, its location).
@@ -1149,8 +1155,8 @@ def publish_dir(
             slug.
         description: A short description, on Framework Cloud and named destinations.
         display: What embeds show, on Framework Cloud: settings by name, such as
-            ``{"analysis": False, "code": False}``. True restores a default, and settings
-            left out keep their value. Other destinations ignore it.
+            ``{"legend": False, "code": True}``. True shows an item and False hides it;
+            settings left out keep their value. Other destinations ignore it.
 
     Returns:
         The public URL of each file uploaded. The list is empty when no file matched. For

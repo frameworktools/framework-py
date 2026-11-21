@@ -290,16 +290,18 @@ fw.publish_dag("dag { smoking [exposure] cancer [outcome] age -> smoking -> canc
 
 Framework computes no adjustment sets or implications. `fw.publish(dag)` publishes a networkx graph too, without code or analysis.
 
+The reader page shows everything. An embed shows the drawing alone until `display` turns on its description, analysis, DAGitty code, or code. See [Embed display settings](#embed-display-settings).
+
 ### Embed display settings
 
-Each artifact on Framework Cloud has display settings that decide what its embeds show on other sites. Every setting is on by default. The owner changes them on the artifact's **Settings** tab, or `display` sets them at publish:
+Each artifact on Framework Cloud has display settings that decide what its embeds show on other sites. Settings are on by default, except that a DAG embeds as its drawing alone: its `description`, `analysis`, `dagitty`, and `code` start off. The owner changes them on the artifact's **Settings** tab, or `display` sets them at publish:
 
 ```python
-fw.publish_dag(dag, slug="education-health", display={"code": False, "legend": False})
+fw.publish_dag(dag, slug="education-health", display={"code": True, "analysis": True})
 fw.publish(fitted_model, to="cloud", slug="adjusted-model", display={"variable_tips": False})
 ```
 
-`display` maps setting names to `True` or `False`. Settings it leaves out keep their value, `True` restores a default, and the settings apply to every version. `publish()`, `publish_dag()`, `publish_notebook()`, `publish_data()`, `publish_dir()`, and `fw.snippet()` take it, and the `%%fw_snippet` magic takes `--display SETTING=on|off`. An unknown name or a value other than `True` or `False` is refused before anything is sent. Other destinations ignore `display` with a message.
+`display` maps setting names to `True` or `False`. `True` shows an item and `False` hides it. Settings it leaves out keep their value, and the settings apply to every version. `publish()`, `publish_dag()`, `publish_notebook()`, `publish_data()`, `publish_dir()`, and `fw.snippet()` take it, and the `%%fw_snippet` magic takes `--display SETTING=on|off`. An unknown name or a value other than `True` or `False` is refused before anything is sent. Other destinations ignore `display` with a message.
 
 | Setting | Kinds | Off means |
 |---------|-------|-----------|
@@ -310,10 +312,21 @@ fw.publish(fitted_model, to="cloud", slug="adjusted-model", display={"variable_t
 | `column_summaries` | Table | No column summaries in tips |
 | `output` | Code snippet | The output starts hidden |
 | `links` | Code snippet | No notebook and model links |
-| `legend`, `analysis`, `dagitty`, `code` | DAG | No role legend, analysis, DAGitty code, or source code |
+| `legend`, `analysis`, `dagitty`, `code` | DAG | No role legend, analysis, DAGitty code, or source code. Only `legend` starts on |
 | `interactive` | Vega-Lite chart | The static image shows instead |
 
 The reader page on Framework Cloud shows everything.
+
+### Embed links
+
+After a publish to Framework Cloud, Framework prints the link to paste into a blog or site that takes Framework embeds:
+
+```text
+Published version 3: https://framework.pub/d/dy01awbmpzvq4m49s1ijdtnr
+Embed: https://framework.pub/d/dy01awbmpzvq4m49s1ijdtnr
+```
+
+A public artifact's embed link is its short link (`https://framework.pub/go/...`), and an unlisted artifact's is its own link. A private artifact, or one with a password, can't be embedded, and no link is printed. The returned URL carries the link too: `fw.publish(...).embed_link`, with `version` beside it.
 
 ### Collection attachment
 
