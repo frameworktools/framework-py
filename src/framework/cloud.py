@@ -48,7 +48,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 import httpx
 import pandas as pd
@@ -1599,6 +1599,90 @@ def _ask_yes(question: str) -> bool:
     if not sys.stdin.isatty():
         return False
     return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+
+
+def flatten_versions(
+    artifact: str, *, project: str | None = None, confirm: bool | None = None
+) -> str | None:
+    """Keep only an artifact's newest version on Framework Cloud, as version 1.
+
+    ::
+
+        fw.flatten_versions("education-health")
+        fw.flatten_versions("fig-1", project="study", confirm=True)  # in a script
+
+    Older versions and their files are deleted for good, the Trash included. Links and
+    embeds of old versions go to the latest, and collection and report pins move to
+    version 1. The next publish continues after the highest old number. Every kind
+    flattens. An external publication is refused.
+
+    A project token (``FW_PROJECT_TOKEN``, or the project's ``.env``) flattens the
+    project's own artifacts. Otherwise the account token from ``cloud_login()`` is used.
+
+    Args:
+        artifact: The artifact's slug.
+        project: The project's slug, when several of your projects have an artifact with
+            this slug. Not needed with a project token.
+        confirm: True flattens without asking; False cancels. None asks in a console,
+            where the default answer is No.
+
+    Returns:
+        The artifact's page on Framework Cloud, or None when cancelled.
+
+    Raises:
+        FrameworkError: Without a console and without ``confirm=True``.
+        CloudError: No artifact has the slug, several projects do and ``project`` is not
+            given, or the server refused.
+    """
+    if not isinstance(artifact, str) or not artifact.strip():
+        raise FrameworkError("artifact must be an artifact's slug.")
+    artifact = artifact.strip()
+    token = project_token()
+    if token is not None:
+        url = cloud_server(scope="project").url
+    else:
+        url = cloud_server().url
+        token = _require_token(url)
+    question = (
+        f'Flatten "{artifact}" on {host(url)}? Older versions and their files are deleted for good.'
+    )
+    if confirm is None:
+        if not sys.stdin.isatty():
+            raise FrameworkError(
+                "flatten_versions() deletes older versions for good, so it asks first. "
+                "Without a console, pass confirm=True."
+            )
+        confirm = input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+    if not confirm:
+        inform("Nothing changed.")
+        return None
+    params = {"project": project} if project else None
+    path = quote(artifact, safe="")
+    try:
+        with _client() as client:
+            response = client.post(
+                f"{url}/api/v1/artifacts/{path}/flatten",
+                params=params,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as error:
+        raise CloudOfflineError(f"Could not reach {host(url)}: {error}") from error
+    if response.status_code == 404:
+        where = f' in project "{project}"' if project else ""
+        raise CloudError(f'No artifact "{artifact}"{where} on {host(url)}.')
+    if response.status_code == 409:
+        conflict = _error(response, "Flatten")
+        raise CloudError(f"{conflict} Pass project= to name the project.") from None
+    if response.is_error:
+        raise _error(response, "Flatten")
+    result = response.json()
+    removed = int(result.get("removed") or 0)
+    older = "1 older version" if removed == 1 else f"{removed} older versions"
+    inform(f"Flattened {result.get('artifact') or artifact} to version 1; removed {older}.")
+    artifact_url = _link(result.get("artifact_url"))
+    if artifact_url is not None:
+        inform(f"Manage: {artifact_url}")
+    return artifact_url
 
 
 def _slug_taken(root: Path, slug: str, problem: str, token: str, url: str) -> dict[str, Any]:

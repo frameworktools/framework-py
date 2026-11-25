@@ -376,6 +376,24 @@ Manage: https://framework.pub/artifacts/123
 
 **Share** is the link people open, and the link to paste into a blog or site that takes Framework embeds. A public artifact's is its short link, and an unlisted artifact's is its own link. A private artifact, or one with a password, has no share link. **Manage** is the artifact's page for its owner, with its versions and settings. The returned URL carries both: `fw.publish(...).embed_link` and `.artifact_url`, with `version` beside them.
 
+### Version flattening
+
+Each publish adds a version. [flatten_versions()](ref:flatten_versions) keeps only the newest, as version 1:
+
+```python
+fw.flatten_versions("education-health")
+```
+
+```text
+Flatten "education-health" on framework.pub? Older versions and their files are deleted for good. [y/N] y
+Flattened education-health to version 1; removed 4 older versions.
+Manage: https://framework.pub/artifacts/123
+```
+
+Older versions and their files are deleted for good, the Trash included. Links and embeds of old versions go to the latest. Collection and report pins move to version 1. The next publish continues after the highest old number, so version 6 follows a flattened version 5. Every kind flattens. An external publication is refused.
+
+In a console Framework asks first, and the default answer is No. A script passes `confirm=True`; without a console and without it, nothing is sent. A project token flattens the project's own artifacts. With an account token, pass `project` when several of your projects have an artifact with the slug. It returns the artifact's page, or None when cancelled.
+
 ### Collection attachment
 
 Pass `collection` (slug or ID) to attach a published artifact to an existing Framework Cloud collection:

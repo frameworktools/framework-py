@@ -31,6 +31,7 @@ from framework.cloud import (
     cloud_status,
     cloud_sync,
     data_verify,
+    flatten_versions,
     ledger_list,
     ledger_push,
 )
@@ -212,6 +213,7 @@ __all__ = [
     "db_list",
     "db_query",
     "db_transaction",
+    "flatten_versions",
     "framework_template_path",
     "git_hooks_disable",
     "git_hooks_enable",
