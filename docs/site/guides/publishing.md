@@ -307,15 +307,15 @@ fw.publish_structure(
 ```text
 my-project/
 ├── data/
-│   ├── private/        private · 1 file
-│   └── raw/            ignored by data/raw/ (.gitignore:1) · 2 files
+│   ├── private/  private · 1 file
+│   └── raw/      ignored by data/raw/ (.gitignore:1) · 2 files
 ├── outputs/
 │   ├── table.csv
-│   └── *.rds           ignored by *.rds (.gitignore:2) · 2 files
-├── R/                  Reusable functions
+│   └── *.rds     ignored by *.rds (.gitignore:2) · 2 files
+├── R/            Reusable functions
 │   └── clean.R
 ├── .gitignore
-└── README.md           Start here
+└── README.md     Start here
 Published version 1.
 Share:  https://framework.pub/d/…
 Manage: https://framework.pub/artifacts/…

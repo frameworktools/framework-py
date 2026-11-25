@@ -44,8 +44,6 @@ COUNT_CAP = 10_000
 LISTED = 20
 MAX_NODES = 5_000
 MAX_NOTE = 500
-# Where the annotation column starts, at the least
-COLUMN = 24
 
 
 # ---------------------------------------------------------------------------
@@ -577,7 +575,8 @@ class Structure:
 
         draw("", "")
         widths = [len(label) for label, annotation in lines if annotation]
-        column = max([COLUMN, *(w + 2 for w in widths)])
+        # Notes and rules start two past the widest name, as R and fw print them
+        column = max(widths, default=0) + 2
         out = [f"{self.root}/"]
         for label, annotation in lines:
             out.append(f"{label.ljust(column)}{annotation}" if annotation else label)

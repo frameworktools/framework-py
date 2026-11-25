@@ -166,31 +166,31 @@ def test_with_no_gitignore_nothing_is_ignored(
 LOCAL = """\
 my-project/
 ├── data/
-│   ├── private/        private · 1 file
-│   └── raw/            ignored by data/raw/ (.gitignore:1) · 2 files
+│   ├── private/   private · 1 file
+│   └── raw/       ignored by data/raw/ (.gitignore:1) · 2 files
 ├── outputs/
 │   ├── table.csv
-│   ├── draws.rds       ignored by *.rds (.gitignore:2)
-│   └── fit.rds         ignored by *.rds (.gitignore:2)
-├── R/                  Reusable functions
+│   ├── draws.rds  ignored by *.rds (.gitignore:2)
+│   └── fit.rds    ignored by *.rds (.gitignore:2)
+├── R/             Reusable functions
 │   └── clean.R
 ├── .gitignore
-├── README.md           Start here
-└── .env                ignored by .env (.gitignore:3)"""
+├── README.md      Start here
+└── .env           ignored by .env (.gitignore:3)"""
 
 PUBLISHED = """\
 my-project/
 ├── data/
-│   ├── private/        private · 1 file
-│   └── raw/            ignored by data/raw/ (.gitignore:1) · 2 files
+│   ├── private/  private · 1 file
+│   └── raw/      ignored by data/raw/ (.gitignore:1) · 2 files
 ├── outputs/
 │   ├── table.csv
-│   └── *.rds           ignored by *.rds (.gitignore:2) · 2 files
-├── R/                  Reusable functions
+│   └── *.rds     ignored by *.rds (.gitignore:2) · 2 files
+├── R/            Reusable functions
 │   └── clean.R
 ├── .gitignore
-├── README.md           Start here
-└── .env                ignored by .env (.gitignore:3) · 1 file"""
+├── README.md     Start here
+└── .env          ignored by .env (.gitignore:3) · 1 file"""
 
 NOTES = {"R/": "Reusable functions", "README.md": "Start here"}
 
@@ -210,7 +210,7 @@ def test_the_local_tree_lists_twenty_ignored_files_per_rule(fixture: Path) -> No
         (fixture / "outputs" / f"m{i:02}.rds").write_text("x", encoding="utf-8")
     lines = str(fw.structure("outputs")).splitlines()
     assert sum("ignored by *.rds" in line for line in lines) == 21
-    assert lines[-1] == "└── … 5 more            ignored by *.rds (.gitignore:2)"
+    assert lines[-1] == "└── … 5 more   ignored by *.rds (.gitignore:2)"
 
 
 def test_counts_read_as_files() -> None:
@@ -238,8 +238,7 @@ def test_depth_makes_deeper_folders_stubs(fixture: Path) -> None:
     nodes = fw.structure(depth=2).document["nodes"]
     assert {"path": "R", "type": "dir"} in nodes
     assert {"path": "R/sub", "type": "dir", "depth": True, "hidden": 1} in nodes
-    assert "R/          1 file" not in str(fw.structure(depth=1))
-    assert "├── R/                  2 files" in str(fw.structure(depth=1))
+    assert "├── R/        2 files" in str(fw.structure(depth=1)).splitlines()
 
 
 def test_depth_must_be_a_positive_whole_number(fixture: Path) -> None:
@@ -355,7 +354,7 @@ def test_several_folders_publish_as_one_tree(fixture: Path) -> None:
     assert tree.published.splitlines()[:4] == [
         "my-project/",
         "├── data/",
-        "│   └── raw/            ignored by data/raw/ (.gitignore:1) · 2 files",
+        "│   └── raw/   ignored by data/raw/ (.gitignore:1) · 2 files",
         "├── outputs/",
     ]
 
