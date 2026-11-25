@@ -292,16 +292,62 @@ Framework computes no adjustment sets or implications. `fw.publish(dag)` publish
 
 The reader page shows everything. An embed shows the drawing alone until `display` turns on its description, analysis, DAGitty code, or code. See [Embed display settings](#embed-display-settings).
 
+### Project structure
+
+A project structure artifact is a folder tree, with notes on its paths, for a tutorial or course page that explains how the code is laid out. Ignored paths show the `.gitignore` rule that hides them. [structure()](ref:structure) prints the tree and uploads nothing. [publish_structure()](ref:publish_structure) publishes it:
+
+```python
+fw.structure()
+fw.publish_structure(
+    notes={"R/": "Reusable functions", "README.md": "Start here"},
+    highlight="README.md",
+)
+```
+
+```text
+my-project/
+├── data/
+│   ├── private/        private · 1 file
+│   └── raw/            ignored by data/raw/ (.gitignore:1) · 2 files
+├── outputs/
+│   ├── table.csv
+│   └── *.rds           ignored by *.rds (.gitignore:2) · 2 files
+├── R/                  Reusable functions
+│   └── clean.R
+├── .gitignore
+└── README.md           Start here
+Published version 1.
+Share:  https://framework.pub/d/…
+Manage: https://framework.pub/artifacts/…
+```
+
+Ignored names never publish. An ignored folder is a stub with its rule and a file count. Ignored files in a folder that isn't ignored are one row per rule, with a count. `structure()` lists them by name, up to 20 per folder and rule, to show what the `.gitignore` does. A private folder is a stub with a file count. `.git/` is left out, and symbolic links are files, never followed.
+
+In a git work tree git decides what is ignored, and nested `.gitignore` files count. A rule from the global excludes file or `.git/info/exclude` names its source `global` or `info/exclude`. Outside git, only the root `.gitignore` is read.
+
+| Argument | Effect |
+|----------|--------|
+| `path` | A folder, or a list of folders, relative to the project root. Several folders publish as one tree named for the project. Default: the project root |
+| `depth` | Levels to list. Deeper folders are stubs with a file count |
+| `exclude` | Globs, as `.gitignore` writes them, for paths to leave out with no stub |
+| `notes` | Notes by path, up to 500 characters each. A folder may end in `/` |
+| `open` | Folders that start open in an embed. Default: the top level |
+| `highlight` | Paths drawn as highlighted |
+| `ignored` | `"rules"` (default) shows ignored stubs and rows; `"hide"` leaves them out. Private stubs stay, unless the private folder is ignored too |
+| `slug`, `title`, `visibility`, `to`, `display` | As in `publish()`. The slug defaults to `structure`, or `structure-<folder>` for a subfolder. The title defaults to `<root> structure` |
+
+A note, `open`, or `highlight` path that isn't in the published tree is refused before anything is sent. File counts stop at 10,000. Framework Cloud takes up to 5,000 entries.
+
 ### Embed display settings
 
-Each artifact on Framework Cloud has display settings that decide what its embeds show on other sites. Settings are on by default, except that a DAG embeds as its drawing alone: its `description`, `analysis`, `dagitty`, and `code` start off. The owner changes them on the artifact's **Settings** tab, or `display` sets them at publish:
+Each artifact on Framework Cloud has display settings that decide what its embeds show on other sites. Settings are on by default, except that a DAG embeds as its drawing alone: its `description`, `analysis`, `dagitty`, and `code` start off. A project structure's `description` starts off too. The owner changes them on the artifact's **Settings** tab, or `display` sets them at publish:
 
 ```python
 fw.publish_dag(dag, slug="education-health", display={"code": True, "analysis": True})
 fw.publish(fitted_model, to="cloud", slug="adjusted-model", display={"variable_tips": False})
 ```
 
-`display` maps setting names to `True` or `False`. `True` shows an item and `False` hides it. Settings it leaves out keep their value, and the settings apply to every version. `publish()`, `publish_dag()`, `publish_notebook()`, `publish_data()`, `publish_dir()`, and `fw.snippet()` take it, and the `%%fw_snippet` magic takes `--display SETTING=on|off`. An unknown name or a value other than `True` or `False` is refused before anything is sent. Other destinations ignore `display` with a message.
+`display` maps setting names to `True` or `False`. `True` shows an item and `False` hides it. Settings it leaves out keep their value, and the settings apply to every version. `publish()`, `publish_dag()`, `publish_structure()`, `publish_notebook()`, `publish_data()`, `publish_dir()`, and `fw.snippet()` take it, and the `%%fw_snippet` magic takes `--display SETTING=on|off`. An unknown name or a value other than `True` or `False` is refused before anything is sent. Other destinations ignore `display` with a message.
 
 | Setting | Kinds | Off means |
 |---------|-------|-----------|
@@ -314,6 +360,7 @@ fw.publish(fitted_model, to="cloud", slug="adjusted-model", display={"variable_t
 | `links` | Code snippet | No notebook and model links |
 | `legend`, `analysis`, `dagitty`, `code` | DAG | No role legend, analysis, DAGitty code, or source code. Only `legend` starts on |
 | `interactive` | Vega-Lite chart | The static image shows instead |
+| `notes`, `ignored` | Project structure | No notes, or no ignored stubs and rows. Private stubs stay |
 
 The reader page on Framework Cloud shows everything.
 

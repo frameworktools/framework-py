@@ -145,6 +145,7 @@ from framework.storage import (
     publish_notebook,
     storage_test,
 )
+from framework.structure import Structure, publish_structure, structure
 from framework.sync_all import pull_all, push_all
 from framework.upgrade import UpgradeResult, upgrade
 
@@ -171,6 +172,7 @@ __all__ = [
     "ResolvedSpec",
     "SettingsError",
     "SpecError",
+    "Structure",
     "TableDisplay",
     "UnsupportedFormatError",
     "UpgradeResult",
@@ -255,6 +257,7 @@ __all__ = [
     "publish_dir",
     "publish_list",
     "publish_notebook",
+    "publish_structure",
     "pull_all",
     "pull_data_registry",
     "pull_skills",
@@ -286,6 +289,7 @@ __all__ = [
     "spec_resolve",
     "status",
     "storage_test",
+    "structure",
     "structure_import",
     "stubs_list",
     "stubs_path",

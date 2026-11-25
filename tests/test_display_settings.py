@@ -43,7 +43,8 @@ def field(cloud: FakeCloud, name: str) -> str | None:
 def test_settings_become_compact_json() -> None:
     assert display_settings(None) is None
     assert display_settings({"analysis": False, "title": True}) == '{"analysis":false,"title":true}'
-    assert "legend" in DISPLAY_KEYS and "credit" in DISPLAY_KEYS and len(DISPLAY_KEYS) == 14
+    assert {"legend", "credit", "notes", "ignored"} <= set(DISPLAY_KEYS)
+    assert len(DISPLAY_KEYS) == 16
 
 
 @pytest.mark.parametrize(

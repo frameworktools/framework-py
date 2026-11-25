@@ -1157,6 +1157,8 @@ DISPLAY_KEYS = (
     "dagitty",
     "code",
     "interactive",
+    "notes",
+    "ignored",
 )
 
 

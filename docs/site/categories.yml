@@ -52,7 +52,7 @@
   title: Publishing
   description: Artifact publishing and storage buckets
   common: [publish, publish_notebook]
-  names: [publish, publish_notebook, snippet, publish_dag, dagitty, publish_data, publish_dir, publish_list, storage_test]
+  names: [publish, publish_notebook, snippet, publish_dag, dagitty, structure, publish_structure, publish_data, publish_dir, publish_list, storage_test]
 
 - id: cloud
   title: Cloud
@@ -93,4 +93,4 @@
   names: [FrameworkError, SettingsError, SpecError, DataNotFoundError, ProjectNotFoundError,
           UnsupportedFormatError, IntegrityError, CloudError, FrameworkWarning, CacheWarning,
           DataChangedWarning, AuditResult, BootstrapResult, UpgradeResult, CapturedOutput, Connection, DataInfo,
-          PackagesStatus, ResolvedSpec, TableDisplay]
+          PackagesStatus, ResolvedSpec, Structure, TableDisplay]
